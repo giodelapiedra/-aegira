@@ -1,0 +1,578 @@
+/* ============================================
+   AEGIRA STYLES
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Import color tokens - Single source of truth */
+@import './styles/tokens/colors.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   BASE STYLES
+   ============================================ */
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased m-0;
+  }
+}
+
+/* ============================================
+   COMPONENT CLASSES
+   ============================================ */
+@layer components {
+  /* ------------------------------------------
+     CARDS
+     ------------------------------------------ */
+  .card {
+    @apply bg-white rounded-xl shadow-card border border-gray-100 p-6;
+  }
+
+  .card-hover {
+    @apply card transition-all duration-200 hover:shadow-card-hover hover:border-gray-200;
+  }
+
+  /* ------------------------------------------
+     INPUTS
+     ------------------------------------------ */
+  .input-base {
+    @apply block w-full rounded-lg border-gray-300 shadow-sm
+           focus:border-primary-500 focus:ring-primary-500
+           text-sm transition-colors duration-200;
+  }
+
+  /* ------------------------------------------
+     BUTTONS - Base
+     ------------------------------------------ */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           font-medium rounded-lg transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Button Variants */
+  .btn-primary {
+    @apply btn bg-primary-600 text-white
+           hover:bg-primary-700 focus:ring-primary-500
+           active:bg-primary-800;
+  }
+
+  .btn-secondary {
+    @apply btn bg-white text-gray-700 border border-gray-300
+           hover:bg-gray-50 focus:ring-primary-500
+           active:bg-gray-100;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-gray-600
+           hover:bg-gray-100 focus:ring-gray-500
+           active:bg-gray-200;
+  }
+
+  .btn-danger {
+    @apply btn bg-status-red-500 text-white
+           hover:bg-status-red-600 focus:ring-status-red-500
+           active:bg-status-red-700;
+  }
+
+  .btn-success {
+    @apply btn bg-status-green-500 text-white
+           hover:bg-status-green-600 focus:ring-status-green-500
+           active:bg-status-green-700;
+  }
+
+  .btn-warning {
+    @apply btn bg-status-yellow-500 text-white
+           hover:bg-status-yellow-600 focus:ring-status-yellow-500
+           active:bg-status-yellow-700;
+  }
+
+  /* Button Outline Variants */
+  .btn-outline-primary {
+    @apply btn bg-transparent text-primary-600 border border-primary-600
+           hover:bg-primary-50 focus:ring-primary-500
+           active:bg-primary-100;
+  }
+
+  .btn-outline-danger {
+    @apply btn bg-transparent text-status-red-600 border border-status-red-600
+           hover:bg-status-red-50 focus:ring-status-red-500
+           active:bg-status-red-100;
+  }
+
+  .btn-outline-success {
+    @apply btn bg-transparent text-status-green-600 border border-status-green-600
+           hover:bg-status-green-50 focus:ring-status-green-500
+           active:bg-status-green-100;
+  }
+
+  /* Button Sizes */
+  .btn-xs {
+    @apply px-2 py-1 text-xs;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+
+  .btn-md {
+    @apply px-4 py-2 text-sm;
+  }
+
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+
+  .btn-xl {
+    @apply px-8 py-4 text-lg;
+  }
+
+  /* Icon Button */
+  .btn-icon {
+    @apply btn p-2;
+  }
+
+  .btn-icon-sm {
+    @apply btn p-1.5;
+  }
+
+  /* ------------------------------------------
+     BADGES - Base
+     ------------------------------------------ */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  /* Status Badges - For Readiness */
+  .badge-status-green {
+    @apply badge bg-status-green-50 text-status-green-700 ring-1 ring-inset ring-status-green-200;
+  }
+
+  .badge-status-yellow {
+    @apply badge bg-status-yellow-50 text-status-yellow-700 ring-1 ring-inset ring-status-yellow-200;
+  }
+
+  .badge-status-red {
+    @apply badge bg-status-red-50 text-status-red-700 ring-1 ring-inset ring-status-red-200;
+  }
+
+  /* Semantic Badges - Aliases */
+  .badge-success {
+    @apply badge-status-green;
+  }
+
+  .badge-warning {
+    @apply badge-status-yellow;
+  }
+
+  .badge-danger {
+    @apply badge-status-red;
+  }
+
+  /* Other Badge Variants */
+  .badge-gray {
+    @apply badge bg-gray-100 text-gray-600 ring-1 ring-inset ring-gray-200;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-50 text-primary-700 ring-1 ring-inset ring-primary-200;
+  }
+
+  /* Legacy badge names (for backwards compatibility) */
+  .badge-green {
+    @apply badge-status-green;
+  }
+
+  .badge-yellow {
+    @apply badge-status-yellow;
+  }
+
+  .badge-red {
+    @apply badge-status-red;
+  }
+
+  /* ------------------------------------------
+     STATUS INDICATORS - Dots
+     ------------------------------------------ */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+
+  .status-dot-green {
+    @apply status-dot bg-status-green-500;
+  }
+
+  .status-dot-yellow {
+    @apply status-dot bg-status-yellow-500;
+  }
+
+  .status-dot-red {
+    @apply status-dot bg-status-red-500;
+  }
+
+  .status-dot-gray {
+    @apply status-dot bg-gray-400;
+  }
+
+  /* With pulse animation */
+  .status-dot-pulse {
+    @apply relative;
+  }
+
+  .status-dot-pulse::before {
+    content: '';
+    @apply absolute inset-0 rounded-full animate-ping opacity-75;
+  }
+
+  .status-dot-pulse.status-dot-green::before {
+    @apply bg-status-green-400;
+  }
+
+  .status-dot-pulse.status-dot-yellow::before {
+    @apply bg-status-yellow-400;
+  }
+
+  .status-dot-pulse.status-dot-red::before {
+    @apply bg-status-red-400;
+  }
+
+  /* ------------------------------------------
+     ALERTS / CALLOUTS
+     ------------------------------------------ */
+  .alert {
+    @apply p-4 rounded-lg border;
+  }
+
+  .alert-success {
+    @apply alert bg-status-green-50 border-status-green-200 text-status-green-800;
+  }
+
+  .alert-warning {
+    @apply alert bg-status-yellow-50 border-status-yellow-200 text-status-yellow-800;
+  }
+
+  .alert-danger {
+    @apply alert bg-status-red-50 border-status-red-200 text-status-red-800;
+  }
+
+  .alert-info {
+    @apply alert bg-primary-50 border-primary-200 text-primary-800;
+  }
+
+  /* ------------------------------------------
+     ATTENDANCE STATUS (Specific)
+     ------------------------------------------ */
+  .attendance-ontime {
+    @apply bg-status-green-50 text-status-green-700 border-status-green-200;
+  }
+
+  .attendance-late {
+    @apply bg-status-yellow-50 text-status-yellow-700 border-status-yellow-200;
+  }
+
+  .attendance-absent {
+    @apply bg-status-red-50 text-status-red-700 border-status-red-200;
+  }
+
+  .attendance-excused {
+    @apply bg-gray-50 text-gray-600 border-gray-200;
+  }
+}
+
+/* ============================================
+   UTILITIES
+   ============================================ */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+
+  .animate-slide-down {
+    animation: slideDown 0.3s ease-out;
+  }
+
+  .animate-bounce-slow {
+    animation: bounceSlow 2s ease-in-out infinite;
+  }
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bounceSlow {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-8px) scale(1.1);
+  }
+}
+
+/* ============================================
+   SCROLLBAR
+   ============================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* ============================================
+   BACKGROUND PATTERNS
+   ============================================ */
+.bg-grid-pattern {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* ============================================
+   PRINT STYLES
+   ============================================ */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm 15mm;
+  }
+
+  .no-print,
+  .print\\:hidden,
+  nav,
+  aside,
+  button,
+  .status-dropdown,
+  input,
+  textarea,
+  [data-print-hide="true"] {
+    display: none !important;
+  }
+
+  html, body {
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-size: 11pt !important;
+  }
+
+  .print-container {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .card,
+  [class*="rounded-xl"],
+  [class*="rounded-2xl"] {
+    box-shadow: none !important;
+    border: 1.5px solid #d1d5db !important;
+    border-radius: 8px !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 12px !important;
+  }
+
+  [class*="CardHeader"] {
+    background-color: #f9fafb !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    padding: 10px 16px !important;
+  }
+
+  [class*="CardTitle"] {
+    font-size: 11pt !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+  }
+
+  [class*="CardContent"] {
+    padding: 12px 16px !important;
+  }
+
+  .print-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 12px !important;
+  }
+
+  .badge,
+  [class*="Badge"] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-size: 9pt !important;
+    padding: 2px 8px !important;
+  }
+
+  * {
+    color: #1f2937 !important;
+  }
+
+  /* Preserve status colors for print */
+  .text-status-red-700,
+  .text-danger-600 {
+    color: #b91c1c !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  .text-status-green-700,
+  .text-success-600 {
+    color: #047857 !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  .text-status-yellow-700,
+  .text-warning-600 {
+    color: #b45309 !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  .bg-status-red-50,
+  .bg-danger-50 {
+    background-color: #fef2f2 !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  .bg-status-green-50,
+  .bg-success-50 {
+    background-color: #ecfdf5 !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  .bg-status-yellow-50,
+  .bg-warning-50 {
+    background-color: #fffbeb !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  .bg-gray-50 {
+    background-color: #f9fafb !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  .ai-summary-card {
+    background: #4f46e5 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    border: none !important;
+  }
+
+  .ai-summary-card * {
+    color: white !important;
+  }
+
+  a[href]:after {
+    content: none !important;
+  }
+
+  .page-break-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .page-break-before {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .print-header {
+    display: block !important;
+    border-bottom: 3px solid #4f46e5;
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+  }
+
+  ::-webkit-scrollbar {
+    display: none;
+  }
+
+  .max-h-\\[500px\\],
+  [class*="max-h-"] {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .overflow-y-auto,
+  .overflow-x-auto,
+  .overflow-auto {
+    overflow: visible !important;
+  }
+
+  .border-b {
+    border-color: #f3f4f6 !important;
+  }
+
+  .text-sm {
+    font-size: 10pt !important;
+  }
+
+  .text-xs {
+    font-size: 9pt !important;
+  }
+
+  .space-y-6 > div:last-child {
+    margin-top: 0 !important;
+  }
+}

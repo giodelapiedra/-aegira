@@ -1,0 +1,52 @@
+{
+  "name": "aegira-backend",
+  "version": "1.0.0",
+  "description": "Aegira Backend API",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
+    "create-admin": "tsx scripts/create-admin.ts",
+    "check-data": "tsx scripts/check-data.ts",
+    "seed": "tsx scripts/seed.ts seed",
+    "seed:clean": "tsx scripts/seed.ts clean",
+    "seed:reset": "tsx scripts/seed.ts reset"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.958.0",
+    "@hono/node-server": "^1.19.7",
+    "@prisma/client": "^6.19.1",
+    "@supabase/supabase-js": "^2.89.0",
+    "busboy": "^1.6.0",
+    "dayjs": "^1.11.19",
+    "dotenv": "^17.2.3",
+    "hono": "^4.11.3",
+    "jose": "^6.1.3",
+    "luxon": "^3.7.2",
+    "openai": "^6.15.0",
+    "pdf-lib": "^1.17.1",
+    "pdf-parse": "^2.4.5",
+    "pino": "^10.1.0",
+    "pino-pretty": "^13.1.3",
+    "prisma": "^6.19.1",
+    "uuid": "^13.0.0",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/busboy": "^1.5.4",
+    "@types/luxon": "^3.7.1",
+    "@types/node": "^25.0.3",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

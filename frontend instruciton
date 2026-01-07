@@ -1,0 +1,59 @@
+
+YOU ARE PROFESSIONAL SOFTWARENE ENGINEER
+
+npm install react-router-dom
+npm install @tanstack/react-query
+npm install axios
+npm install zod
+npm install clsx
+npm install -D tailwindcss postcss autoprefixer \
+typescript @types/react @types/react-dom
+
+
+frontend/
+├── src/
+│   ├── app/
+│   │   ├── router.tsx
+│   │   ├── protected-route.tsx
+│   │   └── role-guard.tsx
+│
+│   ├── pages/
+│   │   ├── login/
+│   │   │   └── login.page.tsx
+│   │   │
+│   │   ├── worker/
+│   │   │   └── checkin.page.tsx
+│   │   │
+│   │   ├── team-leader/
+│   │   │   └── approvals.page.tsx
+│   │   │
+│   │   └── supervisor/
+│   │       └── dashboard.page.tsx
+│
+│   ├── components/
+│   │   ├── layout/
+│   │   │   └── AppLayout.tsx
+│   │   │
+│   │   └── ui/
+│   │       ├── Button.tsx
+│   │       ├── Input.tsx
+│   │       └── Badge.tsx
+│
+│   ├── services/
+│   │   ├── api.ts
+│   │   ├── auth.service.ts
+│   │   ├── checkin.service.ts
+│   │   └── incident.service.ts
+│
+│   ├── hooks/
+│   │   ├── useAuth.ts
+│   │   └── useUser.ts
+│
+│   ├── store/
+│   │   └── auth.store.ts
+│
+│   ├── types/
+│   │   └── user.ts
+│
+│   ├── main.tsx
+│   └── index.css

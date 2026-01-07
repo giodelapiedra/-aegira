@@ -1,0 +1,905 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ===========================================
+// ENUMS
+// ===========================================
+
+enum Role {
+  ADMIN // System-wide control (Level 6)
+  EXECUTIVE // Company owner - full control (Level 5)
+  SUPERVISOR // Can view all personnel and analytics (Level 4)
+  CLINICIAN // Manages rehabilitation programs (Level 4 - parallel)
+  WHS_CONTROL // Manages certifications and safety compliance (Level 4 - parallel)
+  TEAM_LEAD // Can manage their team (Level 3)
+  WORKER // Basic worker access (Level 2)
+  MEMBER // Legacy - will be migrated to WORKER
+}
+
+enum ReadinessStatus {
+  GREEN
+  YELLOW
+  RED
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum IncidentSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ExceptionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AttendanceStatus {
+  GREEN // On-time check-in (within grace period) - Score: 100
+  YELLOW // Late check-in (after grace period) - Score: 75
+  ABSENT // No check-in, no approved exception - Score: 0
+  EXCUSED // Has approved exception - Not counted in computation
+}
+
+enum ExceptionType {
+  SICK_LEAVE
+  PERSONAL_LEAVE
+  MEDICAL_APPOINTMENT
+  FAMILY_EMERGENCY
+  OTHER
+}
+
+enum IncidentType {
+  INJURY
+  ILLNESS
+  MENTAL_HEALTH
+  EQUIPMENT
+  ENVIRONMENTAL
+  OTHER
+}
+
+enum LowScoreReason {
+  PHYSICAL_INJURY
+  ILLNESS_SICKNESS
+  POOR_SLEEP
+  HIGH_STRESS
+  PERSONAL_ISSUES
+  FAMILY_EMERGENCY
+  WORK_RELATED
+  OTHER
+}
+
+enum IncidentActivityType {
+  CREATED // Incident was created
+  STATUS_CHANGED // Status was updated
+  ASSIGNED // Incident was assigned to someone
+  COMMENT // Comment was added
+  SEVERITY_CHANGED // Severity was updated
+  RESOLVED // Incident was resolved
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+// ===========================================
+// COMPANY (Multi-tenant)
+// ===========================================
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique // URL-friendly identifier
+  logo      String?
+  industry  String?
+  size      String? // e.g., "1-10", "11-50", "51-200"
+  address   String?
+  phone     String?
+  website   String?
+  timezone  String   @default("Asia/Manila") // IANA timezone (e.g., "America/New_York", "Europe/London")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users          User[]
+  teams          Team[]
+  checkins       Checkin[]
+  incidents      Incident[]
+  exceptions     Exception[]
+  schedules      Schedule[]
+  rehabilitation Rehabilitation[]
+  pdfTemplates   PDFTemplate[]
+  filledForms    FilledPDFForm[]
+  notifications  Notification[]
+
+  // New feature relations
+  alerts            Alert[]
+  oneOnOnes         OneOnOne[]
+  pulseSurveys      PulseSurvey[]
+  recognitions      Recognition[]
+  wellnessSnapshots WellnessSnapshot[]
+  aiSummaries       AISummary[]
+  dailyAttendance   DailyAttendance[]
+
+  @@map("companies")
+}
+
+// ===========================================
+// USER
+// ===========================================
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  firstName String
+  lastName  String
+  role      Role      @default(WORKER)
+  avatar    String?
+  phone     String?
+  birthDate DateTime? @db.Date
+  gender    Gender?
+  isActive  Boolean   @default(true)
+  companyId String
+  teamId    String?
+  teamJoinedAt DateTime? // When user was assigned to current team (for attendance tracking)
+
+  // Streak tracking
+  currentStreak   Int       @default(0)
+  longestStreak   Int       @default(0)
+  lastCheckinDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  company            Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  team               Team?            @relation("TeamMembers", fields: [teamId], references: [id])
+  leadingTeams       Team[]           @relation("TeamLeader")
+  checkins           Checkin[]
+  incidents          Incident[]       @relation("ReportedIncidents")
+  assignedIncidents  Incident[]       @relation("AssignedIncidents")
+  rtwUploads         Incident[]       @relation("RTWUploader")
+  exceptions         Exception[]
+  reviewedExceptions Exception[]      @relation("ExceptionReviewer")
+  schedules          Schedule[]
+  rehabilitation     Rehabilitation[]
+  pdfTemplates       PDFTemplate[]    @relation("TemplateCreator")
+  filledForms        FilledPDFForm[]  @relation("FormFiller")
+  notifications      Notification[]
+
+  // New feature relations
+  alertsReceived       Alert[]            @relation("AlertRecipient")
+  oneOnOnesAsManager   OneOnOne[]         @relation("OneOnOneManager")
+  oneOnOnesAsMember    OneOnOne[]         @relation("OneOnOneMember")
+  recognitionsSent     Recognition[]      @relation("RecognitionFrom")
+  recognitionsReceived Recognition[]      @relation("RecognitionTo")
+  incidentActivities   IncidentActivity[] @relation("IncidentActivities")
+  aiSummaries          AISummary[]
+  dailyAttendance      DailyAttendance[]
+
+  @@index([companyId])
+  @@index([teamId])
+  @@map("users")
+}
+
+// ===========================================
+// TEAM
+// ===========================================
+
+model Team {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  companyId   String
+  leaderId    String? // Team lead user ID
+  isActive    Boolean @default(true)
+
+  // Schedule fields
+  workDays   String @default("MON,TUE,WED,THU,FRI") // Comma-separated days
+  shiftStart String @default("08:00") // 24-hour format
+  shiftEnd   String @default("17:00") // 24-hour format
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  leader          User?             @relation("TeamLeader", fields: [leaderId], references: [id])
+  members         User[]            @relation("TeamMembers")
+  schedules       Schedule[]
+  incidents       Incident[]
+  aiSummaries     AISummary[]
+  dailyAttendance DailyAttendance[]
+
+  @@index([companyId])
+  @@index([leaderId])
+  @@map("teams")
+}
+
+// ===========================================
+// CHECKIN
+// ===========================================
+
+model Checkin {
+  id              String          @id @default(uuid())
+  userId          String
+  companyId       String
+  mood            Int             @db.SmallInt
+  stress          Int             @db.SmallInt
+  sleep           Int             @db.SmallInt
+  physicalHealth  Int             @db.SmallInt
+  notes           String?
+  readinessStatus ReadinessStatus
+  readinessScore  Float
+  aiAnalysis      Json?
+  createdAt       DateTime        @default(now())
+
+  // Low score reason (required when RED status)
+  lowScoreReason  LowScoreReason?
+  lowScoreDetails String?         // Additional details for "Other" reason
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  exemption Exception? @relation("ExemptionCheckin") // Exemption triggered by this check-in
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([userId, createdAt]) // Composite index for analytics queries
+  @@map("checkins")
+}
+
+// ===========================================
+// DAILY ATTENDANCE (Attendance-based scoring)
+// ===========================================
+
+model DailyAttendance {
+  id        String   @id @default(uuid())
+  userId    String
+  companyId String
+  teamId    String
+  date      DateTime @db.Date
+
+  // Schedule info (snapshot from team at time of record)
+  scheduledStart  String // e.g., "09:00"
+  gracePeriodMins Int    @default(15)
+
+  // Check-in info
+  checkInTime DateTime? // Actual check-in time (null if ABSENT/EXCUSED)
+  minutesLate Int       @default(0) // 0 if on-time, positive if late
+
+  // Attendance scoring
+  status    AttendanceStatus
+  score     Int? // 100=GREEN, 75=YELLOW, 0=ABSENT, null=EXCUSED
+  isCounted Boolean          @default(true) // false for EXCUSED
+
+  // Exception link (if EXCUSED)
+  exceptionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  exception Exception? @relation(fields: [exceptionId], references: [id])
+
+  @@unique([userId, date]) // One attendance record per user per day
+  @@index([companyId])
+  @@index([teamId])
+  @@index([userId])
+  @@index([date])
+  @@index([status])
+  @@map("daily_attendance")
+}
+
+// ===========================================
+// INCIDENT
+// ===========================================
+
+model Incident {
+  id           String           @id @default(uuid())
+  caseNumber   String           @unique // Auto-generated: INC-YYYY-XXXX
+  companyId    String
+  type         IncidentType     @default(OTHER)
+  title        String
+  description  String
+  severity     IncidentSeverity
+  status       IncidentStatus   @default(OPEN)
+  location     String?
+  reportedBy   String
+  assignedTo   String?
+  teamId       String?
+  aiSummary    String?
+  attachments  String[] // File URLs for evidence/documents
+  incidentDate DateTime? // When the incident actually occurred
+  resolvedAt   DateTime?
+
+  // Return to Work Certificate
+  rtwCertificateUrl String? // URL of Return to Work / Fitness for Work certificate
+  rtwCertDate       DateTime? // Date on the RTW certificate
+  rtwUploadedAt     DateTime? // When the RTW cert was uploaded
+  rtwUploadedBy     String? // Who uploaded the RTW cert
+  rtwNotes          String? // Notes about the RTW clearance
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company     Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reporter    User               @relation("ReportedIncidents", fields: [reportedBy], references: [id])
+  assignee    User?              @relation("AssignedIncidents", fields: [assignedTo], references: [id])
+  rtwUploader User?              @relation("RTWUploader", fields: [rtwUploadedBy], references: [id])
+  team        Team?              @relation(fields: [teamId], references: [id])
+  activities  IncidentActivity[]
+  exception   Exception?         @relation("IncidentException") // Auto-created exception for this incident
+  filledForms FilledPDFForm[]    @relation("IncidentFilledForms")
+
+  @@index([companyId])
+  @@index([status])
+  @@index([caseNumber])
+  @@index([reportedBy])
+  @@index([assignedTo])
+  @@index([severity])
+  @@index([createdAt])
+  @@map("incidents")
+}
+
+// ===========================================
+// INCIDENT ACTIVITY (Timeline/History)
+// ===========================================
+
+model IncidentActivity {
+  id         String               @id @default(uuid())
+  incidentId String
+  userId     String
+  type       IncidentActivityType
+  oldValue   String? // Previous value (for status/severity changes)
+  newValue   String? // New value
+  comment    String? // Comment text if type is COMMENT
+  createdAt  DateTime             @default(now())
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  user     User     @relation("IncidentActivities", fields: [userId], references: [id])
+
+  @@index([incidentId])
+  @@index([userId])
+  @@map("incident_activities")
+}
+
+// ===========================================
+// EXCEPTION
+// ===========================================
+
+model Exception {
+  id               String          @id @default(uuid())
+  userId           String
+  companyId        String
+  type             ExceptionType
+  reason           String
+  startDate        DateTime?       // Nullable for exemptions (TL sets on approval)
+  endDate          DateTime?       // Nullable for exemptions (TL sets on approval)
+  status           ExceptionStatus @default(PENDING)
+  reviewedById     String?
+  reviewNote       String?
+  approvedBy       String?
+  approvedAt       DateTime?
+  rejectedBy       String?
+  rejectedAt       DateTime?
+  notes            String?
+  attachments      String[]
+  linkedIncidentId String?         @unique // Link to incident if auto-created from incident
+
+  // Exemption fields (triggered by CRITICAL check-in)
+  isExemption            Boolean   @default(false) // true if triggered by CRITICAL check-in
+  triggeredByCheckinId   String?   @unique // Link to the CRITICAL check-in that triggered this
+  scoreAtRequest         Float?    // Readiness score when exemption was requested
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reviewedBy      User?             @relation("ExceptionReviewer", fields: [reviewedById], references: [id])
+  linkedIncident  Incident?         @relation("IncidentException", fields: [linkedIncidentId], references: [id])
+  triggeredByCheckin Checkin?       @relation("ExemptionCheckin", fields: [triggeredByCheckinId], references: [id])
+  dailyAttendance DailyAttendance[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([linkedIncidentId])
+  @@index([isExemption])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([reviewedById])
+  @@map("exceptions")
+}
+
+// ===========================================
+// SCHEDULE
+// ===========================================
+
+model Schedule {
+  id        String   @id @default(uuid())
+  userId    String
+  companyId String
+  teamId    String?
+  title     String
+  startTime DateTime
+  endTime   DateTime
+  isAllDay  Boolean  @default(false)
+  recurring String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  team    Team?   @relation(fields: [teamId], references: [id])
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([startTime])
+  @@map("schedules")
+}
+
+// ===========================================
+// REHABILITATION
+// ===========================================
+
+model Rehabilitation {
+  id          String    @id @default(uuid())
+  userId      String
+  companyId   String
+  condition   String
+  startDate   DateTime
+  endDate     DateTime?
+  progress    Int       @default(0) @db.SmallInt
+  status      String    @default("active")
+  notes       String?
+  attachments String[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([status])
+  @@map("rehabilitation")
+}
+
+// ===========================================
+// PDF TEMPLATE (For fillable PDF forms)
+// ===========================================
+
+model PDFTemplate {
+  id          String  @id @default(uuid())
+  companyId   String
+  name        String // "Certificate of Capacity", "Return to Work Form"
+  description String?
+  category    String? // "RTW", "Medical", "Safety"
+
+  // PDF file info
+  fileUrl  String // URL to the original PDF template
+  fileName String // Original filename
+  fileSize Int? // File size in bytes
+
+  // Detected form fields (JSON array)
+  // [{name: "employee_name", type: "text", page: 1, required: true}, ...]
+  fields Json @default("[]")
+
+  // Metadata
+  pageCount   Int      @default(1)
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy   User            @relation("TemplateCreator", fields: [createdById], references: [id])
+  filledForms FilledPDFForm[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([category])
+  @@index([createdById])
+  @@map("pdf_templates")
+}
+
+// ===========================================
+// FILLED PDF FORM (Generated from template)
+// ===========================================
+
+model FilledPDFForm {
+  id         String  @id @default(uuid())
+  templateId String
+  companyId  String
+  incidentId String? // Link to incident if RTW form
+
+  // Filled values (JSON object matching template fields)
+  // {employee_name: "John Doe", date: "2024-01-15", ...}
+  values Json @default("{}")
+
+  // Generated PDF
+  generatedUrl String? // URL to the filled PDF
+
+  // Tracking
+  filledById String
+  filledAt   DateTime @default(now())
+
+  template PDFTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  company  Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  incident Incident?   @relation("IncidentFilledForms", fields: [incidentId], references: [id])
+  filledBy User        @relation("FormFiller", fields: [filledById], references: [id])
+
+  @@index([templateId])
+  @@index([companyId])
+  @@index([incidentId])
+  @@index([filledById])
+  @@map("filled_pdf_forms")
+}
+
+// ===========================================
+// NOTIFICATION
+// ===========================================
+
+model Notification {
+  id         String   @id @default(uuid())
+  userId     String
+  companyId  String
+  title      String
+  message    String
+  type       String
+  isRead     Boolean  @default(false)
+  isArchived Boolean  @default(false)
+  data       Json?
+  createdAt  DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Composite index for main query: filter by user + status, order by date
+  @@index([userId, companyId, isArchived, isRead, createdAt(sort: Desc)])
+  // Index for unread count query
+  @@index([userId, companyId, isRead, isArchived])
+  // Keep companyId for admin queries
+  @@index([companyId])
+  @@map("notifications")
+}
+
+// ===========================================
+// ALERT (Burnout, Workload, 1-on-1 Suggestions)
+// ===========================================
+
+enum AlertType {
+  BURNOUT_WARNING // Member showing burnout signs
+  DECLINING_TREND // Declining wellness over time
+  WORKLOAD_HIGH // Team consistently stressed
+  ONE_ON_ONE_SUGGESTED // Suggest 1-on-1 meeting
+  LOW_CHECKIN_RATE // Team not checking in
+  CRITICAL_STATUS // Member in RED status
+}
+
+enum AlertPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AlertStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+  DISMISSED
+}
+
+model Alert {
+  id             String        @id @default(uuid())
+  companyId      String
+  type           AlertType
+  priority       AlertPriority @default(MEDIUM)
+  status         AlertStatus   @default(ACTIVE)
+  title          String
+  description    String
+  targetUserId   String? // The member this alert is about
+  targetTeamId   String? // The team this alert is about
+  recipientId    String // Who should see this alert (team lead, supervisor)
+  data           Json? // Additional data (trends, scores, etc.)
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  recipient User    @relation("AlertRecipient", fields: [recipientId], references: [id])
+
+  @@index([companyId])
+  @@index([recipientId])
+  @@index([status])
+  @@index([type])
+  @@index([targetUserId])
+  @@index([targetTeamId])
+  @@index([priority])
+  @@map("alerts")
+}
+
+// ===========================================
+// ONE-ON-ONE MEETING TRACKING
+// ===========================================
+
+enum OneOnOneStatus {
+  SUGGESTED
+  SCHEDULED
+  COMPLETED
+  SKIPPED
+}
+
+model OneOnOne {
+  id            String         @id @default(uuid())
+  companyId     String
+  managerId     String // Team lead or supervisor
+  memberId      String // The team member
+  status        OneOnOneStatus @default(SUGGESTED)
+  reason        String? // Why this was suggested
+  talkingPoints Json? // Suggested topics based on data
+  scheduledAt   DateTime?
+  completedAt   DateTime?
+  notes         String? // Manager's notes after meeting
+  outcome       String? // What was decided/action items
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  manager User    @relation("OneOnOneManager", fields: [managerId], references: [id])
+  member  User    @relation("OneOnOneMember", fields: [memberId], references: [id])
+
+  @@index([companyId])
+  @@index([managerId])
+  @@index([memberId])
+  @@index([status])
+  @@map("one_on_ones")
+}
+
+// ===========================================
+// PULSE SURVEY (Anonymous)
+// ===========================================
+
+enum PulseSurveyStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+model PulseSurvey {
+  id           String            @id @default(uuid())
+  companyId    String
+  title        String
+  question     String // Single question for simplicity
+  type         String            @default("rating") // rating, choice, text
+  options      Json? // For choice type: ["Option A", "Option B"]
+  status       PulseSurveyStatus @default(DRAFT)
+  targetTeamId String? // null = company-wide
+  createdBy    String
+  startsAt     DateTime?
+  endsAt       DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  company   Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  responses PulseSurveyResponse[]
+
+  @@index([companyId])
+  @@index([status])
+  @@map("pulse_surveys")
+}
+
+model PulseSurveyResponse {
+  id        String   @id @default(uuid())
+  surveyId  String
+  teamId    String? // For aggregation, but no userId for anonymity
+  rating    Int? // 1-5 for rating type
+  choice    String? // Selected option for choice type
+  text      String? // Free text response
+  createdAt DateTime @default(now())
+
+  survey PulseSurvey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+
+  @@index([surveyId])
+  @@index([teamId])
+  @@map("pulse_survey_responses")
+}
+
+// ===========================================
+// PEER RECOGNITION
+// ===========================================
+
+enum RecognitionType {
+  KUDOS
+  THANK_YOU
+  GREAT_WORK
+  TEAM_PLAYER
+  HELPFUL
+}
+
+model Recognition {
+  id         String          @id @default(uuid())
+  companyId  String
+  fromUserId String
+  toUserId   String
+  type       RecognitionType
+  message    String?
+  isPublic   Boolean         @default(true) // Show on team feed
+  createdAt  DateTime        @default(now())
+
+  company  Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fromUser User    @relation("RecognitionFrom", fields: [fromUserId], references: [id])
+  toUser   User    @relation("RecognitionTo", fields: [toUserId], references: [id])
+
+  @@index([companyId])
+  @@index([toUserId])
+  @@index([fromUserId])
+  @@index([createdAt])
+  @@map("recognitions")
+}
+
+// ===========================================
+// SYSTEM LOG (Activity tracking for Admin)
+// ===========================================
+
+enum SystemLogAction {
+  // Auth
+  USER_LOGIN
+  USER_LOGOUT
+  // Users
+  USER_CREATED
+  USER_UPDATED
+  USER_DELETED
+  USER_ROLE_CHANGED
+  USER_DEACTIVATED
+  USER_REACTIVATED
+  // Teams
+  TEAM_CREATED
+  TEAM_UPDATED
+  TEAM_DELETED
+  TEAM_MEMBER_ADDED
+  TEAM_MEMBER_REMOVED
+  // Incidents
+  INCIDENT_CREATED
+  INCIDENT_UPDATED
+  INCIDENT_STATUS_CHANGED
+  INCIDENT_ASSIGNED
+  INCIDENT_CERT_LINKED // Keep for existing data
+  // Exceptions
+  EXCEPTION_CREATED
+  EXCEPTION_APPROVED
+  EXCEPTION_REJECTED
+  // Check-ins
+  CHECKIN_SUBMITTED
+  // Settings
+  SETTINGS_UPDATED
+  // Certificates (kept for existing data)
+  CERTIFICATE_UPLOADED
+  CERTIFICATE_VERIFIED
+  CERTIFICATE_REJECTED
+  CERTIFICATE_REVOKED
+  CERTIFICATE_EXPIRED
+  CERTIFICATE_TYPE_CREATED
+  CERTIFICATE_TYPE_UPDATED
+  // AI Insights
+  AI_SUMMARY_GENERATED
+}
+
+model SystemLog {
+  id          String          @id @default(uuid())
+  companyId   String
+  userId      String? // Who performed the action (null for system actions)
+  action      SystemLogAction
+  entityType  String // user, team, incident, exception, checkin, etc.
+  entityId    String? // ID of the affected entity
+  description String // Human-readable description
+  metadata    Json? // Additional data (old values, new values, etc.)
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime        @default(now())
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("system_logs")
+}
+
+// ===========================================
+// AI SUMMARY (Saved AI-generated analytics summaries)
+// ===========================================
+
+enum AISummaryStatus {
+  HEALTHY
+  ATTENTION
+  CRITICAL
+}
+
+model AISummary {
+  id            String @id @default(uuid())
+  companyId     String
+  teamId        String // Which team this summary is for
+  generatedById String // User who generated it
+
+  // Relations
+  company     Company @relation(fields: [companyId], references: [id])
+  team        Team    @relation(fields: [teamId], references: [id])
+  generatedBy User    @relation(fields: [generatedById], references: [id])
+
+  // Summary content
+  summary         String // Main summary text
+  highlights      Json // Array of positive observations
+  concerns        Json // Array of concerns
+  recommendations Json // Array of recommendations
+  overallStatus   AISummaryStatus
+
+  // Period this summary covers
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // Aggregate data used (for reference)
+  aggregateData Json // The stats snapshot used to generate
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([teamId])
+  @@index([generatedById])
+  @@index([createdAt])
+  @@map("ai_summaries")
+}
+
+// ===========================================
+// WELLNESS SNAPSHOT (Daily aggregates for heatmap)
+// ===========================================
+
+model WellnessSnapshot {
+  id             String   @id @default(uuid())
+  companyId      String
+  teamId         String? // null = company-wide
+  date           DateTime @db.Date
+  totalMembers   Int
+  checkedInCount Int
+  greenCount     Int
+  yellowCount    Int
+  redCount       Int
+  avgMood        Float?
+  avgStress      Float?
+  avgSleep       Float?
+  avgPhysical    Float?
+  avgReadiness   Float?
+  createdAt      DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, teamId, date])
+  @@index([companyId])
+  @@index([date])
+  @@map("wellness_snapshots")
+}
