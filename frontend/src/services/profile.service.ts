@@ -14,6 +14,11 @@ export interface ChangePasswordData {
   newPassword: string;
 }
 
+export interface AvatarUploadResponse {
+  success: boolean;
+  avatar: string;
+}
+
 export const profileService = {
   async getProfile(): Promise<User> {
     const response = await api.get('/users/me');
@@ -27,6 +32,22 @@ export const profileService = {
 
   async changePassword(data: ChangePasswordData): Promise<{ success: boolean; message: string }> {
     const response = await api.patch('/users/me/password', data);
+    return response.data;
+  },
+
+  async uploadAvatar(file: File): Promise<AvatarUploadResponse> {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    const response = await api.post('/users/me/avatar', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  async removeAvatar(): Promise<{ success: boolean }> {
+    const response = await api.delete('/users/me/avatar');
     return response.data;
   },
 };

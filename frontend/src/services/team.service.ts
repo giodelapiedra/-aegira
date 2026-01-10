@@ -93,6 +93,8 @@ export interface TeamAnalytics {
     todayAvgReadiness: number;  // Today's average readiness
     compliance: number;         // Period compliance (used for grade)
     todayCompliance: number;    // Today's compliance
+    onboardingCount?: number;   // Members with < 3 check-in days (excluded from grade)
+    includedMemberCount?: number; // Members included in grade calculation
   } | null;
   complianceDetails: {
     checkedIn: number;
@@ -225,8 +227,8 @@ export interface UpdateTeamData {
 }
 
 export const teamService = {
-  async getAll(): Promise<{ data: TeamWithStats[] }> {
-    const response = await api.get<{ data: TeamWithStats[] }>('/teams');
+  async getAll(params?: { forTransfer?: boolean }): Promise<{ data: TeamWithStats[] }> {
+    const response = await api.get<{ data: TeamWithStats[] }>('/teams', { params });
     return response.data;
   },
 

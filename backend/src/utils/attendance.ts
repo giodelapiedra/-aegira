@@ -13,6 +13,7 @@ import {
   getTimeInTimezone,
   getDayOfWeekInTimezone,
   getDateStringInTimezone,
+  getStartOfNextDay,
   DEFAULT_TIMEZONE,
   DAY_NAMES,
 } from './date-helpers.js';
@@ -40,6 +41,9 @@ export interface PerformanceScore {
     yellow: number;
     absent: number;
     excused: number;
+    absenceExcused: number;    // Absence justified and TL excused
+    absenceUnexcused: number;  // Absence not excused (0 points)
+    absencePending: number;    // Absence pending justification/review (0 points until resolved)
   };
 }
 
@@ -51,6 +55,12 @@ export interface DailyAttendanceRecord {
   checkInTime?: Date | null;
   minutesLate?: number;
   exceptionType?: string | null;
+  absenceInfo?: {
+    status: string;
+    reasonCategory?: string | null;
+    justifiedAt?: Date | null;
+    reviewedAt?: Date | null;
+  } | null;
 }
 
 // ===========================================
@@ -151,7 +161,15 @@ export async function calculatePerformanceScore(
       totalDays: 0,
       countedDays: 0,
       workDays: 0,
-      breakdown: { green: 0, yellow: 0, absent: 0, excused: 0 },
+      breakdown: {
+        green: 0,
+        yellow: 0,
+        absent: 0,
+        excused: 0,
+        absenceExcused: 0,
+        absenceUnexcused: 0,
+        absencePending: 0,
+      },
     };
   }
 
@@ -160,16 +178,19 @@ export async function calculatePerformanceScore(
 
   // Determine effective start date using priority:
   // 1. First check-in date (most accurate - worker actually started working)
-  // 2. teamJoinedAt (fallback if no check-ins yet)
-  // 3. createdAt (last resort)
+  // 2. NEXT DAY after teamJoinedAt (check-in requirement starts day after joining)
+  // 3. NEXT DAY after createdAt (last resort)
   let baselineDate: Date;
 
   if (firstCheckin) {
+    // If they already checked in, use that date (they were active)
     baselineDate = new Date(firstCheckin.createdAt);
   } else if (user.teamJoinedAt) {
-    baselineDate = new Date(user.teamJoinedAt);
+    // No check-ins yet - requirement starts NEXT DAY after joining
+    baselineDate = getStartOfNextDay(new Date(user.teamJoinedAt), timezone);
   } else {
-    baselineDate = new Date(user.createdAt);
+    // Fallback - requirement starts NEXT DAY after account creation
+    baselineDate = getStartOfNextDay(new Date(user.createdAt), timezone);
   }
 
   // Get baseline date string in company timezone for comparison
@@ -177,8 +198,8 @@ export async function calculatePerformanceScore(
   const startDateStr = getDateStringInTimezone(startDate, timezone);
   const effectiveStartDate = startDateStr < baselineDateStr ? baselineDate : startDate;
 
-  // Parallel query: Get attendance records AND approved exceptions
-  const [attendanceRecords, approvedExceptions] = await Promise.all([
+  // Parallel query: Get attendance records, approved exceptions, holidays, AND absences
+  const [attendanceRecords, approvedExceptions, holidays, absences] = await Promise.all([
     prisma.dailyAttendance.findMany({
       where: {
         userId,
@@ -193,13 +214,36 @@ export async function calculatePerformanceScore(
         endDate: { gte: startDate },
       },
     }),
+    prisma.holiday.findMany({
+      where: {
+        companyId: user.companyId,
+        date: { gte: effectiveStartDate, lte: endDate },
+      },
+      select: { date: true },
+    }),
+    prisma.absence.findMany({
+      where: {
+        userId,
+        absenceDate: { gte: effectiveStartDate, lte: endDate },
+      },
+    }),
   ]);
+
+  // Build holiday set for quick lookup
+  const holidayDates = new Set(holidays.map(h => getDateStringInTimezone(h.date, timezone)));
 
   // Create a map for quick lookup by date (using company timezone)
   const attendanceMap = new Map<string, typeof attendanceRecords[0]>();
   for (const record of attendanceRecords) {
     const dateKey = getDateStringInTimezone(record.date, timezone);
     attendanceMap.set(dateKey, record);
+  }
+
+  // Build absence map for quick lookup by date
+  const absenceMap = new Map<string, typeof absences[0]>();
+  for (const absence of absences) {
+    const dateKey = getDateStringInTimezone(absence.absenceDate, timezone);
+    absenceMap.set(dateKey, absence);
   }
 
   // Helper to check if a date is covered by an approved exception
@@ -220,7 +264,15 @@ export async function calculatePerformanceScore(
   };
 
   // Iterate through all days in the period (starting from effective start date)
-  const breakdown = { green: 0, yellow: 0, absent: 0, excused: 0 };
+  const breakdown = {
+    green: 0,
+    yellow: 0,
+    absent: 0,
+    excused: 0,
+    absenceExcused: 0,
+    absenceUnexcused: 0,
+    absencePending: 0,
+  };
   let totalScore = 0;
   let countedDays = 0;
   let workDaysCount = 0;
@@ -237,8 +289,8 @@ export async function calculatePerformanceScore(
     const dayName = DAY_NAMES[dayOfWeek];
     const dateKey = current.toFormat('yyyy-MM-dd');
 
-    // Only process work days for this team
-    if (teamWorkDays.includes(dayName)) {
+    // Only process work days for this team AND not holidays
+    if (teamWorkDays.includes(dayName) && !holidayDates.has(dateKey)) {
       workDaysCount++;
       const record = attendanceMap.get(dateKey);
 
@@ -270,13 +322,40 @@ export async function calculatePerformanceScore(
         breakdown.excused++;
         // Not counted
       } else {
-        // No record and no exception = ABSENT (only for past days in company timezone)
-        if (dateKey < todayStr) {
-          breakdown.absent++;
-          totalScore += ATTENDANCE_SCORES.ABSENT;
-          countedDays++;
+        // Check for absence record
+        const absence = absenceMap.get(dateKey);
+
+        if (absence) {
+          // Has absence record - check status
+          switch (absence.status) {
+            case 'EXCUSED':
+              // Absence excused by TL - no penalty, not counted
+              breakdown.absenceExcused++;
+              // Not counted in score
+              break;
+            case 'UNEXCUSED':
+              // Absence not excused - 0 points, counted
+              breakdown.absenceUnexcused++;
+              totalScore += 0;
+              countedDays++;
+              break;
+            case 'PENDING_JUSTIFICATION':
+            default:
+              // Pending justification or review - 0 points until resolved
+              breakdown.absencePending++;
+              totalScore += 0;
+              countedDays++;
+              break;
+          }
+        } else {
+          // No record and no exception and no absence = ABSENT (only for past days in company timezone)
+          if (dateKey < todayStr) {
+            breakdown.absent++;
+            totalScore += ATTENDANCE_SCORES.ABSENT;
+            countedDays++;
+          }
+          // Future days are not counted as absent yet
         }
-        // Future days are not counted as absent yet
       }
     }
 
@@ -332,16 +411,19 @@ export async function getAttendanceHistory(
 
   // Determine effective start date using priority:
   // 1. First check-in date (most accurate - worker actually started working)
-  // 2. teamJoinedAt (fallback if no check-ins yet)
-  // 3. createdAt (last resort)
+  // 2. NEXT DAY after teamJoinedAt (check-in requirement starts day after joining)
+  // 3. NEXT DAY after createdAt (last resort)
   let baselineDate: Date;
 
   if (firstCheckin) {
+    // If they already checked in, use that date (they were active)
     baselineDate = new Date(firstCheckin.createdAt);
   } else if (user.teamJoinedAt) {
-    baselineDate = new Date(user.teamJoinedAt);
+    // No check-ins yet - requirement starts NEXT DAY after joining
+    baselineDate = getStartOfNextDay(new Date(user.teamJoinedAt), timezone);
   } else {
-    baselineDate = new Date(user.createdAt);
+    // Fallback - requirement starts NEXT DAY after account creation
+    baselineDate = getStartOfNextDay(new Date(user.createdAt), timezone);
   }
 
   // Get baseline date string in company timezone for comparison
@@ -349,8 +431,8 @@ export async function getAttendanceHistory(
   const startDateStr = getDateStringInTimezone(startDate, timezone);
   const effectiveStartDate = startDateStr < baselineDateStr ? baselineDate : startDate;
 
-  // Parallel query: Get attendance records AND approved exceptions
-  const [attendanceRecords, approvedExceptions] = await Promise.all([
+  // Parallel query: Get attendance records, approved exceptions, holidays, AND absences
+  const [attendanceRecords, approvedExceptions, holidays, absencesHistory] = await Promise.all([
     prisma.dailyAttendance.findMany({
       where: {
         userId,
@@ -369,13 +451,36 @@ export async function getAttendanceHistory(
         endDate: { gte: startDate },
       },
     }),
+    prisma.holiday.findMany({
+      where: {
+        companyId: user.companyId,
+        date: { gte: effectiveStartDate, lte: endDate },
+      },
+      select: { date: true },
+    }),
+    prisma.absence.findMany({
+      where: {
+        userId,
+        absenceDate: { gte: effectiveStartDate, lte: endDate },
+      },
+    }),
   ]);
+
+  // Build holiday set for quick lookup
+  const holidayDates = new Set(holidays.map(h => getDateStringInTimezone(h.date, timezone)));
 
   // Create a map for quick lookup by date (using company timezone)
   const attendanceMap = new Map<string, typeof attendanceRecords[0]>();
   for (const record of attendanceRecords) {
     const dateKey = getDateStringInTimezone(record.date, timezone);
     attendanceMap.set(dateKey, record);
+  }
+
+  // Build absence map for quick lookup by date
+  const absenceHistoryMap = new Map<string, typeof absencesHistory[0]>();
+  for (const absence of absencesHistory) {
+    const dateKey = getDateStringInTimezone(absence.absenceDate, timezone);
+    absenceHistoryMap.set(dateKey, absence);
   }
 
   // Helper to get exception type for a date (using date string comparison)
@@ -409,7 +514,8 @@ export async function getAttendanceHistory(
     const dayName = DAY_NAMES[dayOfWeek];
     const dateKey = current.toFormat('yyyy-MM-dd');
 
-    if (teamWorkDays.includes(dayName)) {
+    // Only process work days that are NOT holidays
+    if (teamWorkDays.includes(dayName) && !holidayDates.has(dateKey)) {
       const record = attendanceMap.get(dateKey);
 
       if (record) {
@@ -434,16 +540,49 @@ export async function getAttendanceHistory(
             isCounted: false,
             exceptionType: exception.type,
           });
-        } else if (dateKey < todayStr) {
-          // Past work day with no check-in and no exception = ABSENT
-          records.push({
-            date: dateKey,
-            status: 'ABSENT',
-            score: 0,
-            isCounted: true,
-          });
+        } else {
+          // Check for absence record
+          const absence = absenceHistoryMap.get(dateKey);
+
+          if (absence) {
+            // Has absence record - include absence info
+            const absenceInfo = {
+              status: absence.status,
+              reasonCategory: absence.reasonCategory,
+              justifiedAt: absence.justifiedAt,
+              reviewedAt: absence.reviewedAt,
+            };
+
+            if (absence.status === 'EXCUSED') {
+              // Absence excused - no penalty
+              records.push({
+                date: dateKey,
+                status: 'EXCUSED',
+                score: null,
+                isCounted: false,
+                absenceInfo,
+              });
+            } else {
+              // Pending or unexcused - 0 points
+              records.push({
+                date: dateKey,
+                status: 'ABSENT',
+                score: 0,
+                isCounted: true,
+                absenceInfo,
+              });
+            }
+          } else if (dateKey < todayStr) {
+            // Past work day with no check-in, no exception, and no absence = ABSENT
+            records.push({
+              date: dateKey,
+              status: 'ABSENT',
+              score: 0,
+              isCounted: true,
+            });
+          }
+          // Skip future days
         }
-        // Skip future days
       }
     }
 

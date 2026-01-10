@@ -190,6 +190,18 @@ dailyMonitoringRoutes.get('/', async (c) => {
   const { start: todayStart, end: todayEnd } = getTodayRange(timezone);
   const { start: sevenDaysAgo } = getLastNDaysRange(7, timezone);
 
+  // Check if today is a company holiday
+  const todayHoliday = await prisma.holiday.findFirst({
+    where: {
+      companyId,
+      date: {
+        gte: todayStart,
+        lt: todayEnd,
+      },
+    },
+    select: { name: true },
+  });
+
   // Fetch all data in parallel
   const [
     todayCheckins,
@@ -374,13 +386,14 @@ dailyMonitoringRoutes.get('/', async (c) => {
   const activeMembers = memberIds.length - onLeaveUserIds.size;
 
   // Not checked in = active members who haven't checked in (exclude those on leave)
-  const notCheckedInCount = memberIds.filter(
+  // If today is a holiday, nobody is required to check in
+  const notCheckedInCount = todayHoliday ? 0 : memberIds.filter(
     id => !checkedInUserIds.has(id) && !onLeaveUserIds.has(id)
   ).length;
 
   const stats = {
     totalMembers: memberIds.length,
-    activeMembers,
+    activeMembers: todayHoliday ? 0 : activeMembers, // No active members on holiday
     onLeave: onLeaveUserIds.size,
     checkedIn: checkedInUserIds.size,
     notCheckedIn: notCheckedInCount,
@@ -391,6 +404,8 @@ dailyMonitoringRoutes.get('/', async (c) => {
     activeExemptions: activeExemptions.length,
     suddenChanges: suddenChanges.length,
     criticalChanges: suddenChanges.filter(c => c.severity === 'CRITICAL').length,
+    isHoliday: !!todayHoliday,
+    holidayName: todayHoliday?.name || null,
   };
 
   // Format today's check-ins with additional data
@@ -422,22 +437,27 @@ dailyMonitoringRoutes.get('/', async (c) => {
   });
 
   // Get members who haven't checked in (exclude those on leave)
-  const notCheckedInMemberIds = memberIds.filter(
-    id => !checkedInUserIds.has(id) && !onLeaveUserIds.has(id)
-  );
-  const notCheckedInMembers = await prisma.user.findMany({
-    where: {
-      id: { in: notCheckedInMemberIds },
-      isActive: true,
-    },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      avatar: true,
-    },
-  });
+  // On holidays, no one is considered "not checked in"
+  let notCheckedInMembers: { id: string; firstName: string; lastName: string; email: string; avatar: string | null }[] = [];
+
+  if (!todayHoliday) {
+    const notCheckedInMemberIds = memberIds.filter(
+      id => !checkedInUserIds.has(id) && !onLeaveUserIds.has(id)
+    );
+    notCheckedInMembers = await prisma.user.findMany({
+      where: {
+        id: { in: notCheckedInMemberIds },
+        isActive: true,
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        avatar: true,
+      },
+    });
+  }
 
   return c.json({
     team: {
@@ -501,9 +521,11 @@ dailyMonitoringRoutes.get('/sudden-changes', async (c) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
+      role: true,
       teamId: true,
       team: {
         select: {
+          id: true,
           members: {
             where: { isActive: true },
             select: { id: true },
@@ -513,11 +535,37 @@ dailyMonitoringRoutes.get('/sudden-changes', async (c) => {
     },
   });
 
-  if (!user?.team) {
+  if (!user) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+
+  // Determine team based on role
+  let team;
+  const isTeamLead = user.role?.toUpperCase() === 'TEAM_LEAD';
+
+  if (isTeamLead) {
+    // For TEAM_LEAD, use the team they lead (not the team they're a member of)
+    team = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: {
+        id: true,
+        members: {
+          where: { isActive: true },
+          select: { id: true },
+        },
+      },
+    });
+
+    if (!team) {
+      return c.json({ error: 'You are not assigned as a team leader' }, 403);
+    }
+  } else if (user.team) {
+    team = user.team;
+  } else {
     return c.json({ error: 'Team not found' }, 400);
   }
 
-  const memberIds = user.team.members.map(m => m.id);
+  const memberIds = team.members.map(m => m.id);
 
   // Get company timezone and date ranges (timezone-aware)
   const timezone = await getCompanyTimezone(companyId);
@@ -620,7 +668,41 @@ dailyMonitoringRoutes.get('/sudden-changes', async (c) => {
 dailyMonitoringRoutes.get('/member/:memberId', async (c) => {
   const memberId = c.req.param('memberId');
   const companyId = c.get('companyId');
+  const currentUserId = c.get('userId');
   const days = parseInt(c.req.query('days') || '30');
+
+  // Get current user for role check
+  const currentUser = await prisma.user.findUnique({
+    where: { id: currentUserId },
+    select: { role: true },
+  });
+
+  if (!currentUser) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only view members of their own team
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: currentUserId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam) {
+      return c.json({ error: 'You are not assigned as a team leader' }, 403);
+    }
+
+    // Check if member belongs to the team leader's team
+    const memberTeam = await prisma.user.findFirst({
+      where: { id: memberId, teamId: leaderTeam.id, isActive: true },
+      select: { id: true },
+    });
+
+    if (!memberTeam) {
+      return c.json({ error: 'You can only view members of your own team' }, 403);
+    }
+  }
 
   // Get company timezone and date range (timezone-aware)
   const timezone = await getCompanyTimezone(companyId);

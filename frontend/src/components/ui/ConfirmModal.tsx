@@ -1,9 +1,9 @@
-import { Trash2, UserMinus, LogOut, X, HelpCircle } from 'lucide-react';
+import { Trash2, UserMinus, LogOut, X, HelpCircle, CheckCircle } from 'lucide-react';
 import { Button } from './Button';
 import { cn } from '../../lib/utils';
 
-export type ConfirmModalType = 'danger' | 'warning' | 'info';
-export type ConfirmModalAction = 'delete' | 'remove' | 'logout' | 'custom';
+export type ConfirmModalType = 'danger' | 'warning' | 'info' | 'success';
+export type ConfirmModalAction = 'delete' | 'remove' | 'logout' | 'approve' | 'custom';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -34,12 +34,18 @@ const typeStyles: Record<ConfirmModalType, { bg: string; iconBg: string; iconCol
     iconBg: 'bg-primary-100',
     iconColor: 'text-primary-600',
   },
+  success: {
+    bg: 'bg-success-100',
+    iconBg: 'bg-success-100',
+    iconColor: 'text-success-600',
+  },
 };
 
 const actionIcons: Record<ConfirmModalAction, typeof Trash2> = {
   delete: Trash2,
   remove: UserMinus,
   logout: LogOut,
+  approve: CheckCircle,
   custom: HelpCircle,
 };
 
@@ -110,7 +116,7 @@ export function ConfirmModal({
             {cancelText}
           </Button>
           <Button
-            variant={type === 'danger' ? 'danger' : type === 'warning' ? 'primary' : 'primary'}
+            variant={type === 'danger' ? 'danger' : type === 'success' ? 'success' : 'primary'}
             className="flex-1"
             onClick={handleConfirm}
             isLoading={isLoading}

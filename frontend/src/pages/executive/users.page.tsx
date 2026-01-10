@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { DataTable, type Column } from '../../components/ui/DataTable';
+import { Avatar } from '../../components/ui/Avatar';
+import { useToast } from '../../components/ui/Toast';
 import { cn } from '../../lib/utils';
 import api from '../../services/api';
 import { useUser } from '../../hooks/useUser';
@@ -50,6 +52,7 @@ export function UsersPage() {
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
   const queryClient = useQueryClient();
   const { isExecutive } = useUser();
+  const toast = useToast();
   const limit = 15;
 
   const { data, isLoading } = useQuery({
@@ -72,6 +75,10 @@ export function UsersPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setShowRoleModal(false);
       setSelectedUser(null);
+      toast.success('Role Updated', 'User role has been changed.');
+    },
+    onError: () => {
+      toast.error('Update Failed', 'Failed to update user role.');
     },
   });
 
@@ -81,6 +88,10 @@ export function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User Deactivated', 'User has been deactivated.');
+    },
+    onError: () => {
+      toast.error('Action Failed', 'Failed to deactivate user.');
     },
   });
 
@@ -90,6 +101,10 @@ export function UsersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User Reactivated', 'User has been reactivated.');
+    },
+    onError: () => {
+      toast.error('Action Failed', 'Failed to reactivate user.');
     },
   });
 
@@ -103,11 +118,12 @@ export function UsersPage() {
       sortable: true,
       render: (user) => (
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
-            <span className="text-sm font-medium text-white">
-              {user.firstName.charAt(0)}{user.lastName.charAt(0)}
-            </span>
-          </div>
+          <Avatar
+            src={user.avatar}
+            firstName={user.firstName}
+            lastName={user.lastName}
+            size="md"
+          />
           <div>
             <p className="font-medium text-gray-900">
               {user.firstName} {user.lastName}

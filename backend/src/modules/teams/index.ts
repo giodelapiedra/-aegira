@@ -11,11 +11,14 @@ import {
   formatDisplayDate,
   getStartOfDay,
   getEndOfDay,
+  getStartOfNextDay,
   countWorkDaysInRange,
   isSameDay,
+  getTodayForDbDate,
   DEFAULT_TIMEZONE,
 } from '../../utils/date-helpers.js';
 import { calculatePerformanceScore } from '../../utils/attendance.js';
+import { MIN_CHECKIN_DAYS_THRESHOLD } from '../../utils/team-grades.js';
 
 const teamsRoutes = new Hono<AppContext>();
 
@@ -29,11 +32,35 @@ async function getCompanyTimezone(companyId: string): Promise<string> {
 }
 
 // GET /teams - List teams (company-scoped)
+// Query params:
+//   includeInactive=true to include deactivated teams
+//   forTransfer=true to allow Team Leads to see all teams (for member transfer)
 teamsRoutes.get('/', async (c) => {
   const companyId = c.get('companyId');
+  const currentUserId = c.get('userId');
+  const includeInactive = c.req.query('includeInactive') === 'true';
+  const forTransfer = c.req.query('forTransfer') === 'true';
+
+  // Get current user role
+  const currentUser = await prisma.user.findUnique({
+    where: { id: currentUserId },
+    select: { role: true },
+  });
+
+  // TEAM_LEAD: Can only see the team they lead (unless forTransfer=true)
+  const isTeamLead = currentUser?.role?.toUpperCase() === 'TEAM_LEAD';
+  let where: any = {
+    companyId,
+    ...(includeInactive ? {} : { isActive: true }),
+  };
+
+  if (isTeamLead && !forTransfer) {
+    // Restrict to only their team (unless viewing teams for transfer)
+    where.leaderId = currentUserId;
+  }
 
   const teams = await prisma.team.findMany({
-    where: { companyId, isActive: true },
+    where,
     include: {
       _count: {
         select: { members: true },
@@ -47,7 +74,7 @@ teamsRoutes.get('/', async (c) => {
         },
       },
     },
-    orderBy: { name: 'asc' },
+    orderBy: [{ isActive: 'desc' }, { name: 'asc' }], // Active teams first
   });
 
   return c.json({
@@ -147,20 +174,35 @@ teamsRoutes.get('/my', async (c) => {
     return c.json({ error: 'You are not assigned to a team' }, 404);
   }
 
+  // Filter out the team leader from members (they're the supervisor, not a member)
+  const filteredMembers = team.members.filter(m => m.id !== team.leaderId);
+
   // Get member IDs to fetch additional stats
-  const memberIds = team.members.map(m => m.id);
+  const memberIds = filteredMembers.map(m => m.id);
+
+  // Early return if no members - avoid unnecessary queries
+  if (memberIds.length === 0) {
+    return c.json({
+      ...team,
+      members: [],
+    });
+  }
 
   // Get today's date range for leave check (timezone-aware)
   const timezone = team.company?.timezone || DEFAULT_TIMEZONE;
   const { start: today, end: tomorrow } = getTodayRange(timezone);
 
+  // Get date range for check-in counts (last 30 days for performance)
+  const { start: thirtyDaysAgo } = getLastNDaysRange(30, timezone);
+
   // Run all queries in parallel for performance
   const [checkinCounts, membersWithStreaks, membersOnLeave] = await Promise.all([
-    // Get check-in counts for each member
+    // Get check-in counts for each member (last 30 days only for performance)
     prisma.checkin.groupBy({
       by: ['userId'],
       where: {
         userId: { in: memberIds },
+        createdAt: { gte: thirtyDaysAgo }, // Limit to last 30 days for faster query
       },
       _count: {
         userId: true,
@@ -184,8 +226,8 @@ teamsRoutes.get('/my', async (c) => {
       where: {
         userId: { in: memberIds },
         status: 'APPROVED',
-        startDate: { lte: tomorrow },
-        endDate: { gte: today }, // End date = last day of exemption (includes end date)
+        startDate: { lte: today },
+        endDate: { gte: today },
       },
       select: {
         userId: true,
@@ -205,7 +247,7 @@ teamsRoutes.get('/my', async (c) => {
   const leaveMap = new Map(membersOnLeave.map(e => [e.userId, { type: e.type, endDate: e.endDate }]));
 
   // Enhance members with streak, check-in count, and leave status
-  const membersWithStats = team.members.map(member => {
+  const membersWithStats = filteredMembers.map(member => {
     const streakData = streakMap.get(member.id);
     const leaveData = leaveMap.get(member.id);
     return {
@@ -230,6 +272,13 @@ teamsRoutes.get('/my', async (c) => {
 teamsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
+  const currentUserId = c.get('userId');
+
+  // Get current user role
+  const currentUser = await prisma.user.findUnique({
+    where: { id: currentUserId },
+    select: { role: true },
+  });
 
   const team = await prisma.team.findFirst({
     where: { id, companyId },
@@ -260,6 +309,12 @@ teamsRoutes.get('/:id', async (c) => {
     return c.json({ error: 'Team not found' }, 404);
   }
 
+  // TEAM_LEAD: Can only view the team they lead
+  const isTeamLead = currentUser?.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && team.leaderId !== currentUserId) {
+    return c.json({ error: 'You can only view your own team' }, 403);
+  }
+
   return c.json(team);
 });
 
@@ -267,6 +322,13 @@ teamsRoutes.get('/:id', async (c) => {
 teamsRoutes.get('/:id/stats', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
+  const currentUserId = c.get('userId');
+
+  // Get current user role
+  const currentUser = await prisma.user.findUnique({
+    where: { id: currentUserId },
+    select: { role: true },
+  });
 
   // Verify team exists
   const team = await prisma.team.findFirst({
@@ -280,7 +342,15 @@ teamsRoutes.get('/:id/stats', async (c) => {
     return c.json({ error: 'Team not found' }, 404);
   }
 
-  const memberIds = team.members.map((m) => m.id);
+  // TEAM_LEAD: Can only view stats for the team they lead
+  const isTeamLead = currentUser?.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && team.leaderId !== currentUserId) {
+    return c.json({ error: 'You can only view stats for your own team' }, 403);
+  }
+
+  // Filter out the team leader from members (they're the supervisor, not a member)
+  const filteredMembers = team.members.filter((m) => m.id !== team.leaderId);
+  const memberIds = filteredMembers.map((m) => m.id);
   const teamWorkDays = team.workDays || 'MON,TUE,WED,THU,FRI';
 
   // Get company timezone (centralized)
@@ -291,6 +361,16 @@ teamsRoutes.get('/:id/stats', async (c) => {
 
   // Check if today is a work day for this team (timezone-aware)
   const isTodayWorkDay = isWorkDay(new Date(), teamWorkDays, timezone);
+
+  // Check if today is a company holiday
+  const todayForDb = getTodayForDbDate(timezone);
+  const todayHoliday = await prisma.holiday.findFirst({
+    where: {
+      companyId,
+      date: todayForDb,
+    },
+  });
+  const isTodayHoliday = !!todayHoliday;
 
   // Get today's check-ins for team members
   const todayCheckins = await prisma.checkin.findMany({
@@ -314,8 +394,8 @@ teamsRoutes.get('/:id/stats', async (c) => {
   });
   const membersOnLeaveIds = new Set(membersOnLeave.map(e => e.userId));
 
-  // Calculate expected members to check in (only if today is a work day, exclude those on leave)
-  const expectedToCheckIn = isTodayWorkDay
+  // Calculate expected members to check in (only if today is a work day AND not a holiday, exclude those on leave)
+  const expectedToCheckIn = (isTodayWorkDay && !isTodayHoliday)
     ? memberIds.length - membersOnLeaveIds.size
     : 0;
 
@@ -343,8 +423,10 @@ teamsRoutes.get('/:id/stats', async (c) => {
   return c.json({
     totalMembers: memberIds.length,
     checkedIn: todayCheckins.length,
-    notCheckedIn: isTodayWorkDay ? Math.max(0, expectedToCheckIn - todayCheckins.length) : 0,
+    notCheckedIn: (isTodayWorkDay && !isTodayHoliday) ? Math.max(0, expectedToCheckIn - todayCheckins.length) : 0,
     isWorkDay: isTodayWorkDay,
+    isHoliday: isTodayHoliday,
+    holidayName: todayHoliday?.name || null,
     greenCount,
     yellowCount,
     redCount,
@@ -489,6 +571,194 @@ teamsRoutes.put('/:id', async (c) => {
   return c.json(team);
 });
 
+// POST /teams/:id/deactivate - Deactivate team and create exemptions for workers (Executive/Admin only)
+teamsRoutes.post('/:id/deactivate', async (c) => {
+  const id = c.req.param('id');
+  const companyId = c.get('companyId');
+  const currentUser = c.get('user');
+  const body = await c.req.json();
+
+  if (currentUser.role !== 'EXECUTIVE' && currentUser.role !== 'ADMIN') {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const team = await prisma.team.findFirst({
+    where: { id, companyId },
+    include: {
+      members: {
+        where: { isActive: true, role: { in: ['WORKER', 'MEMBER'] } },
+        select: { id: true, firstName: true, lastName: true },
+      },
+    },
+  });
+
+  if (!team) {
+    return c.json({ error: 'Team not found' }, 404);
+  }
+
+  if (!team.isActive) {
+    return c.json({ error: 'Team is already deactivated' }, 400);
+  }
+
+  const reason = body.reason || 'Team temporarily deactivated';
+  const endDate = body.endDate ? new Date(body.endDate) : null;
+  const now = new Date();
+
+  // Get company timezone
+  const timezone = await getCompanyTimezone(companyId);
+  const todayForDb = getTodayForDbDate(timezone);
+
+  // Transaction: Deactivate team and create exemptions for all workers
+  const result = await prisma.$transaction(async (tx) => {
+    // 1. Deactivate the team
+    const updatedTeam = await tx.team.update({
+      where: { id },
+      data: {
+        isActive: false,
+        deactivatedAt: now,
+        deactivatedReason: reason,
+        reactivatedAt: null,
+      },
+    });
+
+    // 2. Create TEAM_INACTIVE exemptions for all workers in the team
+    const exemptions = [];
+    for (const member of team.members) {
+      const exemption = await tx.exception.create({
+        data: {
+          userId: member.id,
+          companyId,
+          type: 'TEAM_INACTIVE',
+          reason: `Team "${team.name}" deactivated: ${reason}`,
+          startDate: todayForDb,
+          endDate: endDate,
+          status: 'APPROVED',
+          reviewedById: currentUser.id,
+          reviewNote: 'Auto-approved: Team deactivation',
+          approvedBy: `${currentUser.firstName} ${currentUser.lastName}`,
+          approvedAt: now,
+          isExemption: true,
+        },
+      });
+      exemptions.push(exemption);
+    }
+
+    return { team: updatedTeam, exemptions };
+  });
+
+  // Log team deactivation
+  await createSystemLog({
+    companyId,
+    userId: currentUser.id,
+    action: 'TEAM_UPDATED',
+    entityType: 'team',
+    entityId: id,
+    description: `${currentUser.firstName} ${currentUser.lastName} deactivated team "${team.name}" - ${team.members.length} workers exempted`,
+    metadata: {
+      teamName: team.name,
+      reason,
+      endDate: endDate?.toISOString(),
+      exemptedWorkers: team.members.length,
+    },
+  });
+
+  return c.json({
+    success: true,
+    message: `Team "${team.name}" deactivated. ${team.members.length} workers are now exempted from check-in.`,
+    team: result.team,
+    exemptionsCreated: result.exemptions.length,
+  });
+});
+
+// POST /teams/:id/reactivate - Reactivate team and end exemptions (Executive/Admin only)
+teamsRoutes.post('/:id/reactivate', async (c) => {
+  const id = c.req.param('id');
+  const companyId = c.get('companyId');
+  const currentUser = c.get('user');
+
+  if (currentUser.role !== 'EXECUTIVE' && currentUser.role !== 'ADMIN') {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
+  const team = await prisma.team.findFirst({
+    where: { id, companyId },
+    include: {
+      members: {
+        where: { isActive: true, role: { in: ['WORKER', 'MEMBER'] } },
+        select: { id: true, firstName: true, lastName: true },
+      },
+    },
+  });
+
+  if (!team) {
+    return c.json({ error: 'Team not found' }, 404);
+  }
+
+  if (team.isActive) {
+    return c.json({ error: 'Team is already active' }, 400);
+  }
+
+  const now = new Date();
+  const memberIds = team.members.map((m) => m.id);
+
+  // Get company timezone
+  const timezone = await getCompanyTimezone(companyId);
+  const yesterdayForDb = new Date(getTodayForDbDate(timezone));
+  yesterdayForDb.setDate(yesterdayForDb.getDate() - 1);
+
+  // Transaction: Reactivate team and end all TEAM_INACTIVE exemptions
+  const result = await prisma.$transaction(async (tx) => {
+    // 1. Reactivate the team
+    const updatedTeam = await tx.team.update({
+      where: { id },
+      data: {
+        isActive: true,
+        reactivatedAt: now,
+      },
+    });
+
+    // 2. End all active TEAM_INACTIVE exemptions for workers in this team
+    // Set endDate to yesterday so workers need to check in starting today
+    const updatedExemptions = await tx.exception.updateMany({
+      where: {
+        userId: { in: memberIds },
+        type: 'TEAM_INACTIVE',
+        status: 'APPROVED',
+        OR: [
+          { endDate: null }, // No end date (indefinite)
+          { endDate: { gte: now } }, // End date is in the future
+        ],
+      },
+      data: {
+        endDate: yesterdayForDb,
+      },
+    });
+
+    return { team: updatedTeam, exemptionsEnded: updatedExemptions.count };
+  });
+
+  // Log team reactivation
+  await createSystemLog({
+    companyId,
+    userId: currentUser.id,
+    action: 'TEAM_UPDATED',
+    entityType: 'team',
+    entityId: id,
+    description: `${currentUser.firstName} ${currentUser.lastName} reactivated team "${team.name}" - ${result.exemptionsEnded} exemptions ended`,
+    metadata: {
+      teamName: team.name,
+      exemptionsEnded: result.exemptionsEnded,
+    },
+  });
+
+  return c.json({
+    success: true,
+    message: `Team "${team.name}" reactivated. Workers must check in starting today.`,
+    team: result.team,
+    exemptionsEnded: result.exemptionsEnded,
+  });
+});
+
 // DELETE /teams/:id - Soft delete team (Executive/Admin only)
 teamsRoutes.delete('/:id', async (c) => {
   const id = c.req.param('id');
@@ -546,6 +816,11 @@ teamsRoutes.post('/:id/members', async (c) => {
 
   if (!team) {
     return c.json({ error: 'Team not found' }, 404);
+  }
+
+  // Block adding members to inactive teams
+  if (!team.isActive) {
+    return c.json({ error: 'Cannot add members to an inactive team. Reactivate the team first.' }, 400);
   }
 
   // Allow EXECUTIVE, ADMIN, SUPERVISOR for any team
@@ -1075,7 +1350,7 @@ function getGradeInfo(score: number): { color: string; label: string; letter: st
   return { color: 'RED', label: 'Critical', letter: 'F' };
 }
 
-// Helper: Get reason label
+// Manual low score reason labels (for Members Needing Attention)
 const REASON_LABELS: Record<string, string> = {
   PHYSICAL_INJURY: 'Physical Injury',
   ILLNESS_SICKNESS: 'Illness/Sickness',
@@ -1087,6 +1362,22 @@ const REASON_LABELS: Record<string, string> = {
   OTHER: 'Other',
 };
 
+// Metric issue labels for automatic analysis
+const METRIC_ISSUE_LABELS: Record<string, string> = {
+  HIGH_STRESS: 'High Stress',
+  POOR_SLEEP: 'Poor Sleep',
+  LOW_MOOD: 'Low Mood',
+  LOW_PHYSICAL: 'Low Physical Health',
+};
+
+// Metric thresholds for issue detection
+const METRIC_THRESHOLDS = {
+  STRESS_HIGH: 6,      // stress > 6 is problematic
+  SLEEP_LOW: 5,        // sleep < 5 is problematic
+  MOOD_LOW: 5,         // mood < 5 is problematic
+  PHYSICAL_LOW: 5,     // physicalHealth < 5 is problematic
+} as const;
+
 // GET /teams/my/analytics - Team analytics dashboard data
 teamsRoutes.get('/my/analytics', async (c) => {
   const companyId = c.get('companyId');
@@ -1095,29 +1386,60 @@ teamsRoutes.get('/my/analytics', async (c) => {
   const customStart = c.req.query('startDate');
   const customEnd = c.req.query('endDate');
 
-  // Get the team (for team leaders, get their team)
-  const team = await prisma.team.findFirst({
-    where: {
-      companyId,
-      isActive: true,
-      OR: [
-        { leaderId: currentUser.id },
-        { members: { some: { id: currentUser.id } } },
-      ],
-    },
-    include: {
-      members: {
-        where: { isActive: true },
-        select: { id: true, firstName: true, lastName: true, avatar: true, lastCheckinDate: true, teamJoinedAt: true, createdAt: true },
-      },
-      leader: {
-        select: { id: true, firstName: true, lastName: true, avatar: true, lastCheckinDate: true, isActive: true },
-      },
-    },
-  });
+  // TEAM_LEAD: Can only view analytics for the team they lead
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  let team;
 
-  if (!team) {
-    return c.json({ error: 'No team found' }, 404);
+  if (isTeamLead) {
+    // For TEAM_LEAD, only return the team they lead
+    team = await prisma.team.findFirst({
+      where: {
+        companyId,
+        isActive: true,
+        leaderId: currentUser.id,
+      },
+      include: {
+        members: {
+          // IMPORTANT: Only count WORKER/MEMBER roles for consistency with Teams Overview
+          where: { isActive: true, role: { in: ['WORKER', 'MEMBER'] } },
+          select: { id: true, firstName: true, lastName: true, avatar: true, lastCheckinDate: true, teamJoinedAt: true, createdAt: true },
+        },
+        leader: {
+          select: { id: true, firstName: true, lastName: true, avatar: true, lastCheckinDate: true, isActive: true },
+        },
+      },
+    });
+
+    if (!team) {
+      return c.json({ error: 'You are not assigned as a team leader' }, 403);
+    }
+  } else {
+    // Higher roles can view any team they're associated with
+    team = await prisma.team.findFirst({
+      where: {
+        companyId,
+        isActive: true,
+        OR: [
+          { leaderId: currentUser.id },
+          { members: { some: { id: currentUser.id } } },
+        ],
+      },
+      include: {
+        members: {
+          // IMPORTANT: Only count WORKER/MEMBER roles for consistency with Teams Overview
+          // Team leaders supervise but don't check in as workers
+          where: { isActive: true, role: { in: ['WORKER', 'MEMBER'] } },
+          select: { id: true, firstName: true, lastName: true, avatar: true, lastCheckinDate: true, teamJoinedAt: true, createdAt: true },
+        },
+        leader: {
+          select: { id: true, firstName: true, lastName: true, avatar: true, lastCheckinDate: true, isActive: true },
+        },
+      },
+    });
+
+    if (!team) {
+      return c.json({ error: 'No team found' }, 404);
+    }
   }
 
   // Get company timezone (centralized)
@@ -1190,6 +1512,8 @@ teamsRoutes.get('/my/analytics', async (c) => {
   }
 
   // Get members on approved leave TODAY (exemption is currently active)
+  // IMPORTANT: Exemption must have STARTED (startDate <= todayEnd) AND not ended (endDate >= todayStart)
+  // This ensures exemptions that start tomorrow are NOT counted as active today
   // End date = LAST DAY of exemption (not return date)
   // If exemption ends today → today is still exempted → tomorrow is first required check-in
   // Note: Check-ins that happened BEFORE the exemption started should still count
@@ -1197,8 +1521,8 @@ teamsRoutes.get('/my/analytics', async (c) => {
     where: {
       userId: { in: memberIds },
       status: 'APPROVED',
-      startDate: { lte: today }, // Exemption has already started
-      endDate: { gte: today },   // Exemption hasn't ended yet (includes end date as last day)
+      startDate: { lte: todayEnd }, // Exemption has already started (use todayEnd to include today)
+      endDate: { gte: todayStart },   // Exemption hasn't ended yet (includes end date as last day)
     },
     include: {
       user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
@@ -1243,15 +1567,29 @@ teamsRoutes.get('/my/analytics', async (c) => {
   // NOTE: Include ALL members with check-ins, even those currently on leave
   // Their historical check-ins still count toward team readiness average
   // (Only compliance calculation excludes members on leave)
-  const memberAverages = memberAvgScores
+  const allMemberAverages = memberAvgScores
     .filter((m) => m._avg.readinessScore !== null)
-    .map((m) => ({ userId: m.userId, avgScore: m._avg.readinessScore!, checkinCount: m._count.id }));
+    .map((m) => ({
+      userId: m.userId,
+      avgScore: m._avg.readinessScore!,
+      checkinCount: m._count.id,
+    }));
 
+  // IMPORTANT: Filter out members with < MIN_CHECKIN_DAYS_THRESHOLD ACTUAL check-in days
+  // Only actual check-ins count toward threshold - we need real readiness data
+  // NOT counted: holidays, exemptions, absent days (no check-in = no data)
+  // Members need 3+ actual check-ins before being included in team grade
+  const memberAverages = allMemberAverages.filter(m => m.checkinCount >= MIN_CHECKIN_DAYS_THRESHOLD);
+  const onboardingCount = allMemberAverages.length - memberAverages.length;
+  const includedMemberCount = memberAverages.length;
+
+  // Calculate team average: sum of all member averages / number of members with check-ins
+  // This gives equal weight to each member's average, regardless of how many check-ins they have
   const teamAvgReadiness = memberAverages.length > 0
     ? memberAverages.reduce((sum, m) => sum + m.avgScore, 0) / memberAverages.length
     : 0;
 
-  // Get all check-ins in period for team members (for trend data, reasons, etc.)
+  // Get all check-ins in period for team members (for trend data, metrics, etc.)
   const checkins = await prisma.checkin.findMany({
     where: {
       userId: { in: memberIds },
@@ -1262,7 +1600,16 @@ teamsRoutes.get('/my/analytics', async (c) => {
       },
     },
     orderBy: { createdAt: 'desc' },
-    include: {
+    select: {
+      id: true,
+      userId: true,
+      mood: true,
+      stress: true,
+      sleep: true,
+      physicalHealth: true,
+      readinessScore: true,
+      readinessStatus: true,
+      createdAt: true,
       user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
     },
   });
@@ -1280,7 +1627,16 @@ teamsRoutes.get('/my/analytics', async (c) => {
       },
     },
     orderBy: { createdAt: 'desc' },
-    include: {
+    select: {
+      id: true,
+      userId: true,
+      mood: true,
+      stress: true,
+      sleep: true,
+      physicalHealth: true,
+      readinessScore: true,
+      readinessStatus: true,
+      createdAt: true,
       user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
     },
   });
@@ -1370,6 +1726,24 @@ teamsRoutes.get('/my/analytics', async (c) => {
     },
   });
 
+  // Get ALL holidays for the period
+  const holidaysInPeriod = await prisma.holiday.findMany({
+    where: {
+      companyId,
+      date: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
+  });
+
+  // Build holiday map by date string for quick lookup
+  const holidayMap = new Map<string, typeof holidaysInPeriod[0]>();
+  for (const holiday of holidaysInPeriod) {
+    const dateKey = formatLocalDate(holiday.date, timezone);
+    holidayMap.set(dateKey, holiday);
+  }
+
   // Get last check-in before exemption started for each member
   // This will be used to include readiness scores for exempted members in the trend
   // For members with multiple exemptions, use the earliest exemption start date
@@ -1447,8 +1821,8 @@ teamsRoutes.get('/my/analytics', async (c) => {
   };
 
   // Trend data (daily averages for period)
-  // compliance is null when all members are on exemption (no one expected to check in)
-  const trendData: { date: string; score: number | null; compliance: number | null; checkedIn: number; onExemption: number; hasData: boolean }[] = [];
+  // compliance is null when all members are on exemption OR it's a holiday (no one expected to check in)
+  const trendData: { date: string; score: number | null; compliance: number | null; checkedIn: number; onExemption: number; isHoliday: boolean; holidayName?: string; hasData: boolean }[] = [];
 
   if (period !== 'today') {
     const dayMs = 24 * 60 * 60 * 1000;
@@ -1459,12 +1833,31 @@ teamsRoutes.get('/my/analytics', async (c) => {
       const dayStart = getStartOfDay(currentDate, timezone);
       const dayEnd = getEndOfDay(currentDate, timezone);
 
-      // Check if it's a work day
-      const dayOfWeek = currentDate.getDay();
-      const dayMap: Record<number, string> = { 0: 'SUN', 1: 'MON', 2: 'TUE', 3: 'WED', 4: 'THU', 5: 'FRI', 6: 'SAT' };
-      const isWorkDay = team.workDays.includes(dayMap[dayOfWeek]);
+      // Check if it's a work day (timezone-aware)
+      // FIX: Use imported isWorkDay function which handles timezone correctly
+      const isWorkDayResult = isWorkDay(currentDate, team.workDays, timezone);
+      const dateKey = formatLocalDate(currentDate, timezone);
 
-      if (isWorkDay) {
+      // Check if this day is a holiday
+      const dayHoliday = holidayMap.get(dateKey);
+
+      if (isWorkDayResult) {
+        // If it's a holiday, skip compliance calculation (like exemptions)
+        if (dayHoliday) {
+          trendData.push({
+            date: dateKey,
+            score: null,
+            compliance: null, // Skip in average calculation
+            checkedIn: 0,
+            onExemption: 0,
+            isHoliday: true,
+            holidayName: dayHoliday.name,
+            hasData: false,
+          });
+          currentDate.setTime(currentDate.getTime() + dayMs);
+          continue;
+        }
+
         const dayCheckins = checkins.filter((c) => {
           const d = new Date(c.createdAt);
           return d >= dayStart && d <= dayEnd;
@@ -1491,15 +1884,14 @@ teamsRoutes.get('/my/analytics', async (c) => {
           // Get member info to check teamJoinedAt
           const member = team.members.find(m => m.id === memberId);
           if (!member) return false;
-          
-          // Check if member was in team on this date (use teamJoinedAt or createdAt)
-          const memberJoinDate = member.teamJoinedAt 
-            ? getStartOfDay(member.teamJoinedAt, timezone)
-            : getStartOfDay(new Date(member.createdAt || team.createdAt), timezone);
+
+          // Check-in requirement starts the DAY AFTER joining (not same day)
+          const joinDate = member.teamJoinedAt || new Date(member.createdAt || team.createdAt);
+          const memberEffectiveStart = getStartOfNextDay(joinDate, timezone);
           const dayStart = getStartOfDay(currentDate, timezone);
-          
-          // If member joined after this day, they're not expected
-          if (memberJoinDate > dayStart) return false;
+
+          // If member's effective start is after this day, they're not expected
+          if (memberEffectiveStart > dayStart) return false;
           
           // IMPORTANT: If member is on exemption on this day, exclude them from expected
           // BUT their check-in (if they checked in) should still count (see below)
@@ -1520,12 +1912,12 @@ teamsRoutes.get('/my/analytics', async (c) => {
           const member = team.members.find(m => m.id === memberId);
           if (!member) return false;
 
-          const memberJoinDate = member.teamJoinedAt
-            ? getStartOfDay(member.teamJoinedAt, timezone)
-            : getStartOfDay(new Date(member.createdAt || team.createdAt), timezone);
+          // Check-in requirement starts the DAY AFTER joining
+          const joinDate = member.teamJoinedAt || new Date(member.createdAt || team.createdAt);
+          const memberEffectiveStart = getStartOfNextDay(joinDate, timezone);
           const dayStart = getStartOfDay(currentDate, timezone);
 
-          if (memberJoinDate > dayStart) return false;
+          if (memberEffectiveStart > dayStart) return false;
 
           return true;
         });
@@ -1560,14 +1952,14 @@ teamsRoutes.get('/my/analytics', async (c) => {
           // Check if member was in team on this date
           const member = team.members.find(m => m.id === memberId);
           if (!member) continue;
-          
-          const memberJoinDate = member.teamJoinedAt 
-            ? getStartOfDay(member.teamJoinedAt, timezone)
-            : getStartOfDay(new Date(member.createdAt || team.createdAt), timezone);
+
+          // Check-in requirement starts the DAY AFTER joining
+          const joinDate = member.teamJoinedAt || new Date(member.createdAt || team.createdAt);
+          const memberEffectiveStart = getStartOfNextDay(joinDate, timezone);
           const dayStart = getStartOfDay(currentDate, timezone);
-          
-          // If member joined after this day, skip
-          if (memberJoinDate > dayStart) continue;
+
+          // If member's effective start is after this day, skip
+          if (memberEffectiveStart > dayStart) continue;
           
           // If member is on exemption and didn't check in, use last known score
           // Use display version to include end date (Jan 6 should show exemption)
@@ -1588,15 +1980,14 @@ teamsRoutes.get('/my/analytics', async (c) => {
           // Get member info to check teamJoinedAt
           const member = team.members.find(m => m.id === memberId);
           if (!member) return false;
-          
-          // Check if member was in team on this date
-          const memberJoinDate = member.teamJoinedAt 
-            ? getStartOfDay(member.teamJoinedAt, timezone)
-            : getStartOfDay(new Date(member.createdAt || team.createdAt), timezone);
+
+          // Check-in requirement starts the DAY AFTER joining
+          const joinDate = member.teamJoinedAt || new Date(member.createdAt || team.createdAt);
+          const memberEffectiveStart = getStartOfNextDay(joinDate, timezone);
           const dayStart = getStartOfDay(currentDate, timezone);
-          
-          // If member joined after this day, they're not counted
-          if (memberJoinDate > dayStart) return false;
+
+          // If member's effective start is after this day, they're not counted
+          if (memberEffectiveStart > dayStart) return false;
           
           // Count if they're on exemption (use display function to include end date)
           return wasOnExemptionOnDateForDisplay(memberId, currentDate);
@@ -1617,6 +2008,7 @@ teamsRoutes.get('/my/analytics', async (c) => {
           compliance: dayCompliance,
           checkedIn: checkedInCount, // Includes exempted members who checked in
           onExemption: exemptedCount, // Count of members on exemption for this day
+          isHoliday: false,
           hasData: validDayCheckins.length > 0,
         });
       }
@@ -1655,22 +2047,25 @@ teamsRoutes.get('/my/analytics', async (c) => {
     teamGradeInfo = getGradeInfo(teamGradeScore);
   }
 
-  // Top reasons (from period, where lowScoreReason is not null)
-  const reasonCounts = new Map<string, number>();
+  // Top reasons - Automatic metric analysis from check-in data
+  // Count how many times each metric was "problematic" in the period
+  const metricIssues = { HIGH_STRESS: 0, POOR_SLEEP: 0, LOW_MOOD: 0, LOW_PHYSICAL: 0 };
+
   for (const checkin of checkins) {
-    if (checkin.lowScoreReason) {
-      reasonCounts.set(checkin.lowScoreReason, (reasonCounts.get(checkin.lowScoreReason) || 0) + 1);
-    }
+    if (checkin.stress > METRIC_THRESHOLDS.STRESS_HIGH) metricIssues.HIGH_STRESS++;
+    if (checkin.sleep < METRIC_THRESHOLDS.SLEEP_LOW) metricIssues.POOR_SLEEP++;
+    if (checkin.mood < METRIC_THRESHOLDS.MOOD_LOW) metricIssues.LOW_MOOD++;
+    if (checkin.physicalHealth < METRIC_THRESHOLDS.PHYSICAL_LOW) metricIssues.LOW_PHYSICAL++;
   }
 
-  const topReasons = Array.from(reasonCounts.entries())
+  const topReasons = Object.entries(metricIssues)
+    .filter(([_, count]) => count > 0)
     .map(([reason, count]) => ({
       reason,
-      label: REASON_LABELS[reason] || reason,
+      label: METRIC_ISSUE_LABELS[reason],
       count,
     }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5);
+    .sort((a, b) => b.count - a.count);
 
   // Average metrics (from period)
   const allScores = checkins.map((c) => ({
@@ -1728,14 +2123,58 @@ teamsRoutes.get('/my/analytics', async (c) => {
   }
 
   // Format members on leave for response
-  const membersOnLeaveFormatted = membersOnLeave.map((e) => ({
-    id: e.userId,
-    name: `${e.user.firstName} ${e.user.lastName}`,
-    avatar: e.user.avatar,
-    leaveType: e.type,
-    startDate: e.startDate?.toISOString().split('T')[0],
-    endDate: e.endDate?.toISOString().split('T')[0],
-  }));
+  // For 'today' period: show members currently on leave
+  // For other periods: show members who were on leave at any point during the period
+  let membersOnLeaveFormatted: {
+    id: string;
+    name: string;
+    avatar: string | null;
+    leaveType: string;
+    startDate: string | undefined;
+    endDate: string | undefined;
+  }[] = [];
+
+  if (period === 'today') {
+    membersOnLeaveFormatted = membersOnLeave.map((e) => ({
+      id: e.userId,
+      name: `${e.user.firstName} ${e.user.lastName}`,
+      avatar: e.user.avatar,
+      leaveType: e.type,
+      startDate: e.startDate?.toISOString().split('T')[0],
+      endDate: e.endDate?.toISOString().split('T')[0],
+    }));
+  } else {
+    // For period views, query exemptions that overlap with the selected period
+    const periodExemptions = await prisma.exception.findMany({
+      where: {
+        userId: { in: memberIds },
+        status: 'APPROVED',
+        startDate: { lte: endDate },
+        endDate: { gte: startDate },
+      },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+      },
+      orderBy: { startDate: 'desc' },
+    });
+
+    // Deduplicate by user (show most recent exemption per user)
+    const seenUsers = new Set<string>();
+    membersOnLeaveFormatted = periodExemptions
+      .filter((e) => {
+        if (seenUsers.has(e.userId)) return false;
+        seenUsers.add(e.userId);
+        return true;
+      })
+      .map((e) => ({
+        id: e.userId,
+        name: `${e.user.firstName} ${e.user.lastName}`,
+        avatar: e.user.avatar,
+        leaveType: e.type,
+        startDate: e.startDate?.toISOString().split('T')[0],
+        endDate: e.endDate?.toISOString().split('T')[0],
+      }));
+  }
 
   return c.json({
     team: {
@@ -1761,6 +2200,8 @@ teamsRoutes.get('/my/analytics', async (c) => {
           todayAvgReadiness: Math.round(todayAvgReadiness),
           compliance: periodCompliance, // Period compliance (used for grade calculation)
           todayCompliance: compliance,  // Today's compliance (for display)
+          onboardingCount,              // Members with < 3 check-ins (not included in grade)
+          includedMemberCount,          // Members included in grade calculation
         }
       : null,
     complianceDetails: period === 'today'
@@ -1774,7 +2215,7 @@ teamsRoutes.get('/my/analytics', async (c) => {
           // For period views, show unique members who checked in during the period
           checkedIn: new Set(checkins.map((c) => c.userId)).size,
           activeMembers: totalMembers,
-          onLeave: onLeaveUserIds.length, // Currently on leave
+          onLeave: membersOnLeaveFormatted.length, // Members on leave during the period
           notCheckedIn: Math.max(0, totalMembers - new Set(checkins.map((c) => c.userId)).size),
         },
     statusDistribution,

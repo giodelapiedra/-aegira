@@ -37,6 +37,7 @@ import { StatsCard, StatsCardGrid } from '../../components/ui/StatsCard';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
+import { Avatar } from '../../components/ui/Avatar';
 import {
   MetricsRow,
   SuddenChangeCard,
@@ -59,12 +60,15 @@ import {
   type Exemption,
   type ExceptionType,
 } from '../../services/exemption.service';
+import { absenceService } from '../../services/absence.service';
+import { AbsenceReviewCard } from '../../components/absences/AbsenceReviewCard';
+import type { AbsenceWithUser } from '../../types/absence';
 
 // ============================================
 // TYPES
 // ============================================
 
-type TabType = 'checkins' | 'changes' | 'exemptions';
+type TabType = 'checkins' | 'changes' | 'exemptions' | 'absences';
 
 // ============================================
 // APPROVE MODAL COMPONENT
@@ -125,12 +129,11 @@ function ApproveModal({ exemption, onClose, onConfirm, isLoading, timezone }: Ap
         {/* Worker Info */}
         <div className="bg-gray-50 rounded-lg p-4 mb-6">
           <div className="flex items-center gap-3 mb-2">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
-              <span className="text-sm font-medium text-white">
-                {exemption.user.firstName.charAt(0)}
-                {exemption.user.lastName.charAt(0)}
-              </span>
-            </div>
+            <Avatar
+              firstName={exemption.user.firstName}
+              lastName={exemption.user.lastName}
+              size="md"
+            />
             <div>
               <p className="font-medium text-gray-900">
                 {exemption.user.firstName} {exemption.user.lastName}
@@ -284,12 +287,11 @@ function CreateExemptionModal({ checkin, onClose, onConfirm, isLoading, timezone
         {/* Worker Info */}
         <div className="bg-danger-50 rounded-lg p-4 mb-6 border border-danger-100">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-danger-500 to-danger-600 flex items-center justify-center">
-              <span className="text-sm font-medium text-white">
-                {checkin.user.firstName.charAt(0)}
-                {checkin.user.lastName.charAt(0)}
-              </span>
-            </div>
+            <Avatar
+              firstName={checkin.user.firstName}
+              lastName={checkin.user.lastName}
+              size="md"
+            />
             <div>
               <p className="font-medium text-gray-900">
                 {checkin.user.firstName} {checkin.user.lastName}
@@ -428,6 +430,13 @@ export function DailyMonitoringPage() {
     queryKey: ['daily-monitoring'],
     queryFn: () => getDailyMonitoring(),
     refetchInterval: 60000, // Refresh every minute
+  });
+
+  // Fetch pending absence reviews for TL
+  const { data: pendingAbsences, refetch: refetchAbsences } = useQuery({
+    queryKey: ['absences', 'team-pending'],
+    queryFn: () => absenceService.getTeamPending(),
+    refetchInterval: 60000,
   });
 
   // Approve mutation
@@ -654,6 +663,31 @@ export function DailyMonitoringPage() {
         </div>
       )}
 
+      {/* Pending Absences Alert */}
+      {pendingAbsences && pendingAbsences.count > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center">
+              <Calendar className="h-5 w-5 text-orange-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-orange-800">
+                {pendingAbsences.count} Absence Justification{pendingAbsences.count > 1 ? 's' : ''} to Review
+              </p>
+              <p className="text-sm text-orange-600">Workers have submitted explanations for missed days</p>
+            </div>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setActiveTab('absences')}
+          >
+            Review Now
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="border-b border-gray-200">
         <nav className="flex gap-4">
@@ -661,6 +695,7 @@ export function DailyMonitoringPage() {
             { key: 'checkins', label: "Today's Check-ins", count: todayCheckins.length },
             { key: 'changes', label: 'Sudden Changes', count: suddenChanges.length, alert: stats.criticalChanges > 0 },
             { key: 'exemptions', label: 'Exemptions', count: pendingExemptions.length + activeExemptions.length, alert: pendingExemptions.length > 0 },
+            { key: 'absences', label: 'Absence Reviews', count: pendingAbsences?.count || 0, alert: (pendingAbsences?.count || 0) > 0 },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -760,12 +795,11 @@ export function DailyMonitoringPage() {
                       key={member.id}
                       className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
                     >
-                      <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-medium text-gray-600">
-                          {member.firstName.charAt(0)}
-                          {member.lastName.charAt(0)}
-                        </span>
-                      </div>
+                      <Avatar
+                        firstName={member.firstName}
+                        lastName={member.lastName}
+                        size="sm"
+                      />
                       <div className="min-w-0">
                         <p className="font-medium text-gray-900 truncate text-sm">
                           {member.firstName} {member.lastName}
@@ -804,6 +838,49 @@ export function DailyMonitoringPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'absences' && (
+        <div className="space-y-6">
+          {/* Pending Absence Reviews */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-orange-500" />
+                Pending Absence Reviews ({pendingAbsences?.count || 0})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {!pendingAbsences || pendingAbsences.count === 0 ? (
+                <EmptyState
+                  icon={Calendar}
+                  title="No pending absence reviews"
+                  description="All absence justifications have been reviewed."
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {pendingAbsences.data.map((absence) => (
+                    <AbsenceReviewCard key={absence.id} absence={absence} />
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Info Box */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-blue-800">How Absence Reviews Work</p>
+                <ul className="text-sm text-blue-600 mt-1 space-y-1">
+                  <li><strong>Excused:</strong> No penalty - absence will not affect the worker's grade</li>
+                  <li><strong>Unexcused:</strong> 0 points - counts against the worker's attendance grade</li>
+                </ul>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -928,12 +1005,11 @@ function CheckinRow({ checkin, onCreateExemption }: CheckinRowProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           {/* Avatar */}
-          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center flex-shrink-0">
-            <span className="text-sm font-medium text-white">
-              {checkin.user.firstName.charAt(0)}
-              {checkin.user.lastName.charAt(0)}
-            </span>
-          </div>
+          <Avatar
+            firstName={checkin.user.firstName}
+            lastName={checkin.user.lastName}
+            size="md"
+          />
 
           {/* Info */}
           <div>

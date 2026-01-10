@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { teamService, type TeamAnalytics } from '../../services/team.service';
+import { Avatar } from '../../components/ui/Avatar';
 
 type PeriodOption = 'today' | '7days' | '14days' | 'alltime' | 'custom';
 
@@ -294,6 +295,11 @@ export function TeamAnalyticsPage() {
               <p className="text-xs text-gray-400 text-center">
                 Grade = (Team Avg Score × 60%) + (Period Compliance × 40%)
               </p>
+              {analytics.teamGrade?.onboardingCount && analytics.teamGrade.onboardingCount > 0 && (
+                <p className="text-xs text-blue-500 text-center mt-2">
+                  {analytics.teamGrade.onboardingCount} new member{analytics.teamGrade.onboardingCount > 1 ? 's' : ''} with &lt;3 check-ins not yet included in grade calculation
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -457,36 +463,35 @@ export function TeamAnalyticsPage() {
         </div>
       )}
 
-      {/* Top Reasons */}
+      {/* Top Metric Issues */}
       {analytics.topReasons && analytics.topReasons.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <FileText className="h-5 w-5 text-primary-600" />
-            Top Reasons for Low Scores
-          </h3>
-          <div className="space-y-3">
-            {(analytics.topReasons || []).slice(0, 5).map((reason, index) => (
-              <div key={reason.reason} className="flex items-center gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-gray-100 text-gray-600 text-sm font-medium flex items-center justify-center">
-                  {index + 1}
-                </span>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-gray-900">{reason.label}</span>
-                    <span className="text-sm text-gray-500">{reason.count} occurrences</span>
-                  </div>
-                  <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary-500 rounded-full"
-                      style={{
-                        width: `${Math.min((reason.count / (analytics.topReasons[0]?.count || 1)) * 100, 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-200">
+            <h3 className="font-semibold text-gray-900">Common Issues in Check-ins</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Based on {period === 'today' ? "today's" : 'period'} check-in data</p>
           </div>
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="text-left px-4 py-2 font-medium text-gray-600 w-10">#</th>
+                <th className="text-left px-4 py-2 font-medium text-gray-600">Issue</th>
+                <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Occurrences</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {analytics.topReasons.map((reason, index) => (
+                <tr key={reason.reason} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-gray-500">{index + 1}</td>
+                  <td className="px-4 py-3 text-gray-900">{reason.label}</td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs font-medium">
+                      {reason.count}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -516,15 +521,12 @@ export function TeamAnalyticsPage() {
                   onClick={() => navigate(`/team/members/${member.id}`)}
                   className="w-full p-3 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left"
                 >
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center flex-shrink-0">
-                    {member.avatar ? (
-                      <img src={member.avatar} alt="" className="h-10 w-10 rounded-full object-cover" />
-                    ) : (
-                      <span className="text-sm font-medium text-white">
-                        {member.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                      </span>
-                    )}
-                  </div>
+                  <Avatar
+                    src={member.avatar}
+                    firstName={member.name.split(' ')[0]}
+                    lastName={member.name.split(' ').slice(1).join(' ')}
+                    size="md"
+                  />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 truncate">{member.name}</p>
                     <p className="text-sm text-gray-500 truncate">{member.details}</p>
@@ -566,15 +568,12 @@ export function TeamAnalyticsPage() {
                   onClick={() => navigate(`/team/members/${member.id}`)}
                   className="w-full p-3 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left"
                 >
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-warning-400 to-warning-500 flex items-center justify-center flex-shrink-0">
-                    {member.avatar ? (
-                      <img src={member.avatar} alt="" className="h-10 w-10 rounded-full object-cover" />
-                    ) : (
-                      <span className="text-sm font-medium text-white">
-                        {member.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                      </span>
-                    )}
-                  </div>
+                  <Avatar
+                    src={member.avatar}
+                    firstName={member.name.split(' ')[0]}
+                    lastName={member.name.split(' ').slice(1).join(' ')}
+                    size="md"
+                  />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 truncate">{member.name}</p>
                     <p className="text-sm text-gray-500">
@@ -658,11 +657,12 @@ function MetricCard({
   };
 
   // For inverted metrics like stress, lower is better
+  // Values are on 1-10 scale
   const displayValue = value.toFixed(1);
-  const percentage = (value / 5) * 100;
+  const percentage = (value / 10) * 100;
   const barColor = inverted
-    ? value <= 2 ? 'bg-success-500' : value <= 3 ? 'bg-warning-500' : 'bg-danger-500'
-    : value >= 4 ? 'bg-success-500' : value >= 3 ? 'bg-warning-500' : 'bg-danger-500';
+    ? value <= 4 ? 'bg-success-500' : value <= 6 ? 'bg-warning-500' : 'bg-danger-500'
+    : value >= 7 ? 'bg-success-500' : value >= 5 ? 'bg-warning-500' : 'bg-danger-500';
 
   return (
     <div className={cn('p-4 rounded-xl', bgClasses[color])}>
@@ -672,7 +672,7 @@ function MetricCard({
       </div>
       <div className="flex items-baseline gap-1 mb-2">
         <span className="text-2xl font-bold text-gray-900">{displayValue}</span>
-        <span className="text-sm text-gray-500">/5</span>
+        <span className="text-sm text-gray-500">/10</span>
       </div>
       <div className="h-2 bg-white/50 rounded-full overflow-hidden">
         <div

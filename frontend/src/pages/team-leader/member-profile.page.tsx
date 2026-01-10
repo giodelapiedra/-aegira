@@ -68,10 +68,10 @@ export function MemberProfilePage() {
     enabled: !!userId,
   });
 
-  // Get all teams for transfer dropdown
+  // Get all teams for transfer dropdown (forTransfer: true allows Team Leads to see all company teams)
   const { data: allTeamsData } = useQuery({
-    queryKey: ['all-teams'],
-    queryFn: () => teamService.getAll(),
+    queryKey: ['all-teams-for-transfer'],
+    queryFn: () => teamService.getAll({ forTransfer: true }),
     enabled: showTransferModal,
   });
 

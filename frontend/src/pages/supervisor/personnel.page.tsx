@@ -10,6 +10,7 @@ import {
   Palmtree,
 } from 'lucide-react';
 import { Input } from '../../components/ui/Input';
+import { Avatar } from '../../components/ui/Avatar';
 import { cn } from '../../lib/utils';
 import api from '../../services/api';
 import type { User } from '../../types/user';
@@ -218,12 +219,11 @@ export function PersonnelPage() {
                     <tr key={user.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
-                            <span className="text-sm font-medium text-white">
-                              {user.firstName.charAt(0)}
-                              {user.lastName.charAt(0)}
-                            </span>
-                          </div>
+                          <Avatar
+                            firstName={user.firstName}
+                            lastName={user.lastName}
+                            size="md"
+                          />
                           <div>
                             <p className="font-medium text-gray-900">
                               {user.firstName} {user.lastName}

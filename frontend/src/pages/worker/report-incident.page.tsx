@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
+import { useToast } from '../../components/ui/Toast';
 import { formatDisplayDateTime } from '../../lib/date-utils';
 import {
   AlertTriangle,
@@ -49,6 +50,7 @@ const incidentTypes: { value: IncidentType; label: string; icon: typeof AlertTri
 export function ReportIncidentPage() {
   const queryClient = useQueryClient();
   const { user } = useUser();
+  const toast = useToast();
   const [formData, setFormData] = useState<CreateIncidentData>({
     type: 'OTHER',
     severity: 'MEDIUM',
@@ -94,6 +96,10 @@ export function ReportIncidentPage() {
         location: '',
         requestException: false,
       });
+      toast.success('Incident Reported', 'Your incident report has been submitted.');
+    },
+    onError: () => {
+      toast.error('Submission Failed', 'Failed to submit incident report.');
     },
   });
 

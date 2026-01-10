@@ -40,7 +40,7 @@ export interface ChatResponse {
 }
 
 export interface ChatAction {
-  type: 'generate_summary' | 'view_reports' | 'help' | 'none';
+  type: 'generate_summary' | 'view_reports' | 'help' | 'at_risk' | 'none';
   status: 'success' | 'error' | 'pending';
   data?: Record<string, unknown>;
 }
@@ -58,6 +58,7 @@ export const TEAM_LEAD_COMMANDS = {
   GENERATE_SUMMARY: ['generate summary', 'create summary', 'summary please', 'create report', 'generate report', 'new summary', 'make summary'],
   VIEW_REPORTS: ['view reports', 'show reports', 'my reports', 'ai insights', 'show insights', 'past reports', 'history'],
   TEAM_STATUS: ['team status', 'status', 'team overview', 'how is my team', 'team today'],
+  AT_RISK: ['at risk', 'risk', 'attendance issues', 'low attendance', 'poor attendance', 'missed checkins', 'who needs attention', 'problems', 'issues', 'concerns', 'struggling'],
   HELP: ['help', 'commands', 'what can you do', 'options', 'menu'],
 } as const;
 
@@ -83,6 +84,13 @@ export const TEAM_LEAD_SUGGESTIONS: ChatSuggestion[] = [
     command: 'team status',
     description: 'Quick overview of your team today',
     icon: 'users',
+  },
+  {
+    id: 'at-risk',
+    label: 'At Risk',
+    command: 'at risk',
+    description: 'Workers with attendance issues or concerns',
+    icon: 'alert-triangle',
   },
   {
     id: 'help',

@@ -8,6 +8,7 @@ import {
   getTodayRange,
   getStartOfDay,
   getEndOfDay,
+  getStartOfNextDay,
   formatLocalDate,
   isWorkDay,
   countWorkDaysInRange,
@@ -145,19 +146,26 @@ chatbotRoutes.post('/message', async (c) => {
     return c.json(response);
   }
 
+  // Filter out the team leader from members (they're the supervisor, not a member)
+  const filteredMembers = team.members.filter((m: any) => m.id !== team.leaderId);
+  const teamWithFilteredMembers = { ...team, members: filteredMembers };
+
   // Detect command
   const command = detectCommand(message);
 
-  // Process based on command
+  // Process based on command (use filtered members for analytics)
   switch (command) {
     case 'GENERATE_SUMMARY':
-      return await handleGenerateSummary(c, user, team, companyId, context);
+      return await handleGenerateSummary(c, user, teamWithFilteredMembers, companyId, context);
 
     case 'VIEW_REPORTS':
       return handleViewReports(c);
 
     case 'TEAM_STATUS':
-      return await handleTeamStatus(c, team, companyId);
+      return await handleTeamStatus(c, teamWithFilteredMembers, companyId);
+
+    case 'AT_RISK':
+      return await handleAtRisk(c, teamWithFilteredMembers, companyId);
 
     case 'HELP':
       return handleHelp(c);
@@ -207,6 +215,40 @@ async function handleGenerateSummary(
   // Get today's date range (timezone-aware)
   const { start: today, end: tomorrow } = getTodayRange(timezone);
 
+  // Fetch holidays for the period
+  const holidays = await prisma.holiday.findMany({
+    where: {
+      companyId,
+      date: { gte: startDate, lte: endDate },
+    },
+    select: { date: true },
+  });
+  const holidayDates = holidays.map(h => formatLocalDate(h.date, timezone));
+  const holidaySet = new Set(holidayDates);
+
+  // Fetch approved exemptions for all team members
+  const memberExemptions = await prisma.exception.findMany({
+    where: {
+      userId: { in: memberIds },
+      status: 'APPROVED',
+      startDate: { lte: endDate },
+      endDate: { gte: startDate },
+    },
+    select: {
+      userId: true,
+      startDate: true,
+      endDate: true,
+    },
+  });
+
+  // Build exemption map by user
+  const exemptionsByUser = new Map<string, typeof memberExemptions>();
+  for (const exemption of memberExemptions) {
+    const userExemptions = exemptionsByUser.get(exemption.userId) || [];
+    userExemptions.push(exemption);
+    exemptionsByUser.set(exemption.userId, userExemptions);
+  }
+
   // Get ALL check-ins for the period
   const allCheckins = await prisma.checkin.findMany({
     where: {
@@ -239,11 +281,35 @@ async function handleGenerateSummary(
   // Process each member
   const memberAnalytics = team.members.map((member: any) => {
     // Use teamJoinedAt (when user was assigned to team) with fallback to createdAt
-    // This ensures we don't count days before the user was in this team
+    // Check-in requirement starts the DAY AFTER joining (not same day)
     const joinDate = member.teamJoinedAt ? new Date(member.teamJoinedAt) : new Date(member.createdAt);
-    const memberJoinDate = getStartOfDay(joinDate, timezone);
-    const effectiveStartDate = memberJoinDate > startDate ? memberJoinDate : startDate;
-    const expectedWorkDays = countWorkDaysInRange(effectiveStartDate, endDate, teamWorkDays, timezone);
+    // Effective start is NEXT DAY after joining
+    const memberEffectiveStart = getStartOfNextDay(joinDate, timezone);
+    const effectiveStartDate = memberEffectiveStart > startDate ? memberEffectiveStart : startDate;
+
+    // Calculate exempted work days for this member
+    const userExemptions = exemptionsByUser.get(member.id) || [];
+    const exemptedDatesSet = new Set<string>();
+    for (const exemption of userExemptions) {
+      if (!exemption.startDate || !exemption.endDate) continue;
+      const exStart = exemption.startDate > effectiveStartDate ? exemption.startDate : effectiveStartDate;
+      const exEnd = exemption.endDate < endDate ? exemption.endDate : endDate;
+      let current = new Date(exStart);
+      while (current <= exEnd) {
+        const dateStr = formatLocalDate(current, timezone);
+        const dayOfWeek = current.getDay();
+        const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+        // Only count as exempted if it's a work day and not already a holiday
+        if (teamWorkDays.includes(dayNames[dayOfWeek]) && !holidaySet.has(dateStr)) {
+          exemptedDatesSet.add(dateStr);
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+
+    // Calculate expected work days (excluding holidays and exemptions)
+    const workDaysBeforeExemptions = countWorkDaysInRange(effectiveStartDate, endDate, teamWorkDays, timezone, holidayDates);
+    const expectedWorkDays = Math.max(0, workDaysBeforeExemptions - exemptedDatesSet.size);
 
     const checkins = checkinsByUser.get(member.id) || [];
 
@@ -390,9 +456,11 @@ async function handleGenerateSummary(
     OTHER: 'Other',
   };
 
+  // Count reasons only from RED/YELLOW check-ins (low scores)
   const reasonCounts = new Map<string, number>();
   for (const checkin of allCheckins) {
-    if (checkin.lowScoreReason) {
+    // Only count if: has a reason AND is a low score check-in (RED or YELLOW)
+    if (checkin.lowScoreReason && (checkin.readinessStatus === 'RED' || checkin.readinessStatus === 'YELLOW')) {
       const count = reasonCounts.get(checkin.lowScoreReason) || 0;
       reasonCounts.set(checkin.lowScoreReason, count + 1);
     }
@@ -406,6 +474,28 @@ async function handleGenerateSummary(
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 5); // Top 5 reasons
+
+  // Calculate Team Health Score (0-100)
+  // Formula: (Readiness 40%) + (Compliance 30%) + (Consistency 30%)
+  const avgStreak = memberAnalytics.length > 0
+    ? memberAnalytics.reduce((sum: number, m: any) => sum + m.currentStreak, 0) / memberAnalytics.length
+    : 0;
+  const consistencyScore = Math.min(100, avgStreak * 10); // 10 day streak = 100%
+  const teamHealthScore = Math.round(
+    (teamAvgReadiness * 0.4) + (teamCompliance * 0.3) + (consistencyScore * 0.3)
+  );
+
+  // Get Top Performers (highest avg score with good check-in rate)
+  const topPerformers = [...memberAnalytics]
+    .filter((m: any) => m.checkinCount > 0 && m.checkinRate >= 80)
+    .sort((a: any, b: any) => b.avgScore - a.avgScore)
+    .slice(0, 3)
+    .map((m: any) => ({
+      name: m.name,
+      avgScore: m.avgScore,
+      checkinRate: m.checkinRate,
+      currentStreak: m.currentStreak,
+    }));
 
   try {
     const summary = await generateTeamAnalyticsSummary({
@@ -445,6 +535,8 @@ async function handleGenerateSummary(
           pendingExceptions,
           memberAnalytics,
           teamGrade,
+          teamHealthScore,
+          topPerformers,
           topReasons,
         },
       },
@@ -476,20 +568,18 @@ async function handleGenerateSummary(
       },
     });
 
-    // Build response message
-    const statusEmoji = {
-      healthy: '🟢',
-      attention: '🟡',
-      critical: '🔴',
+    // Build response message (professional format)
+    const statusLabel = {
+      healthy: 'Healthy',
+      attention: 'Needs Attention',
+      critical: 'Critical',
     };
-
-    const gradeEmoji = gradeScore >= 80 ? '🏆' : gradeScore >= 60 ? '📈' : '⚠️';
 
     const response: ChatResponse = {
       message: {
         id: generateId(),
         role: 'assistant',
-        content: `AI Summary for ${team.name} has been generated!\n\n${gradeEmoji} **Team Grade: ${teamGrade.letter}** (${teamGrade.label})\n${statusEmoji[summary.overallStatus]} **Status: ${summary.overallStatus.toUpperCase()}**\n\n**Summary:**\n${summary.summary}\n\n📊 ${summary.highlights.length} highlights, ${summary.concerns.length} concerns, ${summary.recommendations.length} recommendations`,
+        content: `**Team Performance Report Generated**\n\n**${team.name}**\n\n| Metric | Value |\n|--------|-------|\n| Team Health Score | ${teamHealthScore}/100 |\n| Team Grade | ${teamGrade.letter} (${teamGrade.label}) |\n| Status | ${statusLabel[summary.overallStatus]} |\n| Readiness | ${teamGrade.avgReadiness}% |\n| Compliance | ${teamGrade.compliance}% |\n\n**Executive Summary:**\n${summary.summary}\n\n**Report Contents:** ${summary.highlights.length} highlights, ${summary.concerns.length} concerns, ${summary.recommendations.length} recommendations`,
         timestamp: new Date(),
         links: [
           {
@@ -612,6 +702,275 @@ async function handleTeamStatus(c: any, team: any, companyId: string) {
   return c.json(response);
 }
 
+// Handler: At Risk - Detect workers with attendance issues
+async function handleAtRisk(c: any, team: any, companyId: string) {
+  const memberIds = team.members.map((m: any) => m.id);
+
+  // Get company timezone
+  const timezone = await getCompanyTimezone(companyId);
+  const teamWorkDays = team.workDays || 'MON,TUE,WED,THU,FRI';
+
+  // Get date range for last 14 days
+  const endDate = getEndOfDay(new Date(), timezone);
+  const startDate = getStartOfDay(new Date(Date.now() - 14 * 24 * 60 * 60 * 1000), timezone);
+
+  // Fetch holidays for the period
+  const holidays = await prisma.holiday.findMany({
+    where: {
+      companyId,
+      date: { gte: startDate, lte: endDate },
+    },
+    select: { date: true },
+  });
+  const holidayDates = holidays.map(h => formatLocalDate(h.date, timezone));
+  const holidaySet = new Set(holidayDates);
+
+  // Fetch exemptions for all team members
+  const memberExemptions = await prisma.exception.findMany({
+    where: {
+      userId: { in: memberIds },
+      status: 'APPROVED',
+      startDate: { lte: endDate },
+      endDate: { gte: startDate },
+    },
+    select: {
+      userId: true,
+      startDate: true,
+      endDate: true,
+    },
+  });
+
+  // Build exemption map
+  const exemptionsByUser = new Map<string, typeof memberExemptions>();
+  for (const exemption of memberExemptions) {
+    const userExemptions = exemptionsByUser.get(exemption.userId) || [];
+    userExemptions.push(exemption);
+    exemptionsByUser.set(exemption.userId, userExemptions);
+  }
+
+  // Get all check-ins for the period
+  const allCheckins = await prisma.checkin.findMany({
+    where: {
+      userId: { in: memberIds },
+      createdAt: { gte: startDate, lte: endDate },
+    },
+    select: {
+      userId: true,
+      readinessStatus: true,
+      readinessScore: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // Group check-ins by userId
+  const checkinsByUser = new Map<string, typeof allCheckins>();
+  for (const checkin of allCheckins) {
+    const userCheckins = checkinsByUser.get(checkin.userId) || [];
+    userCheckins.push(checkin);
+    checkinsByUser.set(checkin.userId, userCheckins);
+  }
+
+  // Helper to check if date is exempted for user
+  const isDateExemptedForUser = (userId: string, dateStr: string): boolean => {
+    const userExemptions = exemptionsByUser.get(userId) || [];
+    for (const exemption of userExemptions) {
+      if (!exemption.startDate || !exemption.endDate) continue;
+      const exStartStr = formatLocalDate(exemption.startDate, timezone);
+      const exEndStr = formatLocalDate(exemption.endDate, timezone);
+      if (dateStr >= exStartStr && dateStr <= exEndStr) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Process each member
+  interface MemberAnalysis {
+    name: string;
+    checkinRate: number;
+    missedDays: number;
+    avgScore: number;
+    redCount: number;
+    yellowCount: number;
+    greenCount: number;
+    riskLevel: 'low' | 'medium' | 'high';
+    issues: string[];
+  }
+
+  const memberAnalytics: MemberAnalysis[] = team.members.map((member: any) => {
+    // Check-in requirement starts the DAY AFTER joining (not same day)
+    const joinDate = member.teamJoinedAt ? new Date(member.teamJoinedAt) : new Date(member.createdAt);
+    const memberEffectiveStart = getStartOfNextDay(joinDate, timezone);
+    const effectiveStartDate = memberEffectiveStart > startDate ? memberEffectiveStart : startDate;
+
+    // Count exemption days
+    const userExemptions = exemptionsByUser.get(member.id) || [];
+    const exemptedDatesSet = new Set<string>();
+    for (const exemption of userExemptions) {
+      if (!exemption.startDate || !exemption.endDate) continue;
+      const exStart = exemption.startDate > effectiveStartDate ? exemption.startDate : effectiveStartDate;
+      const exEnd = exemption.endDate < endDate ? exemption.endDate : endDate;
+      let current = new Date(exStart);
+      while (current <= exEnd) {
+        const dateStr = formatLocalDate(current, timezone);
+        const dayOfWeek = current.getDay();
+        const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+        if (teamWorkDays.includes(dayNames[dayOfWeek]) && !holidaySet.has(dateStr)) {
+          exemptedDatesSet.add(dateStr);
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    }
+
+    const workDaysBeforeExemptions = countWorkDaysInRange(effectiveStartDate, endDate, teamWorkDays, timezone, holidayDates);
+    const expectedWorkDays = Math.max(0, workDaysBeforeExemptions - exemptedDatesSet.size);
+
+    const checkins = checkinsByUser.get(member.id) || [];
+
+    // Filter valid check-ins (not on holidays or exempted days)
+    const validCheckins = checkins.filter(c => {
+      const checkinDateStr = formatLocalDate(c.createdAt, timezone);
+      if (holidaySet.has(checkinDateStr)) return false;
+      if (isDateExemptedForUser(member.id, checkinDateStr)) return false;
+      return true;
+    });
+
+    const greenCount = validCheckins.filter(c => c.readinessStatus === 'GREEN').length;
+    const yellowCount = validCheckins.filter(c => c.readinessStatus === 'YELLOW').length;
+    const redCount = validCheckins.filter(c => c.readinessStatus === 'RED').length;
+
+    const avgScore = validCheckins.length > 0
+      ? Math.round(validCheckins.reduce((sum, c) => sum + c.readinessScore, 0) / validCheckins.length)
+      : 0;
+
+    const checkinRate = expectedWorkDays > 0
+      ? Math.min(100, Math.round((validCheckins.length / expectedWorkDays) * 100))
+      : 100;
+
+    const missedDays = Math.max(0, expectedWorkDays - validCheckins.length);
+
+    // Determine risk level and collect issues
+    const issues: string[] = [];
+    let riskLevel: 'low' | 'medium' | 'high' = 'low';
+
+    // Check for missed days
+    if (missedDays >= 4) {
+      riskLevel = 'high';
+      issues.push(`${missedDays} missed work days`);
+    } else if (missedDays >= 2) {
+      if (riskLevel === 'low') riskLevel = 'medium';
+      issues.push(`${missedDays} missed work days`);
+    }
+
+    // Check for red status
+    if (redCount >= 3 || (validCheckins.length > 0 && redCount / validCheckins.length > 0.4)) {
+      riskLevel = 'high';
+      issues.push(`${redCount} RED check-ins (${Math.round(redCount / validCheckins.length * 100)}%)`);
+    } else if (redCount >= 2) {
+      if (riskLevel === 'low') riskLevel = 'medium';
+      issues.push(`${redCount} RED check-ins`);
+    }
+
+    // Check for yellow status
+    if (yellowCount >= 3) {
+      if (riskLevel === 'low') riskLevel = 'medium';
+      issues.push(`${yellowCount} YELLOW check-ins`);
+    }
+
+    // Check for low average score
+    if (avgScore > 0 && avgScore < 50) {
+      if (riskLevel === 'low') riskLevel = 'medium';
+      issues.push(`Low avg score: ${avgScore}%`);
+    }
+
+    // Check for low check-in rate
+    if (checkinRate < 60 && expectedWorkDays > 0) {
+      if (riskLevel === 'low') riskLevel = 'medium';
+      issues.push(`Low check-in rate: ${checkinRate}%`);
+    }
+
+    return {
+      name: `${member.firstName} ${member.lastName}`,
+      checkinRate,
+      missedDays,
+      avgScore,
+      redCount,
+      yellowCount,
+      greenCount,
+      riskLevel,
+      issues,
+    };
+  });
+
+  // Filter members who have issues and sort by risk
+  const atRiskMembers = memberAnalytics
+    .filter((m: MemberAnalysis) => m.riskLevel !== 'low' || m.issues.length > 0)
+    .sort((a: MemberAnalysis, b: MemberAnalysis) => {
+      const riskOrder = { high: 0, medium: 1, low: 2 };
+      if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel]) {
+        return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
+      }
+      return a.avgScore - b.avgScore;
+    });
+
+  // Format response
+  let content: string;
+
+  if (atRiskMembers.length === 0) {
+    content = `✅ **Great news!** All ${team.members.length} members of **${team.name}** are doing well.\n\nNo attendance issues or concerns detected in the past 14 days.`;
+  } else {
+    const highRisk = atRiskMembers.filter((m: MemberAnalysis) => m.riskLevel === 'high');
+    const mediumRisk = atRiskMembers.filter((m: MemberAnalysis) => m.riskLevel === 'medium');
+
+    content = `**${team.name} - Workers Needing Attention**\n\n`;
+    content += `📊 Analyzed ${team.members.length} members over the past 14 days\n\n`;
+
+    if (highRisk.length > 0) {
+      content += `🔴 **High Risk (${highRisk.length}):**\n`;
+      for (const member of highRisk) {
+        content += `• **${member.name}**\n`;
+        for (const issue of member.issues) {
+          content += `  ↳ ${issue}\n`;
+        }
+      }
+      content += '\n';
+    }
+
+    if (mediumRisk.length > 0) {
+      content += `🟡 **Medium Risk (${mediumRisk.length}):**\n`;
+      for (const member of mediumRisk) {
+        content += `• **${member.name}**\n`;
+        for (const issue of member.issues) {
+          content += `  ↳ ${issue}\n`;
+        }
+      }
+      content += '\n';
+    }
+
+    content += `\n💡 **Tip:** Say "Generate Summary" for a detailed AI analysis with recommendations.`;
+  }
+
+  const response: ChatResponse = {
+    message: {
+      id: generateId(),
+      role: 'assistant',
+      content,
+      timestamp: new Date(),
+      links: atRiskMembers.length > 0 ? [
+        {
+          label: 'View Team Analytics',
+          url: '/team/analytics',
+          icon: 'bar-chart',
+        },
+      ] : undefined,
+    },
+    action: { type: 'at_risk', status: 'success' },
+  };
+
+  return c.json(response);
+}
+
 // Handler: Help
 function handleHelp(c: any) {
   const helpText = `**Available Commands:**\n
@@ -620,6 +979,8 @@ function handleHelp(c: any) {
 📁 **"View Reports"** - See all your previously generated AI Insights reports.
 
 👥 **"Team Status"** - Get a quick overview of your team's check-in status for today.
+
+⚠️ **"At Risk"** - Identify workers with attendance issues, low check-in rates, or concerning patterns that need attention.
 
 ❓ **"Help"** - Show this help message.
 

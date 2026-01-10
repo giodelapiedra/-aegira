@@ -120,6 +120,14 @@ export function getTodayEnd(timezone: string = DEFAULT_TIMEZONE): Date {
 }
 
 /**
+ * Get start of the next day from a given date
+ * Used for determining when check-in requirement starts (day after joining team)
+ */
+export function getStartOfNextDay(date: Date, timezone: string = DEFAULT_TIMEZONE): Date {
+  return toDateTime(date, timezone).plus({ days: 1 }).startOf('day').toJSDate();
+}
+
+/**
  * Get today's date range for database queries
  */
 export function getTodayRange(timezone: string = DEFAULT_TIMEZONE): { start: Date; end: Date } {
@@ -288,14 +296,17 @@ export function isTodayWorkDay(workDays: string, timezone: string = DEFAULT_TIME
 
 /**
  * Count work days in a date range
+ * @param holidayDates - Optional array of holiday date strings (YYYY-MM-DD) to exclude
  */
 export function countWorkDaysInRange(
   startDate: Date,
   endDate: Date,
   workDays: string,
-  timezone: string = DEFAULT_TIMEZONE
+  timezone: string = DEFAULT_TIMEZONE,
+  holidayDates?: string[]
 ): number {
   const workDaysList = parseWorkDays(workDays);
+  const holidaySet = new Set(holidayDates || []);
   let count = 0;
 
   let current = toDateTime(startDate, timezone).startOf('day');
@@ -303,7 +314,10 @@ export function countWorkDaysInRange(
 
   while (current <= end) {
     const dayOfWeek = luxonWeekdayToJS(current.weekday);
-    if (workDaysList.includes(DAY_NAMES[dayOfWeek])) {
+    const dateStr = current.toFormat('yyyy-MM-dd');
+
+    // Count as work day only if: scheduled work day AND not a holiday
+    if (workDaysList.includes(DAY_NAMES[dayOfWeek]) && !holidaySet.has(dateStr)) {
       count++;
     }
     current = current.plus({ days: 1 });

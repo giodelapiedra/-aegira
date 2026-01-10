@@ -68,7 +68,17 @@
       "Bash(del \"D:\\\\Aegira\\\\backend\\\\check-jan6.ts\")",
       "Bash(git init:*)",
       "Bash(git remote add:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(del \"D:\\\\Aegira\\\\frontend\\\\src\\\\pages\\\\executive\\\\holidays.page.tsx\")",
+      "Bash(D:)",
+      "Bash(del:*)",
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "Bash(if not exist \"D:\\\\Aegira\\\\.github\" mkdir \"D:\\\\Aegira\\\\.github\")",
+      "Bash(echo:*)"
     ]
   }
 }

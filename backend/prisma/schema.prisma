@@ -62,6 +62,7 @@ enum ExceptionType {
   PERSONAL_LEAVE
   MEDICAL_APPOINTMENT
   FAMILY_EMERGENCY
+  TEAM_INACTIVE // Auto-created when team is deactivated
   OTHER
 }
 
@@ -83,6 +84,21 @@ enum LowScoreReason {
   FAMILY_EMERGENCY
   WORK_RELATED
   OTHER
+}
+
+enum AbsenceReason {
+  SICK
+  EMERGENCY
+  PERSONAL
+  FORGOT_CHECKIN
+  TECHNICAL_ISSUE
+  OTHER
+}
+
+enum AbsenceStatus {
+  PENDING_JUSTIFICATION // Worker hasn't explained yet
+  EXCUSED               // TL approved - no penalty
+  UNEXCUSED             // TL rejected - 0 points
 }
 
 enum IncidentActivityType {
@@ -140,6 +156,8 @@ model Company {
   wellnessSnapshots WellnessSnapshot[]
   aiSummaries       AISummary[]
   dailyAttendance   DailyAttendance[]
+  holidays          Holiday[]
+  absences          Absence[]
 
   @@map("companies")
 }
@@ -196,6 +214,9 @@ model User {
   incidentActivities   IncidentActivity[] @relation("IncidentActivities")
   aiSummaries          AISummary[]
   dailyAttendance      DailyAttendance[]
+  createdHolidays      Holiday[]          @relation("HolidayCreator")
+  absences             Absence[]
+  absenceReviews       Absence[]          @relation("AbsenceReviewer")
 
   @@index([companyId])
   @@index([teamId])
@@ -219,6 +240,11 @@ model Team {
   shiftStart String @default("08:00") // 24-hour format
   shiftEnd   String @default("17:00") // 24-hour format
 
+  // Deactivation tracking
+  deactivatedAt     DateTime? // When team was deactivated
+  deactivatedReason String?   // Reason for deactivation
+  reactivatedAt     DateTime? // When team was last reactivated
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -229,6 +255,7 @@ model Team {
   incidents       Incident[]
   aiSummaries     AISummary[]
   dailyAttendance DailyAttendance[]
+  absences        Absence[]
 
   @@index([companyId])
   @@index([leaderId])
@@ -430,6 +457,7 @@ model Exception {
   @@index([userId])
   @@index([createdAt])
   @@index([reviewedById])
+  @@index([userId, status, startDate, endDate]) // Composite index for leave status queries
   @@map("exceptions")
 }
 
@@ -902,4 +930,69 @@ model WellnessSnapshot {
   @@index([companyId])
   @@index([date])
   @@map("wellness_snapshots")
+}
+
+// ===========================================
+// HOLIDAY (Company-wide holidays set by Executive)
+// ===========================================
+
+model Holiday {
+  id        String   @id @default(uuid())
+  companyId String
+  date      DateTime @db.Date
+  name      String
+  createdBy String
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creator User    @relation("HolidayCreator", fields: [createdBy], references: [id])
+
+  @@unique([companyId, date]) // One holiday per date per company
+  @@index([companyId])
+  @@index([date])
+  @@map("holidays")
+}
+
+// ===========================================
+// ABSENCE (Absence Justification System)
+// ===========================================
+
+model Absence {
+  id          String   @id @default(uuid())
+
+  // Worker info
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  absenceDate DateTime @db.Date
+
+  // Team info (for TL filtering)
+  teamId      String
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  // Justification (filled by worker)
+  reasonCategory AbsenceReason?
+  explanation    String?
+  justifiedAt    DateTime? // NULL = not yet justified, has value = justified
+
+  // Review (by team leader)
+  status      AbsenceStatus @default(PENDING_JUSTIFICATION)
+  reviewedBy  String?
+  reviewer    User?         @relation("AbsenceReviewer", fields: [reviewedBy], references: [id])
+  reviewedAt  DateTime?
+  reviewNotes String?
+
+  // Multi-tenancy
+  companyId   String
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, absenceDate])
+  @@index([userId, status])
+  @@index([teamId, status])
+  @@index([companyId])
+  @@index([absenceDate])
+  @@map("absences")
 }

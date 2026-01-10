@@ -335,6 +335,29 @@ exemptionsRoutes.post('/create-for-worker', async (c) => {
     },
   });
 
+  // IMPORTANT: Clean up any existing absence records within the exemption period
+  // This prevents the blocking popup from showing for exempted dates
+  const cleanedAbsences = await prisma.absence.updateMany({
+    where: {
+      userId: body.userId,
+      absenceDate: {
+        gte: tomorrow,
+        lte: endDate,
+      },
+      status: 'PENDING_JUSTIFICATION', // Only clean up pending ones
+    },
+    data: {
+      status: 'EXCUSED',
+      reviewedBy: creatorId,
+      reviewedAt: new Date(),
+      reviewNotes: `Auto-excused: Covered by exemption created by TL (${body.type})`,
+    },
+  });
+
+  if (cleanedAbsences.count > 0) {
+    console.log(`[Exemption Created] Cleaned up ${cleanedAbsences.count} absence record(s) for user ${body.userId}`);
+  }
+
   // Notify the worker with exemption end date
   const endDateDisplay = formatDisplayDate(endDate, timezone);
   const adjustmentNote = returnDateAdjusted
@@ -683,6 +706,8 @@ exemptionsRoutes.get('/check/:checkinId', async (c) => {
 exemptionsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
+  const currentUser = c.get('user');
+  const currentUserId = c.get('userId');
 
   const exemption = await prisma.exception.findFirst({
     where: { id, companyId, isExemption: true },
@@ -693,10 +718,12 @@ exemptionsRoutes.get('/:id', async (c) => {
           firstName: true,
           lastName: true,
           email: true,
+          teamId: true,
           team: {
             select: {
               id: true,
               name: true,
+              leaderId: true,
             },
           },
         },
@@ -728,6 +755,12 @@ exemptionsRoutes.get('/:id', async (c) => {
     return c.json({ error: 'Exemption not found' }, 404);
   }
 
+  // TEAM_LEAD: Can only view exemptions for their own team members
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && exemption.user.team?.leaderId !== currentUserId) {
+    return c.json({ error: 'You can only view exemptions for your own team members' }, 403);
+  }
+
   return c.json(exemption);
 });
 
@@ -739,6 +772,7 @@ exemptionsRoutes.patch('/:id/approve', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const reviewerId = c.get('userId');
+  const currentUser = c.get('user');
   const body = approveExemptionSchema.parse(await c.req.json());
 
   // Get existing exemption with user's team info for work days
@@ -754,6 +788,7 @@ exemptionsRoutes.patch('/:id/approve', async (c) => {
             select: {
               id: true,
               workDays: true,
+              leaderId: true,
             },
           },
         },
@@ -763,6 +798,12 @@ exemptionsRoutes.patch('/:id/approve', async (c) => {
 
   if (!existing) {
     return c.json({ error: 'Exemption not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only approve exemptions for their own team members
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && existing.user.team?.leaderId !== reviewerId) {
+    return c.json({ error: 'You can only approve exemptions for your own team members' }, 403);
   }
 
   if (existing.status !== 'PENDING') {
@@ -836,6 +877,29 @@ exemptionsRoutes.patch('/:id/approve', async (c) => {
     },
   });
 
+  // IMPORTANT: Clean up any existing absence records within the exemption period
+  // This prevents the blocking popup from showing for exempted dates
+  const cleanedAbsences = await prisma.absence.updateMany({
+    where: {
+      userId: exemption.userId,
+      absenceDate: {
+        gte: tomorrow,
+        lte: endDate,
+      },
+      status: 'PENDING_JUSTIFICATION', // Only clean up pending ones
+    },
+    data: {
+      status: 'EXCUSED',
+      reviewedBy: reviewerId,
+      reviewedAt: new Date(),
+      reviewNotes: `Auto-excused: Covered by approved exemption (${exemption.type})`,
+    },
+  });
+
+  if (cleanedAbsences.count > 0) {
+    console.log(`[Exemption Approved] Cleaned up ${cleanedAbsences.count} absence record(s) for user ${exemption.userId}`);
+  }
+
   // Notify worker with exemption end date
   const endDateDisplay = formatDisplayDate(endDate, timezone);
   const adjustmentNote = returnDateAdjusted
@@ -886,6 +950,7 @@ exemptionsRoutes.patch('/:id/reject', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const reviewerId = c.get('userId');
+  const currentUser = c.get('user');
   const body = rejectExemptionSchema.parse(await c.req.json());
 
   const existing = await prisma.exception.findFirst({
@@ -896,6 +961,11 @@ exemptionsRoutes.patch('/:id/reject', async (c) => {
           id: true,
           firstName: true,
           lastName: true,
+          team: {
+            select: {
+              leaderId: true,
+            },
+          },
         },
       },
     },
@@ -903,6 +973,12 @@ exemptionsRoutes.patch('/:id/reject', async (c) => {
 
   if (!existing) {
     return c.json({ error: 'Exemption not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only reject exemptions for their own team members
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && existing.user.team?.leaderId !== reviewerId) {
+    return c.json({ error: 'You can only reject exemptions for your own team members' }, 403);
   }
 
   if (existing.status !== 'PENDING') {
@@ -972,6 +1048,7 @@ exemptionsRoutes.patch('/:id/end-early', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const reviewerId = c.get('userId');
+  const currentUser = c.get('user');
   const body = await c.req.json();
 
   const existing = await prisma.exception.findFirst({
@@ -982,6 +1059,11 @@ exemptionsRoutes.patch('/:id/end-early', async (c) => {
           id: true,
           firstName: true,
           lastName: true,
+          team: {
+            select: {
+              leaderId: true,
+            },
+          },
         },
       },
     },
@@ -989,6 +1071,12 @@ exemptionsRoutes.patch('/:id/end-early', async (c) => {
 
   if (!existing) {
     return c.json({ error: 'Exemption not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only end exemptions for their own team members
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && existing.user.team?.leaderId !== reviewerId) {
+    return c.json({ error: 'You can only end exemptions for your own team members' }, 403);
   }
 
   if (existing.status !== 'APPROVED') {

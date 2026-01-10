@@ -16,6 +16,7 @@ import {
   Timer,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { Avatar } from '../ui/Avatar';
 import { MetricsRow } from './MetricsBadge';
 import type { Exemption } from '../../services/exemption.service';
 import { getExceptionTypeLabel, getDaysRemaining } from '../../services/exemption.service';
@@ -68,12 +69,11 @@ export function PendingExemptionCard({
       <div className="p-4">
         {/* User Info */}
         <div className="flex items-center gap-3 mb-4">
-          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center flex-shrink-0">
-            <span className="text-sm font-medium text-white">
-              {exemption.user.firstName.charAt(0)}
-              {exemption.user.lastName.charAt(0)}
-            </span>
-          </div>
+          <Avatar
+            firstName={exemption.user.firstName}
+            lastName={exemption.user.lastName}
+            size="lg"
+          />
           <div>
             <h4 className="font-semibold text-gray-900">
               {exemption.user.firstName} {exemption.user.lastName}
@@ -191,12 +191,11 @@ export function ActiveExemptionCard({
       <div className="p-4">
         {/* User Info */}
         <div className="flex items-center gap-3 mb-4">
-          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center flex-shrink-0">
-            <span className="text-sm font-medium text-white">
-              {exemption.user.firstName.charAt(0)}
-              {exemption.user.lastName.charAt(0)}
-            </span>
-          </div>
+          <Avatar
+            firstName={exemption.user.firstName}
+            lastName={exemption.user.lastName}
+            size="md"
+          />
           <div className="flex-1 min-w-0">
             <h4 className="font-medium text-gray-900 truncate">
               {exemption.user.firstName} {exemption.user.lastName}

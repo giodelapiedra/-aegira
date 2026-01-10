@@ -7,6 +7,7 @@ import type { AppContext } from '../../types/context.js';
 import { getAssignableRoles, type Role } from '../../types/roles.js';
 import { passwordSchema, parsePagination, isValidUUID, parseOptionalUUID } from '../../utils/validator.js';
 import { logger } from '../../utils/logger.js';
+import { uploadToR2, deleteFromR2, isValidImageType, FILE_SIZE_LIMITS } from '../../utils/upload.js';
 
 const usersRoutes = new Hono<AppContext>();
 
@@ -286,6 +287,115 @@ usersRoutes.patch('/me/password', async (c) => {
   return c.json({ success: true, message: 'Password updated successfully' });
 });
 
+// POST /users/me/avatar - Upload profile avatar
+usersRoutes.post('/me/avatar', async (c) => {
+  const userId = c.get('userId');
+
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get('avatar') as File | null;
+
+    if (!file) {
+      return c.json({ error: 'No file uploaded' }, 400);
+    }
+
+    // Validate file type
+    if (!isValidImageType(file.type)) {
+      return c.json({ error: 'Invalid file type. Allowed: JPEG, PNG, GIF, WebP' }, 400);
+    }
+
+    // Validate file size (2MB limit for images)
+    if (file.size > FILE_SIZE_LIMITS.IMAGE) {
+      const limitMB = FILE_SIZE_LIMITS.IMAGE / (1024 * 1024);
+      return c.json({ error: `File size exceeds ${limitMB}MB limit` }, 400);
+    }
+
+    // Get current user to check for existing avatar
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { avatar: true },
+    });
+
+    // Delete old avatar from R2 if exists
+    if (currentUser?.avatar) {
+      try {
+        // Extract key from URL (e.g., "https://upload.aegira.health/avatars/uuid.jpg" -> "avatars/uuid.jpg")
+        const urlParts = currentUser.avatar.split('/');
+        const key = urlParts.slice(-2).join('/'); // Get last 2 parts: folder/filename
+        await deleteFromR2(key);
+      } catch (deleteError) {
+        // Log but don't fail if old avatar deletion fails
+        logger.warn({ error: deleteError }, 'Failed to delete old avatar');
+      }
+    }
+
+    // Convert File to Buffer
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // Upload to R2
+    const result = await uploadToR2(buffer, file.name, file.type, 'avatars');
+
+    // Update user avatar URL
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { avatar: result.url },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        avatar: true,
+      },
+    });
+
+    return c.json({
+      success: true,
+      message: 'Avatar uploaded successfully',
+      avatar: updatedUser.avatar,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Avatar upload failed');
+    return c.json({ error: 'Failed to upload avatar' }, 500);
+  }
+});
+
+// DELETE /users/me/avatar - Remove profile avatar
+usersRoutes.delete('/me/avatar', async (c) => {
+  const userId = c.get('userId');
+
+  try {
+    // Get current user avatar
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { avatar: true },
+    });
+
+    if (!currentUser?.avatar) {
+      return c.json({ error: 'No avatar to remove' }, 400);
+    }
+
+    // Delete from R2
+    try {
+      const urlParts = currentUser.avatar.split('/');
+      const key = urlParts.slice(-2).join('/');
+      await deleteFromR2(key);
+    } catch (deleteError) {
+      logger.warn({ error: deleteError }, 'Failed to delete avatar from R2');
+    }
+
+    // Update user to remove avatar
+    await prisma.user.update({
+      where: { id: userId },
+      data: { avatar: null },
+    });
+
+    return c.json({ success: true, message: 'Avatar removed successfully' });
+  } catch (error) {
+    logger.error({ error }, 'Avatar deletion failed');
+    return c.json({ error: 'Failed to remove avatar' }, 500);
+  }
+});
+
 // GET /users - List users (company-scoped, except for ADMIN - super admin sees all)
 usersRoutes.get('/', async (c) => {
   try {
@@ -417,42 +527,69 @@ usersRoutes.get('/:id', async (c) => {
 });
 
 // PUT /users/:id - Update user (company-scoped, except for ADMIN)
+// EXECUTIVE/ADMIN can update any user in company
+// TEAM_LEAD can only transfer their own team members
 usersRoutes.put('/:id', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const currentUser = c.get('user');
+  const currentUserId = c.get('userId');
   const body = await c.req.json();
 
-  // ADMIN: Super admin - can update any user
   const isAdmin = currentUser.role?.toUpperCase() === 'ADMIN';
+  const isExecutive = currentUser.role === 'EXECUTIVE';
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+
+  // Build query based on role
   const where: any = { id };
   if (!isAdmin) {
     where.companyId = companyId;
   }
 
-  // Verify user exists
+  // Verify user exists with team info
   const existing = await prisma.user.findFirst({
     where,
+    include: {
+      team: {
+        select: { id: true, leaderId: true },
+      },
+    },
   });
 
   if (!existing) {
     return c.json({ error: 'User not found' }, 404);
   }
 
-  // Check if team is being changed
+  // Check if team is being changed (transfer)
   const isTeamChanging = body.teamId !== undefined && body.teamId !== existing.teamId;
+
+  // TEAM_LEAD: Can only transfer members of their own team
+  if (isTeamLead && isTeamChanging) {
+    if (!existing.team || existing.team.leaderId !== currentUserId) {
+      return c.json({ error: 'You can only transfer members from your own team' }, 403);
+    }
+    // Team leads cannot transfer other team leads or higher roles
+    if (existing.role !== 'MEMBER' && existing.role !== 'WORKER') {
+      return c.json({ error: 'You can only transfer workers/members' }, 403);
+    }
+  }
+
+  // Build update data - only include fields that are actually provided
+  const updateData: any = {};
+  if (body.firstName !== undefined) updateData.firstName = body.firstName;
+  if (body.lastName !== undefined) updateData.lastName = body.lastName;
+  if (body.phone !== undefined) updateData.phone = body.phone;
+  if (body.avatar !== undefined) updateData.avatar = body.avatar;
+  if (body.teamId !== undefined) updateData.teamId = body.teamId;
+
+  // Update teamJoinedAt when team changes
+  if (isTeamChanging) {
+    updateData.teamJoinedAt = body.teamId ? new Date() : null;
+  }
 
   const user = await prisma.user.update({
     where: { id },
-    data: {
-      firstName: body.firstName,
-      lastName: body.lastName,
-      phone: body.phone,
-      avatar: body.avatar,
-      teamId: body.teamId,
-      // Update teamJoinedAt when team changes
-      ...(isTeamChanging && { teamJoinedAt: body.teamId ? new Date() : null }),
-    },
+    data: updateData,
     select: {
       id: true,
       email: true,
@@ -549,18 +686,24 @@ usersRoutes.patch('/:id/role', async (c) => {
 });
 
 // DELETE /users/:id - Soft delete user (company-scoped, except for ADMIN)
+// EXECUTIVE/ADMIN can deactivate any user in company
+// TEAM_LEAD can only deactivate their own team members
 usersRoutes.delete('/:id', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const currentUser = c.get('user');
+  const currentUserId = c.get('userId');
 
-  // Only EXECUTIVE and ADMIN can delete users
-  if (currentUser.role !== 'EXECUTIVE' && currentUser.role !== 'ADMIN') {
+  const isAdmin = currentUser.role?.toUpperCase() === 'ADMIN';
+  const isExecutive = currentUser.role === 'EXECUTIVE';
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+
+  // Only EXECUTIVE, ADMIN, or TEAM_LEAD can deactivate users
+  if (!isAdmin && !isExecutive && !isTeamLead) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
-  // ADMIN: Super admin - can delete any user
-  const isAdmin = currentUser.role?.toUpperCase() === 'ADMIN';
+  // Build query based on role
   const where: any = { id };
   if (!isAdmin) {
     where.companyId = companyId;
@@ -569,20 +712,36 @@ usersRoutes.delete('/:id', async (c) => {
   // Verify user exists
   const existing = await prisma.user.findFirst({
     where,
+    include: {
+      team: {
+        select: { id: true, leaderId: true },
+      },
+    },
   });
 
   if (!existing) {
     return c.json({ error: 'User not found' }, 404);
   }
 
+  // TEAM_LEAD: Can only deactivate members of their own team
+  if (isTeamLead) {
+    if (!existing.team || existing.team.leaderId !== currentUserId) {
+      return c.json({ error: 'You can only deactivate members of your own team' }, 403);
+    }
+    // Team leads cannot deactivate other team leads or higher roles
+    if (existing.role !== 'MEMBER' && existing.role !== 'WORKER') {
+      return c.json({ error: 'You can only deactivate workers/members' }, 403);
+    }
+  }
+
   // Cannot delete EXECUTIVE
   if (existing.role === 'EXECUTIVE') {
-    return c.json({ error: 'Cannot delete EXECUTIVE user' }, 403);
+    return c.json({ error: 'Cannot deactivate EXECUTIVE user' }, 403);
   }
 
   // Cannot delete self
-  if (id === currentUser.id) {
-    return c.json({ error: 'Cannot delete yourself' }, 400);
+  if (id === currentUserId) {
+    return c.json({ error: 'Cannot deactivate yourself' }, 400);
   }
 
   await prisma.user.update({
@@ -593,7 +752,7 @@ usersRoutes.delete('/:id', async (c) => {
   // Log user deactivation - use existing user's companyId for logging
   await createSystemLog({
     companyId: existing.companyId,
-    userId: currentUser.id,
+    userId: currentUserId,
     action: 'USER_DEACTIVATED',
     entityType: 'user',
     entityId: id,
@@ -605,18 +764,24 @@ usersRoutes.delete('/:id', async (c) => {
 });
 
 // POST /users/:id/reactivate - Reactivate user (company-scoped, except for ADMIN)
+// EXECUTIVE/ADMIN can reactivate any user in company
+// TEAM_LEAD can only reactivate their own team members
 usersRoutes.post('/:id/reactivate', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const currentUser = c.get('user');
+  const currentUserId = c.get('userId');
 
-  // Only EXECUTIVE and ADMIN can reactivate users
-  if (currentUser.role !== 'EXECUTIVE' && currentUser.role !== 'ADMIN') {
+  const isAdmin = currentUser.role?.toUpperCase() === 'ADMIN';
+  const isExecutive = currentUser.role === 'EXECUTIVE';
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+
+  // Only EXECUTIVE, ADMIN, or TEAM_LEAD can reactivate users
+  if (!isAdmin && !isExecutive && !isTeamLead) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
-  // ADMIN: Super admin - can reactivate any user
-  const isAdmin = currentUser.role?.toUpperCase() === 'ADMIN';
+  // Build query based on role
   const where: any = { id };
   if (!isAdmin) {
     where.companyId = companyId;
@@ -625,10 +790,26 @@ usersRoutes.post('/:id/reactivate', async (c) => {
   // Verify user exists
   const existing = await prisma.user.findFirst({
     where,
+    include: {
+      team: {
+        select: { id: true, leaderId: true },
+      },
+    },
   });
 
   if (!existing) {
     return c.json({ error: 'User not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only reactivate members of their own team
+  if (isTeamLead) {
+    if (!existing.team || existing.team.leaderId !== currentUserId) {
+      return c.json({ error: 'You can only reactivate members of your own team' }, 403);
+    }
+    // Team leads cannot reactivate other team leads or higher roles
+    if (existing.role !== 'MEMBER' && existing.role !== 'WORKER') {
+      return c.json({ error: 'You can only reactivate workers/members' }, 403);
+    }
   }
 
   await prisma.user.update({
@@ -639,7 +820,7 @@ usersRoutes.post('/:id/reactivate', async (c) => {
   // Log user reactivation - use existing user's companyId for logging
   await createSystemLog({
     companyId: existing.companyId,
-    userId: currentUser.id,
+    userId: currentUserId,
     action: 'USER_REACTIVATED',
     entityType: 'user',
     entityId: id,

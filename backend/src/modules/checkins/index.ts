@@ -25,6 +25,18 @@ import {
   DEFAULT_TIMEZONE,
 } from '../../utils/date-helpers.js';
 
+// ===========================================
+// CONSTANTS
+// ===========================================
+
+/**
+ * Grace period in minutes for check-in and attendance scoring
+ * - Workers can check in this many minutes BEFORE their shift starts
+ * - Workers are marked GREEN (on-time) if they check in within this period AFTER shift starts
+ * - After this grace period, workers are marked YELLOW (late)
+ */
+const GRACE_PERIOD_MINUTES = 15;
+
 const checkinsRoutes = new Hono<AppContext>();
 
 // GET /checkins/leave-status - Check if user is on leave or returning
@@ -77,12 +89,28 @@ checkinsRoutes.get('/my', async (c) => {
   const page = parseInt(c.req.query('page') || '1');
   const limit = parseInt(c.req.query('limit') || '10');
   const status = c.req.query('status');
+  const startDate = c.req.query('startDate');
+  const endDate = c.req.query('endDate');
 
   const skip = (page - 1) * limit;
 
   const where: any = { userId };
   if (status) {
     where.readinessStatus = status;
+  }
+
+  // Date range filtering (server-side for proper pagination)
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) {
+      where.createdAt.gte = new Date(startDate);
+    }
+    if (endDate) {
+      // Include the entire end date day
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt.lte = end;
+    }
   }
 
   const [checkins, total] = await Promise.all([
@@ -100,6 +128,8 @@ checkinsRoutes.get('/my', async (c) => {
         readinessStatus: true,
         readinessScore: true,
         lowScoreReason: true,
+        lowScoreDetails: true,
+        notes: true,
         createdAt: true,
       },
     }),
@@ -121,26 +151,63 @@ checkinsRoutes.get('/my', async (c) => {
 checkinsRoutes.get('/', async (c) => {
   const companyId = c.get('companyId');
   const user = c.get('user');
+  const currentUserId = c.get('userId');
   const page = parseInt(c.req.query('page') || '1');
   const limit = parseInt(c.req.query('limit') || '10');
   const userId = c.req.query('userId');
-  const teamId = c.req.query('teamId');
+  let teamId = c.req.query('teamId');
   const status = c.req.query('status');
+  const startDate = c.req.query('startDate');
+  const endDate = c.req.query('endDate');
 
   const skip = (page - 1) * limit;
 
   // ADMIN: Super admin - can see all check-ins across all companies
   const isAdmin = user.role?.toUpperCase() === 'ADMIN';
+  const isTeamLead = user.role?.toUpperCase() === 'TEAM_LEAD';
+
+  // TEAM_LEAD: Can only see their own team's check-ins
+  if (isTeamLead) {
+    // Find the team this user leads
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: currentUserId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam) {
+      return c.json({ error: 'You are not assigned as a team leader' }, 403);
+    }
+
+    // If teamId is provided, verify it matches their team
+    if (teamId && teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only view check-ins for your own team' }, 403);
+    }
+
+    // Force teamId to their team (even if not provided)
+    teamId = leaderTeam.id;
+  }
+
   const where: any = {};
-  
+
   if (!isAdmin) {
     where.companyId = companyId;
   }
-  
+
   if (userId) where.userId = userId;
   if (status) where.readinessStatus = status;
   if (teamId) {
     where.user = { teamId };
+  }
+
+  // Date range filtering
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) {
+      where.createdAt.gte = new Date(startDate);
+    }
+    if (endDate) {
+      where.createdAt.lte = new Date(endDate);
+    }
   }
 
   const [checkins, total] = await Promise.all([
@@ -196,7 +263,7 @@ checkinsRoutes.post('/', async (c) => {
   // Get company timezone (centralized)
   const timezone = user?.company?.timezone || DEFAULT_TIMEZONE;
 
-  // Validation 1: Only MEMBER/WORKER role can check in
+  // Validation 1: Only MEMBER/WORKER role can check in (Team leaders supervise only)
   if (user?.role !== 'MEMBER' && user?.role !== 'WORKER') {
     return c.json({
       error: 'Daily check-in is only required for team members',
@@ -236,7 +303,23 @@ checkinsRoutes.post('/', async (c) => {
     }, 400);
   }
 
-  // Validation 5: Check if current time is within shift hours (timezone-aware)
+  // Validation 5: Check if today is a company holiday
+  const todayForHolidayCheck = getTodayForDbDate(timezone);
+  const holiday = await prisma.holiday.findFirst({
+    where: {
+      companyId,
+      date: todayForHolidayCheck,
+    },
+  });
+
+  if (holiday) {
+    return c.json({
+      error: `Today is a company holiday (${holiday.name}). Check-in is not required.`,
+      code: 'HOLIDAY'
+    }, 400);
+  }
+
+  // Validation 6: Check if current time is within shift hours (timezone-aware)
   const dateParts = getDateParts(timezone);
   const currentTimeMinutes = dateParts.hour * 60 + dateParts.minute;
 
@@ -245,13 +328,12 @@ checkinsRoutes.post('/', async (c) => {
   const shiftStartMinutes = shiftStartHour * 60 + shiftStartMin;
   const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
 
-  // Allow 30 minutes early check-in (grace period)
-  const gracePeriod = 30;
-  const allowedStartMinutes = shiftStartMinutes - gracePeriod;
+  // Allow early check-in using the same grace period as attendance scoring
+  const allowedStartMinutes = shiftStartMinutes - GRACE_PERIOD_MINUTES;
 
   if (currentTimeMinutes < allowedStartMinutes) {
     return c.json({
-      error: `Check-in is not yet available. Your shift starts at ${team.shiftStart}. You can check in starting ${gracePeriod} minutes before.`,
+      error: `Check-in is not yet available. Your shift starts at ${team.shiftStart}. You can check in starting ${GRACE_PERIOD_MINUTES} minutes before.`,
       code: 'TOO_EARLY'
     }, 400);
   }
@@ -296,8 +378,8 @@ checkinsRoutes.post('/', async (c) => {
   const isReturning = leaveStatus.isReturning;
 
   // Calculate attendance status (on-time vs late) using company timezone
-  const gracePeriodMins = 15;
-  const attendanceResult = calculateAttendanceStatus(now, team.shiftStart, gracePeriodMins, timezone);
+  // Uses the same GRACE_PERIOD_MINUTES constant for consistency
+  const attendanceResult = calculateAttendanceStatus(now, team.shiftStart, GRACE_PERIOD_MINUTES, timezone);
 
   // Create checkin and attendance record in transaction
   const [checkin, attendance] = await prisma.$transaction([
@@ -324,7 +406,7 @@ checkinsRoutes.post('/', async (c) => {
         teamId: team.id,
         date: todayForDb,
         scheduledStart: team.shiftStart,
-        gracePeriodMins,
+        gracePeriodMins: GRACE_PERIOD_MINUTES,
         checkInTime: now,
         minutesLate: attendanceResult.minutesLate,
         status: attendanceResult.status,
@@ -427,6 +509,118 @@ checkinsRoutes.post('/', async (c) => {
 // ===========================================
 // ATTENDANCE ENDPOINTS (must be before /:id route)
 // ===========================================
+
+// GET /checkins/week-stats - Get current week's check-in stats for worker dashboard
+checkinsRoutes.get('/week-stats', async (c) => {
+  const userId = c.get('userId');
+  const companyId = c.get('companyId');
+
+  // Get user with team and company info
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      team: true,
+      company: { select: { timezone: true } },
+    },
+  });
+
+  if (!user) {
+    return c.json({ error: 'User not found' }, 404);
+  }
+
+  const timezone = user.company?.timezone || DEFAULT_TIMEZONE;
+  const workDays = user.team?.workDays?.split(',').map(d => d.trim().toUpperCase()) || ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+
+  // Get current week's Monday to Sunday range (in company timezone)
+  const now = getNow(timezone);
+  const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ...
+  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() + mondayOffset);
+  weekStart.setHours(0, 0, 0, 0);
+
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  weekEnd.setHours(23, 59, 59, 999);
+
+  // Get all check-ins for this week
+  const weekCheckins = await prisma.checkin.findMany({
+    where: {
+      userId,
+      createdAt: {
+        gte: weekStart,
+        lte: weekEnd,
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      readinessScore: true,
+      readinessStatus: true,
+      createdAt: true,
+    },
+  });
+
+  // Calculate stats
+  const totalCheckins = weekCheckins.length;
+  const avgScore = totalCheckins > 0
+    ? Math.round(weekCheckins.reduce((sum, c) => sum + c.readinessScore, 0) / totalCheckins)
+    : 0;
+
+  // Build daily status map (MON, TUE, WED, THU, FRI, SAT, SUN)
+  const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const dailyStatus: Record<string, { status: string; score: number } | null> = {};
+
+  // Initialize all days as null
+  for (const day of dayNames) {
+    dailyStatus[day] = null;
+  }
+
+  // Fill in actual check-in data
+  for (const checkin of weekCheckins) {
+    const checkinDate = new Date(checkin.createdAt);
+    const dayName = dayNames[checkinDate.getDay()];
+    dailyStatus[dayName] = {
+      status: checkin.readinessStatus,
+      score: checkin.readinessScore,
+    };
+  }
+
+  // Count work days this week (up to today)
+  const today = getNow(timezone);
+  const currentDayIndex = today.getDay();
+  let scheduledDaysThisWeek = 0;
+  let scheduledDaysSoFar = 0;
+
+  for (let i = 0; i < 7; i++) {
+    const dayIndex = (1 + i) % 7; // Start from Monday (1)
+    const dayName = dayNames[dayIndex];
+    if (workDays.includes(dayName)) {
+      scheduledDaysThisWeek++;
+      // Count only days up to and including today
+      const dayDate = new Date(weekStart);
+      dayDate.setDate(weekStart.getDate() + i);
+      if (dayDate <= today) {
+        scheduledDaysSoFar++;
+      }
+    }
+  }
+
+  return c.json({
+    weekStart: formatLocalDate(weekStart, timezone),
+    weekEnd: formatLocalDate(weekEnd, timezone),
+    totalCheckins,
+    scheduledDaysThisWeek,
+    scheduledDaysSoFar,
+    avgScore,
+    avgStatus: avgScore >= 70 ? 'GREEN' : avgScore >= 50 ? 'YELLOW' : totalCheckins > 0 ? 'RED' : null,
+    dailyStatus,
+    workDays,
+    currentStreak: user.currentStreak || 0,
+    longestStreak: user.longestStreak || 0,
+  });
+});
 
 // GET /checkins/attendance/today - Get today's attendance status
 checkinsRoutes.get('/attendance/today', async (c) => {

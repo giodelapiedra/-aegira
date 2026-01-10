@@ -9,6 +9,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
+import { useToast } from '../../components/ui/Toast';
 import { formatDisplayDate, formatDisplayDateTime } from '../../lib/date-utils';
 import { invalidateRelatedQueries } from '../../lib/query-utils';
 import {
@@ -40,6 +41,7 @@ const exceptionTypes: { value: ExceptionType; label: string; description: string
 export function RequestExceptionPage() {
   const queryClient = useQueryClient();
   const { user } = useUser();
+  const toast = useToast();
   const [formData, setFormData] = useState<CreateExceptionData>({
     type: 'SICK_LEAVE',
     reason: '',
@@ -81,6 +83,10 @@ export function RequestExceptionPage() {
         endDate: '',
         linkedIncidentId: undefined,
       });
+      toast.success('Request Submitted', 'Your exception request has been sent for approval.');
+    },
+    onError: () => {
+      toast.error('Submission Failed', 'Failed to submit exception request.');
     },
   });
 

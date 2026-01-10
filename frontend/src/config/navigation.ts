@@ -21,6 +21,7 @@ import {
   Shield,
   Activity,
   MessageSquare,
+  Calendar,
 } from 'lucide-react';
 import type { Role } from '../types/user';
 
@@ -108,6 +109,12 @@ export const memberSections: NavSection[] = [
         href: '/my-history',
         icon: History,
       },
+      {
+        id: 'my-calendar',
+        label: 'My Calendar',
+        href: '/calendar',
+        icon: Calendar,
+      },
     ],
   },
 ];
@@ -169,6 +176,12 @@ export const teamLeadSections: NavSection[] = [
         icon: History,
       },
       {
+        id: 'team-calendar',
+        label: 'Team Calendar',
+        href: '/team/calendar',
+        icon: Calendar,
+      },
+      {
         id: 'team-analytics',
         label: 'Team Analytics',
         href: '/team/analytics',
@@ -215,6 +228,12 @@ export const supervisorSections: NavSection[] = [
         label: 'Dashboard',
         href: '/dashboard',
         icon: LayoutDashboard,
+      },
+      {
+        id: 'teams-overview',
+        label: 'Teams Performance',
+        href: '/executive/teams-overview',
+        icon: BarChart3,
       },
     ],
   },
@@ -354,6 +373,12 @@ export const executiveSections: NavSection[] = [
         href: '/executive',
         icon: Building2,
       },
+      {
+        id: 'teams-overview',
+        label: 'Teams Performance',
+        href: '/executive/teams-overview',
+        icon: BarChart3,
+      },
     ],
   },
   {
@@ -377,6 +402,12 @@ export const executiveSections: NavSection[] = [
         label: 'Team Management',
         href: '/executive/teams',
         icon: UsersRound,
+      },
+      {
+        id: 'company-calendar',
+        label: 'Company Calendar',
+        href: '/executive/calendar',
+        icon: Calendar,
       },
       {
         id: 'company-settings',

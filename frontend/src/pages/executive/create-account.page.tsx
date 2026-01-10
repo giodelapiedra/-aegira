@@ -6,13 +6,12 @@ import {
   ArrowLeft,
   Eye,
   EyeOff,
-  CheckCircle2,
-  AlertCircle,
   Users,
   Cake,
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { useToast } from '../../components/ui/Toast';
 import { cn } from '../../lib/utils';
 import api from '../../services/api';
 import type { Role, Gender } from '../../types/user';
@@ -43,6 +42,7 @@ const roleOptions: { value: Role; label: string; description: string }[] = [
 
 export function CreateAccountPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [createdUser, setCreatedUser] = useState<{ name: string; email: string } | null>(null);
@@ -92,7 +92,6 @@ export function CreateAccountPage() {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setCreatedUser({ name: `${variables.firstName} ${variables.lastName}`, email: variables.email });
       setShowSuccess(true);
-      // Reset form
       setFormData({
         email: '',
         firstName: '',
@@ -104,10 +103,12 @@ export function CreateAccountPage() {
         gender: undefined,
       });
       setErrors({});
+      toast.success('Account Created', `${variables.firstName} ${variables.lastName} has been added.`);
     },
     onError: (error: any) => {
       const message = error.response?.data?.error || 'Failed to create user';
       setErrors({ email: message });
+      toast.error('Creation Failed', message);
     },
   });
 

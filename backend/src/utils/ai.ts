@@ -212,38 +212,38 @@ export async function generateTeamAnalyticsSummary(
 
   // HIGH RISK MEMBERS
   if (highRiskMembers.length > 0) {
-    memberDetails += '\n\n🔴 HIGH RISK MEMBERS (Need Immediate Attention):\n';
+    memberDetails += '\n\nHIGH RISK MEMBERS (Immediate Attention Required):\n';
     highRiskMembers.forEach((m, i) => {
       memberDetails += `${i + 1}. ${m.name}\n`;
       memberDetails += `   - Avg Score: ${m.avgScore}% | Check-in Rate: ${m.checkinRate}%\n`;
-      memberDetails += `   - Status Distribution: ${m.greenCount}G / ${m.yellowCount}Y / ${m.redCount}R\n`;
+      memberDetails += `   - Status Distribution: ${m.greenCount} Green / ${m.yellowCount} Yellow / ${m.redCount} Red\n`;
       memberDetails += `   - Avg Mood: ${m.avgMood}/10 | Stress: ${m.avgStress}/10 | Sleep: ${m.avgSleep}/10\n`;
       memberDetails += `   - Missed ${m.missedWorkDays} work days out of ${m.expectedWorkDays}\n`;
-      if (!m.todayCheckedIn) memberDetails += `   - ⚠️ HAS NOT CHECKED IN TODAY\n`;
+      if (!m.todayCheckedIn) memberDetails += `   - NOT CHECKED IN TODAY\n`;
     });
   }
 
   // MEDIUM RISK MEMBERS
   if (mediumRiskMembers.length > 0) {
-    memberDetails += '\n\n🟡 CAUTION MEMBERS (Monitor Closely):\n';
+    memberDetails += '\n\nCAUTION MEMBERS (Monitor Closely):\n';
     mediumRiskMembers.forEach((m, i) => {
       memberDetails += `${i + 1}. ${m.name} - Avg Score: ${m.avgScore}% | Rate: ${m.checkinRate}% | ${m.greenCount}G/${m.yellowCount}Y/${m.redCount}R\n`;
-      if (!m.todayCheckedIn) memberDetails += `   - ⚠️ HAS NOT CHECKED IN TODAY\n`;
+      if (!m.todayCheckedIn) memberDetails += `   - NOT CHECKED IN TODAY\n`;
     });
   }
 
   // NOT CHECKED IN TODAY
   if (notCheckedInToday.length > 0) {
-    memberDetails += `\n\n⏰ NOT CHECKED IN TODAY (${notCheckedInToday.length} members):\n`;
+    memberDetails += `\n\nPENDING CHECK-INS TODAY (${notCheckedInToday.length} members):\n`;
     notCheckedInToday.forEach((m, i) => {
       const lastCheckin = m.lastCheckinDate ? formatDisplayDate(new Date(m.lastCheckinDate)) : 'Never';
       memberDetails += `${i + 1}. ${m.name} - Last check-in: ${lastCheckin} | Avg Score: ${m.avgScore}%\n`;
     });
   }
 
-  // TOP PERFORMERS
+  // TOP PERFORMERS - for recognition
   if (topPerformers.length > 0) {
-    memberDetails += '\n\n🌟 TOP PERFORMERS:\n';
+    memberDetails += '\n\nTOP PERFORMERS (Recognition Recommended):\n';
     topPerformers.forEach((m, i) => {
       memberDetails += `${i + 1}. ${m.name} - Avg Score: ${m.avgScore}% | Rate: ${m.checkinRate}% | Streak: ${m.currentStreak} days\n`;
     });
@@ -251,7 +251,7 @@ export async function generateTeamAnalyticsSummary(
 
   // LOWEST PERFORMERS
   if (lowestPerformers.length > 0 && lowestPerformers[0].avgScore < 70) {
-    memberDetails += '\n\n📉 LOWEST SCORES (Need Support):\n';
+    memberDetails += '\n\nLOWEST SCORES (Support Required):\n';
     lowestPerformers.forEach((m, i) => {
       memberDetails += `${i + 1}. ${m.name} - Avg Score: ${m.avgScore}% | Mood: ${m.avgMood}/10 | Stress: ${m.avgStress}/10\n`;
     });
@@ -289,69 +289,93 @@ TEAM GRADE:
     topReasonsSection += '\nThese are the most common reasons members reported when they had low readiness scores. Use this to identify patterns and provide targeted recommendations.\n';
   }
 
-  const prompt = `You are analyzing team performance data for "${data.teamName}" over the last ${data.periodDays} days.
+  // Calculate Team Health Score (0-100)
+  // Formula: (Readiness 40%) + (Compliance 30%) + (Consistency 30%)
+  const avgStreak = data.memberAnalytics.length > 0
+    ? data.memberAnalytics.reduce((sum, m) => sum + m.currentStreak, 0) / data.memberAnalytics.length
+    : 0;
+  const consistencyScore = Math.min(100, avgStreak * 10); // 10 day streak = 100%
+  const teamHealthScore = Math.round(
+    (teamAvgScore * 0.4) + (teamAvgCheckinRate * 0.3) + (consistencyScore * 0.3)
+  );
 
-TEAM OVERVIEW:
-- Total Members: ${data.totalMembers}
-- Team Avg Readiness Score: ${teamAvgScore}%
-- Team Avg Check-in Rate: ${teamAvgCheckinRate}%
-- Checked in Today: ${checkedInToday.length}/${data.totalMembers}
+  // Build top performers section for response
+  const topPerformersData = topPerformers.map(m => ({
+    name: m.name,
+    avgScore: m.avgScore,
+    checkinRate: m.checkinRate,
+    currentStreak: m.currentStreak,
+  }));
+
+  const prompt = `You are generating a professional team performance report for "${data.teamName}" covering the last ${data.periodDays} days.
+
+=== TEAM METRICS ===
+Total Members: ${data.totalMembers}
+Team Health Score: ${teamHealthScore}/100
+Average Readiness: ${teamAvgScore}%
+Check-in Compliance: ${teamAvgCheckinRate}%
+Today's Status: ${checkedInToday.length}/${data.totalMembers} checked in
 ${teamGradeSection}
-RISK BREAKDOWN:
-- High Risk: ${highRiskMembers.length} members
-- Medium Risk (Caution): ${mediumRiskMembers.length} members
-- Low Risk (Good): ${lowRiskMembers.length} members
+=== RISK DISTRIBUTION ===
+High Risk: ${highRiskMembers.length} members
+Medium Risk: ${mediumRiskMembers.length} members
+Low Risk: ${lowRiskMembers.length} members
 
-OTHER METRICS:
-- Open Incidents: ${data.openIncidents}
-- Pending Exceptions: ${data.pendingExceptions}
+=== OPERATIONAL NOTES ===
+Open Incidents: ${data.openIncidents}
+Pending Exceptions: ${data.pendingExceptions}
 ${topReasonsSection}
 ${memberDetails}
 
-Based on this data, provide actionable insights. Be SPECIFIC with member names and their issues.
-${data.teamGrade ? `\nIMPORTANT: The team currently has a grade of ${data.teamGrade.letter} (${data.teamGrade.label}). Include insights about what's driving this grade and how to improve it. The grade is calculated as: (Avg Readiness × 60%) + (Compliance × 40%). To improve the grade, focus on increasing both readiness scores and check-in compliance.` : ''}
-${data.topReasons && data.topReasons.length > 0 ? `\nIMPORTANT: Pay attention to the TOP REASONS FOR LOW SCORES. These indicate patterns in why team members are struggling. Provide specific recommendations to address the most common issues (e.g., if "Poor Sleep" is common, recommend sleep hygiene programs; if "High Stress" is frequent, suggest stress management initiatives).` : ''}
+Generate a professional report suitable for management review. Be specific with names and metrics. Avoid excessive use of emojis - this is a formal business report.
+${data.teamGrade ? `\nThe team grade is ${data.teamGrade.letter} (${data.teamGrade.label}). Explain the factors affecting this grade and provide actionable steps for improvement.` : ''}
+${data.topReasons && data.topReasons.length > 0 ? `\nAddress the root causes identified in TOP REASONS FOR LOW SCORES with targeted interventions.` : ''}
 
 Provide a JSON response with:
-- summary: 2-3 sentence executive summary mentioning the team grade${data.teamGrade ? ` (currently ${data.teamGrade.letter})` : ''} and specific members who need attention
-- highlights: Array of 2-3 positive observations (mention top performers by name${data.teamGrade && data.teamGrade.score >= 80 ? ', acknowledge the good team grade' : ''})
-- concerns: Array of 2-3 specific concerns (MUST mention member names and their specific issues${data.teamGrade && data.teamGrade.score < 70 ? ', explain what factors are dragging the team grade down' : ''})
-- recommendations: Array of 2-3 actionable steps (be specific - e.g., "Schedule 1-on-1 with [Name] to discuss their high stress levels"${data.teamGrade && data.teamGrade.score < 80 ? ', include specific steps to improve the team grade' : ''})
-- memberHighlights: Array of 3-5 member-specific insights formatted as "[Name] - [specific insight]" (e.g., "Juan Dela Cruz - High stress (8/10) combined with poor sleep (3/10), schedule wellness check")
-- overallStatus: "healthy" if <20% at risk and high check-in rate, "attention" if 20-40% need attention, "critical" if >40% at risk or multiple high-risk members`;
+- summary: 2-3 sentence executive summary. Professional tone, include Team Health Score (${teamHealthScore}/100), team grade${data.teamGrade ? ` (${data.teamGrade.letter})` : ''}, and key metrics. Mention specific members requiring attention.
+- highlights: Array of 2-3 positive observations. Include top performers by name and their achievements. Professional language.
+- concerns: Array of 2-3 specific concerns. MUST cite member names with their metrics (e.g., "John Doe: 45% avg score, 3 missed days - recommend intervention").
+- recommendations: Array of 2-3 actionable steps. Be specific with names and actions (e.g., "Schedule 1-on-1 with Maria Santos to address elevated stress levels of 8/10").
+- memberHighlights: Array of 3-5 member-specific notes formatted as "[Name]: [specific observation and recommendation]"
+- overallStatus: "healthy" if team health score >=75 and <20% at risk, "attention" if 50-74 or 20-40% at risk, "critical" if <50 or >40% at risk`;
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [
       {
         role: 'system',
-        content: `You are AEGIRA AI, an expert workforce wellness advisor combining clinical psychology, occupational health, and business analytics expertise.
+        content: `You are AEGIRA AI, a professional workforce analytics and wellness advisor. Generate formal business reports suitable for management review.
 
-CLINICAL PERSPECTIVE:
-- Apply the biopsychosocial model: physical health, psychological state, and social/work factors are interconnected
-- Recognize clinical patterns: high stress (7+/10) + poor sleep (<5/10) = acute burnout risk requiring immediate intervention
-- Identify warning clusters: multiple low scores in mood, sleep, and physical health suggest systemic wellness issues
-- Understand that chronic stress manifests physically - recommend holistic interventions
-- Know that RED status members with "HIGH_STRESS" or "POOR_SLEEP" reasons need wellness support, not just performance management
+REPORT GUIDELINES:
+1. PROFESSIONAL TONE - Use formal business language. Avoid emojis and casual expressions.
+2. DATA-DRIVEN - Always cite specific metrics (percentages, scores, counts) to support observations.
+3. NAME-SPECIFIC - Reference individual team members by name when discussing performance or concerns.
+4. ACTIONABLE - Provide concrete, implementable recommendations with clear ownership.
+5. BALANCED - Include both achievements (recognition) and areas for improvement.
 
-OCCUPATIONAL HEALTH LENS:
-- Assess fitness-for-duty implications: fatigued workers = safety risks in operational roles
-- Recognize psychosomatic presentations: stress causing physical symptoms, sleep issues affecting cognitive function
-- Recommend evidence-based workplace wellness interventions (EAP, flexible scheduling, workload review)
-- Consider the "presenteeism" risk: employees working while unwell may be less productive and spread illness
+ANALYSIS FRAMEWORK:
+- Team Health Score: Composite metric combining readiness, compliance, and consistency
+- Risk Assessment: Categorize members as High/Medium/Low risk based on attendance and wellness patterns
+- Root Cause Analysis: Identify underlying factors (stress, sleep, workload) driving performance issues
+- Trend Analysis: Compare current metrics against baseline/previous periods
 
-BUSINESS ANALYSIS APPROACH:
-- Quantify risk: Calculate potential productivity loss from disengaged or unwell team members
-- Prioritize by impact: Focus recommendations on high-risk members who affect team output
-- Consider ROI: Wellness interventions are investments that reduce turnover, absenteeism, and incidents
-- Track leading indicators: Poor check-in compliance often precedes performance issues
+CLINICAL INDICATORS TO FLAG:
+- High stress (7+/10) combined with poor sleep (<5/10) = burnout risk
+- Multiple consecutive RED statuses = wellness intervention needed
+- Declining attendance pattern = engagement concern
+- Physical health issues affecting readiness = accommodation review
 
-COMMUNICATION STYLE:
-1. SPECIFIC - Always cite member names and their exact metrics when discussing concerns
-2. CLINICALLY INFORMED - Frame concerns using wellness language, not just performance metrics
-3. ACTIONABLE - Give concrete, evidence-based interventions (e.g., "Schedule EAP referral for [Name]")
-4. PRIORITIZED - Triage by clinical severity: RED + high stress > YELLOW + declining trend > compliance issues
-5. BALANCED - Acknowledge resilient performers and positive trends alongside concerns
+RECOMMENDATIONS SHOULD:
+- Be specific (name the person and action)
+- Be practical (achievable within normal operations)
+- Include timeline when appropriate
+- Consider both individual and systemic interventions
+
+OUTPUT FORMAT:
+- Use clear, concise sentences
+- Avoid redundancy
+- Structure information logically
+- Prioritize by severity/impact
 
 Always respond with valid JSON.`,
       },

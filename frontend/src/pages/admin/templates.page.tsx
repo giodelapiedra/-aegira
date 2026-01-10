@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { useToast } from '../../components/ui/Toast';
 import {
   FileText,
   Trash2,
@@ -16,7 +17,6 @@ import {
   Hash,
 } from 'lucide-react';
 import { pdfTemplateService, type PDFTemplate, type DetectedField } from '../../services/pdf-template.service';
-import toast from 'react-hot-toast';
 import { cn } from '../../lib/utils';
 
 const fieldTypeIcons: Record<string, any> = {
@@ -30,6 +30,7 @@ const fieldTypeIcons: Record<string, any> = {
 
 export function TemplatesPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [showFieldsModal, setShowFieldsModal] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<PDFTemplate | null>(null);
 
@@ -42,10 +43,10 @@ export function TemplatesPage() {
     mutationFn: (id: string) => pdfTemplateService.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pdf-templates'] });
-      toast.success('Template deleted');
+      toast.success('Template Deleted', 'The template has been removed.');
     },
     onError: () => {
-      toast.error('Failed to delete template');
+      toast.error('Delete Failed', 'Could not delete template.');
     },
   });
 

@@ -1,7 +1,7 @@
 import { cn, getInitials } from '../../lib/utils';
 
 export interface AvatarProps {
-  src?: string;
+  src?: string | null;
   firstName?: string;
   lastName?: string;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
@@ -40,7 +40,7 @@ export function Avatar({
   };
 
   return (
-    <div className="relative inline-flex">
+    <div className="relative inline-flex flex-shrink-0">
       {src ? (
         <img
           src={src}
@@ -54,7 +54,7 @@ export function Avatar({
       ) : (
         <div
           className={cn(
-            'rounded-full bg-primary-100 text-primary-700 font-medium',
+            'rounded-full bg-gray-100 text-gray-500 font-medium',
             'flex items-center justify-center',
             sizes[size],
             className

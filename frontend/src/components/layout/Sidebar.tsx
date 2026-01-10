@@ -6,6 +6,7 @@ import { getNavigationForRole } from '../../config/navigation';
 import { X, LogOut, Settings, ChevronRight, ChevronUp } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { Logo } from '../ui/Logo';
+import { Avatar } from '../ui/Avatar';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -221,11 +222,12 @@ export function Sidebar({ isOpen, onClose, isExpanded, onExpandChange }: Sidebar
               isExpanded ? 'px-4 py-3' : 'px-4 py-3 lg:px-0 lg:py-3 lg:justify-center'
             )}
           >
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-sm flex-shrink-0 ring-2 ring-white">
-              <span className="text-sm font-semibold text-white">
-                {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
-              </span>
-            </div>
+            <Avatar
+              src={user?.avatar}
+              firstName={user?.firstName}
+              lastName={user?.lastName}
+              size="md"
+            />
             <div className={cn(
               'flex-1 min-w-0 text-left transition-all duration-300',
               isExpanded ? 'opacity-100 w-auto' : 'lg:opacity-0 lg:w-0 lg:hidden'

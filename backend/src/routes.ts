@@ -19,6 +19,9 @@ import { companiesRoutes } from './modules/companies/index.js';
 import { whsRoutes } from './modules/whs/index.js';
 import { pdfTemplatesRoutes } from './modules/pdf-templates/index.js';
 import { chatbotRoutes } from './modules/chatbot/index.js';
+import { holidaysRoutes } from './modules/holidays/index.js';
+import { calendarRoutes } from './modules/calendar/index.js';
+import { absencesRoutes } from './modules/absences/index.js';
 
 const api = new Hono();
 
@@ -44,5 +47,8 @@ api.route('/system-logs', systemLogsRoutes);
 api.route('/whs', whsRoutes);
 api.route('/pdf-templates', pdfTemplatesRoutes);
 api.route('/chatbot', chatbotRoutes);
+api.route('/holidays', holidaysRoutes);
+api.route('/calendar', calendarRoutes);
+api.route('/absences', absencesRoutes);
 
 export { api };

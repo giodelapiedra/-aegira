@@ -14,6 +14,7 @@ import { ReportIncidentPage } from '../pages/worker/report-incident.page';
 import { RequestExceptionPage } from '../pages/worker/request-exception.page';
 import { MyHistoryPage } from '../pages/worker/my-history.page';
 import { MyIncidentsPage } from '../pages/worker/my-incidents.page';
+import WorkerCalendarPage from '../pages/worker/calendar.page';
 
 // Shared Pages
 import { NotificationsPage } from '../pages/notifications/notifications.page';
@@ -31,6 +32,7 @@ import { DailyMonitoringPage } from '../pages/team-leader/daily-monitoring.page'
 import { TeamMembersPage } from '../pages/team-leader/team-members.page';
 import { MemberProfilePage } from '../pages/team-leader/member-profile.page';
 import { TeamAnalyticsPage } from '../pages/team-leader/team-analytics.page';
+import TeamCalendarPage from '../pages/team-leader/team-calendar.page';
 
 // Incident Pages
 import { IncidentDetailPage } from '../pages/incidents/incident-detail.page';
@@ -46,6 +48,8 @@ import { UsersPage } from '../pages/executive/users.page';
 import { CreateAccountPage } from '../pages/executive/create-account.page';
 import { TeamsPage } from '../pages/executive/teams.page';
 import { CompanySettingsPage } from '../pages/executive/company-settings.page';
+import CompanyCalendarPage from '../pages/executive/company-calendar.page';
+import { TeamsOverviewPage } from '../pages/executive/teams-overview.page';
 
 // Admin Pages
 import { AdminDashboard } from '../pages/admin/dashboard.page';
@@ -155,6 +159,14 @@ export const router = createBrowserRouter([
           </RoleGuard>
         ),
       },
+      {
+        path: 'calendar',
+        element: (
+          <RoleGuard allowedRoles={['WORKER', 'MEMBER']}>
+            <WorkerCalendarPage />
+          </RoleGuard>
+        ),
+      },
 
       // ==========================================
       // TEAM LEAD ROUTES
@@ -244,6 +256,14 @@ export const router = createBrowserRouter([
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
             <TeamAnalyticsPage />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'team/calendar',
+        element: (
+          <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
+            <TeamCalendarPage />
           </RoleGuard>
         ),
       },
@@ -363,6 +383,22 @@ export const router = createBrowserRouter([
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE']}>
             <CompanySettingsPage />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'executive/calendar',
+        element: (
+          <RoleGuard allowedRoles={['EXECUTIVE']}>
+            <CompanyCalendarPage />
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'executive/teams-overview',
+        element: (
+          <RoleGuard allowedRoles={['EXECUTIVE', 'SUPERVISOR']}>
+            <TeamsOverviewPage />
           </RoleGuard>
         ),
       },

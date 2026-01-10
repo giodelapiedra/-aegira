@@ -340,10 +340,92 @@ export function AIInsightsDetailPage() {
           <div class="status ${summary.overallStatus}">${summary.overallStatus === 'healthy' ? 'Healthy' : summary.overallStatus === 'attention' ? 'Needs Attention' : 'Critical'}</div>
         </div>
 
+        ${summary.aggregateData ? `
         <div class="section">
-          <h2>Summary</h2>
+          <h2>Key Metrics</h2>
+          <div class="comparison-grid" style="grid-template-columns: repeat(4, 1fr);">
+            <div class="comparison-card">
+              <div class="label">Team Health Score</div>
+              <div class="value">${summary.aggregateData.teamHealthScore || 0}/100</div>
+            </div>
+            ${summary.aggregateData.teamGrade ? `
+            <div class="comparison-card">
+              <div class="label">Team Grade</div>
+              <div class="value">${summary.aggregateData.teamGrade.letter}</div>
+              <div style="font-size: 11px; color: #6b7280;">${summary.aggregateData.teamGrade.label}</div>
+            </div>
+            <div class="comparison-card">
+              <div class="label">Avg Readiness</div>
+              <div class="value">${summary.aggregateData.teamGrade.avgReadiness}%</div>
+            </div>
+            <div class="comparison-card">
+              <div class="label">Compliance</div>
+              <div class="value">${summary.aggregateData.teamGrade.compliance}%</div>
+            </div>
+            ` : ''}
+          </div>
+        </div>
+        ` : ''}
+
+        <div class="section">
+          <h2>Executive Summary</h2>
           <div class="summary">${summary.summary}</div>
         </div>
+
+        ${summary.aggregateData?.topPerformers && summary.aggregateData.topPerformers.length > 0 ? `
+        <div class="section">
+          <h2>Top Performers (Recognition Recommended)</h2>
+          <table class="members-table">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Name</th>
+                <th>Avg Score</th>
+                <th>Check-in Rate</th>
+                <th>Current Streak</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${summary.aggregateData.topPerformers.map((p: any, i: number) => `
+                <tr>
+                  <td>${i + 1}</td>
+                  <td>${p.name}</td>
+                  <td>${p.avgScore}%</td>
+                  <td>${p.checkinRate}%</td>
+                  <td>${p.currentStreak} days</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        ` : ''}
+
+        ${summary.aggregateData?.topReasons && summary.aggregateData.topReasons.length > 0 ? `
+        <div class="section">
+          <h2>Root Cause Analysis (Low Score Reasons)</h2>
+          <table class="members-table">
+            <thead>
+              <tr>
+                <th>Reason</th>
+                <th>Count</th>
+                <th>Percentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(() => {
+                const total = summary.aggregateData!.topReasons!.reduce((sum: number, r: any) => sum + r.count, 0);
+                return summary.aggregateData!.topReasons!.map((r: any) => `
+                  <tr>
+                    <td>${r.label}</td>
+                    <td>${r.count}</td>
+                    <td>${Math.round((r.count / total) * 100)}%</td>
+                  </tr>
+                `).join('');
+              })()}
+            </tbody>
+          </table>
+        </div>
+        ` : ''}
 
         ${summary.aggregateData?.periodComparison ? `
         <div class="section">
@@ -551,29 +633,160 @@ export function AIInsightsDetailPage() {
             </div>
           </div>
 
-          {/* Stats Grid */}
+          {/* Key Metrics */}
           {summary.aggregateData && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-primary-50 rounded-xl p-4 text-center">
-                <Users className="h-6 w-6 text-primary-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-gray-900">{summary.aggregateData.totalMembers}</p>
-                <p className="text-sm text-gray-500">Team Members</p>
+            <div className="space-y-4">
+              {/* Team Health Score & Grade */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Team Health Score */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-100">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold text-gray-900">Team Health Score</h3>
+                    <Activity className="h-5 w-5 text-blue-500" />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <span className="text-4xl font-bold text-gray-900">
+                      {summary.aggregateData.teamHealthScore || 0}
+                    </span>
+                    <span className="text-xl text-gray-400 mb-1">/100</span>
+                  </div>
+                  <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all',
+                        (summary.aggregateData.teamHealthScore || 0) >= 75 ? 'bg-success-500' :
+                        (summary.aggregateData.teamHealthScore || 0) >= 50 ? 'bg-warning-500' : 'bg-danger-500'
+                      )}
+                      style={{ width: `${summary.aggregateData.teamHealthScore || 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Readiness (40%) + Compliance (30%) + Consistency (30%)
+                  </p>
+                </div>
+
+                {/* Team Grade */}
+                {summary.aggregateData.teamGrade && (
+                  <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold text-gray-900">Team Grade</h3>
+                      <TrendingUp className="h-5 w-5 text-purple-500" />
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className={cn(
+                        'text-5xl font-bold',
+                        summary.aggregateData.teamGrade.score >= 80 ? 'text-success-600' :
+                        summary.aggregateData.teamGrade.score >= 60 ? 'text-warning-600' : 'text-danger-600'
+                      )}>
+                        {summary.aggregateData.teamGrade.letter}
+                      </span>
+                      <div>
+                        <p className="font-medium text-gray-700">{summary.aggregateData.teamGrade.label}</p>
+                        <p className="text-sm text-gray-500">{summary.aggregateData.teamGrade.score}/100 points</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-purple-100">
+                      <div>
+                        <p className="text-xs text-gray-500">Avg Readiness</p>
+                        <p className="font-semibold text-gray-900">{summary.aggregateData.teamGrade.avgReadiness}%</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Compliance</p>
+                        <p className="font-semibold text-gray-900">{summary.aggregateData.teamGrade.compliance}%</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="bg-success-50 rounded-xl p-4 text-center">
-                <CheckCircle2 className="h-6 w-6 text-success-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-gray-900">{summary.highlights.length}</p>
-                <p className="text-sm text-gray-500">Highlights</p>
+
+              {/* Stats Row */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
+                  <Users className="h-5 w-5 text-gray-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-gray-900">{summary.aggregateData.totalMembers}</p>
+                  <p className="text-xs text-gray-500">Team Members</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
+                  <CheckCircle2 className="h-5 w-5 text-success-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-gray-900">{summary.highlights.length}</p>
+                  <p className="text-xs text-gray-500">Highlights</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
+                  <AlertTriangle className="h-5 w-5 text-warning-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-gray-900">{summary.concerns.length}</p>
+                  <p className="text-xs text-gray-500">Concerns</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
+                  <TrendingUp className="h-5 w-5 text-primary-500 mx-auto mb-2" />
+                  <p className="text-2xl font-bold text-gray-900">{summary.recommendations.length}</p>
+                  <p className="text-xs text-gray-500">Recommendations</p>
+                </div>
               </div>
-              <div className="bg-warning-50 rounded-xl p-4 text-center">
-                <AlertTriangle className="h-6 w-6 text-warning-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-gray-900">{summary.concerns.length}</p>
-                <p className="text-sm text-gray-500">Concerns</p>
-              </div>
-              <div className="bg-purple-50 rounded-xl p-4 text-center">
-                <TrendingUp className="h-6 w-6 text-purple-600 mx-auto mb-2" />
-                <p className="text-2xl font-bold text-gray-900">{summary.recommendations.length}</p>
-                <p className="text-sm text-gray-500">Recommendations</p>
-              </div>
+
+              {/* Top Performers */}
+              {summary.aggregateData.topPerformers && summary.aggregateData.topPerformers.length > 0 && (
+                <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 border border-green-100">
+                  <h3 className="font-semibold text-gray-900 mb-4">Top Performers (Recognition Recommended)</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {summary.aggregateData.topPerformers.map((performer: any, i: number) => (
+                      <div key={i} className="bg-white rounded-lg p-4 border border-green-100">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className={cn(
+                            'h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold text-white',
+                            i === 0 ? 'bg-yellow-500' : i === 1 ? 'bg-gray-400' : 'bg-amber-600'
+                          )}>
+                            {i + 1}
+                          </div>
+                          <span className="font-medium text-gray-900">{performer.name}</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <p className="text-lg font-bold text-success-600">{performer.avgScore}%</p>
+                            <p className="text-xs text-gray-500">Score</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-bold text-primary-600">{performer.checkinRate}%</p>
+                            <p className="text-xs text-gray-500">Rate</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-bold text-purple-600">{performer.currentStreak}</p>
+                            <p className="text-xs text-gray-500">Streak</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Root Cause Analysis */}
+              {summary.aggregateData.topReasons && summary.aggregateData.topReasons.length > 0 && (
+                <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl p-6 border border-orange-100">
+                  <h3 className="font-semibold text-gray-900 mb-4">Root Cause Analysis (Low Score Reasons)</h3>
+                  <div className="space-y-3">
+                    {summary.aggregateData.topReasons.map((reason: any, i: number) => {
+                      const total = summary.aggregateData.topReasons.reduce((sum: number, r: any) => sum + r.count, 0);
+                      const percentage = Math.round((reason.count / total) * 100);
+                      return (
+                        <div key={i} className="flex items-center gap-4">
+                          <div className="w-32 text-sm font-medium text-gray-700">{reason.label}</div>
+                          <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-orange-400 rounded-full flex items-center justify-end pr-2"
+                              style={{ width: `${percentage}%` }}
+                            >
+                              {percentage >= 15 && (
+                                <span className="text-xs font-medium text-white">{reason.count}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="w-12 text-sm text-gray-500 text-right">{percentage}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

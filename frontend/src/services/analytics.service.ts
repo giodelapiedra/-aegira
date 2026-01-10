@@ -75,6 +75,55 @@ export interface AISummaryDetail extends AISummaryHistoryItem {
     totalMembers: number;
     openIncidents: number;
     pendingExceptions: number;
+    teamHealthScore?: number;
+    teamGrade?: {
+      score: number;
+      letter: string;
+      label: string;
+      avgReadiness: number;
+      compliance: number;
+    };
+    topPerformers?: Array<{
+      name: string;
+      avgScore: number;
+      checkinRate: number;
+      currentStreak: number;
+    }>;
+    topReasons?: Array<{
+      reason: string;
+      label: string;
+      count: number;
+    }>;
+    periodComparison?: {
+      current: {
+        periodStart: string;
+        periodEnd: string;
+        checkinRate: number;
+        avgScore: number;
+        atRiskCount: number;
+        totalCheckins: number;
+        greenCount: number;
+        yellowCount: number;
+        redCount: number;
+      };
+      previous: {
+        periodStart: string;
+        periodEnd: string;
+        checkinRate: number;
+        avgScore: number;
+        atRiskCount: number;
+        totalCheckins: number;
+        greenCount: number;
+        yellowCount: number;
+        redCount: number;
+      };
+      changes: {
+        checkinRate: number;
+        avgScore: number;
+        atRiskCount: number;
+        totalCheckins: number;
+      };
+    };
     memberAnalytics: Array<{
       name: string;
       riskLevel: 'low' | 'medium' | 'high';
@@ -85,6 +134,75 @@ export interface AISummaryDetail extends AISummaryHistoryItem {
       redCount: number;
     }>;
   };
+}
+
+// ===========================================
+// TEAMS OVERVIEW TYPES (Executive & Supervisor)
+// ===========================================
+
+/**
+ * Team grade summary for overview displays
+ */
+export interface TeamGradeSummary {
+  id: string;
+  name: string;
+  leader: {
+    id: string;
+    name: string;
+    avatar: string | null;
+  } | null;
+  memberCount: number;
+  grade: string;        // A, B, C, D
+  gradeLabel: string;   // Excellent, Good, Fair, Poor
+  score: number;        // 0-100
+  attendanceRate: number;
+  onTimeRate: number;
+  breakdown: {
+    green: number;
+    yellow: number;
+    absent: number;
+    excused: number;
+  };
+  trend: 'up' | 'down' | 'stable';
+  scoreDelta: number;
+  atRiskCount: number;
+  membersNeedingAttention: number;
+  // Onboarding members (members with < 3 check-in days, excluded from grade calculation)
+  onboardingCount: number;
+  includedMemberCount: number;
+}
+
+/**
+ * Overall summary across all teams
+ */
+export interface TeamsOverviewSummary {
+  totalTeams: number;
+  totalMembers: number;
+  avgScore: number;
+  avgGrade: string;
+  teamsAtRisk: number;
+  teamsCritical: number;
+  teamsImproving: number;
+  teamsDeclining: number;
+}
+
+/**
+ * Complete teams overview response
+ */
+export interface TeamsOverviewResult {
+  teams: TeamGradeSummary[];
+  summary: TeamsOverviewSummary;
+  period: {
+    days: number;
+    startDate: string;
+    endDate: string;
+  };
+}
+
+export interface TeamsOverviewParams {
+  days?: number;
+  sort?: 'grade' | 'name' | 'score' | 'members' | 'attendance';
+  order?: 'asc' | 'desc';
 }
 
 export const analyticsService = {
@@ -146,6 +264,43 @@ export const analyticsService = {
 
   async getTeamAISummaryById(teamId: string, summaryId: string): Promise<AISummaryDetail> {
     const response = await api.get<AISummaryDetail>(`/analytics/team/${teamId}/ai-summary/${summaryId}`);
+    return response.data;
+  },
+
+  // ===========================================
+  // TEAMS OVERVIEW (Executive & Supervisor)
+  // ===========================================
+
+  /**
+   * Get all teams with their performance grades.
+   * ACCESS: EXECUTIVE, SUPERVISOR only
+   *
+   * @param params - Query parameters (days, sort, order)
+   * @returns Promise<TeamsOverviewResult>
+   */
+  async getTeamsOverview(params?: TeamsOverviewParams): Promise<TeamsOverviewResult> {
+    const response = await api.get<TeamsOverviewResult>('/analytics/teams-overview', {
+      params: {
+        days: params?.days || 30,
+        sort: params?.sort || 'grade',
+        order: params?.order || 'asc',
+      },
+    });
+    return response.data;
+  },
+
+  /**
+   * Get detailed grade information for a single team.
+   * ACCESS: EXECUTIVE, SUPERVISOR only
+   *
+   * @param teamId - Team UUID
+   * @param days - Period in days (default: 30)
+   * @returns Promise<TeamGradeSummary>
+   */
+  async getTeamGrade(teamId: string, days = 30): Promise<TeamGradeSummary> {
+    const response = await api.get<TeamGradeSummary>(`/analytics/teams-overview/${teamId}`, {
+      params: { days },
+    });
     return response.data;
   },
 };

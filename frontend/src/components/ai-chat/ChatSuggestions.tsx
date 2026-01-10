@@ -4,6 +4,7 @@ import {
   FileText,
   Users,
   HelpCircle,
+  AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -21,6 +22,7 @@ const iconMap: Record<string, LucideIcon> = {
   'file-text': FileText,
   users: Users,
   'help-circle': HelpCircle,
+  'alert-triangle': AlertTriangle,
 };
 
 export const ChatSuggestions = memo(function ChatSuggestions({

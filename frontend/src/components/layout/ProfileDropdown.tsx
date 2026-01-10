@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useUser } from '../../hooks/useUser';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/utils';
+import { Avatar } from '../ui/Avatar';
 import {
   User,
   Settings,
@@ -69,11 +70,12 @@ export function ProfileDropdown() {
           isOpen && 'bg-gray-100'
         )}
       >
-        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-sm">
-          <span className="text-xs font-semibold text-white">
-            {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
-          </span>
-        </div>
+        <Avatar
+          src={user?.avatar}
+          firstName={user?.firstName}
+          lastName={user?.lastName}
+          size="sm"
+        />
         <div className="hidden sm:block text-left">
           <p className="text-sm font-medium text-gray-900 leading-tight">
             {user?.firstName}
@@ -91,11 +93,12 @@ export function ProfileDropdown() {
           {/* User Info Header */}
           <div className="p-4 bg-gradient-to-br from-gray-50 to-white border-b border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-md">
-                <span className="text-sm font-bold text-white">
-                  {user?.firstName?.charAt(0)}{user?.lastName?.charAt(0)}
-                </span>
-              </div>
+              <Avatar
+                src={user?.avatar}
+                firstName={user?.firstName}
+                lastName={user?.lastName}
+                size="lg"
+              />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900 truncate">
                   {user?.firstName} {user?.lastName}

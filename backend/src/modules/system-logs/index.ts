@@ -37,15 +37,16 @@ export async function createSystemLog(data: {
   }
 }
 
-// GET /system-logs - List all system logs (Admin/Executive only)
+// GET /system-logs - List all system logs (Admin/Executive/Supervisor only)
 // ADMIN: Super admin - sees all logs across all companies
+// EXECUTIVE/SUPERVISOR: See only their own company's logs
 systemLogsRoutes.get('/', async (c) => {
   const user = c.get('user');
   const companyId = c.get('companyId');
 
-  // Only ADMIN and EXECUTIVE can view system logs
-  if (!['ADMIN', 'EXECUTIVE'].includes(user.role)) {
-    return c.json({ error: 'Unauthorized: Admin access required' }, 403);
+  // Only ADMIN, EXECUTIVE, and SUPERVISOR can view system logs
+  if (!['ADMIN', 'EXECUTIVE', 'SUPERVISOR'].includes(user.role)) {
+    return c.json({ error: 'Unauthorized: Admin/Executive/Supervisor access required' }, 403);
   }
 
   const page = parseInt(c.req.query('page') || '1');
@@ -60,10 +61,11 @@ systemLogsRoutes.get('/', async (c) => {
   const skip = (page - 1) * limit;
 
   // ADMIN: Super admin - sees all logs across all companies
+  // EXECUTIVE/SUPERVISOR: Only see their own company's logs
   const isAdmin = user.role?.toUpperCase() === 'ADMIN';
   const where: any = {};
-  
-  // Only filter by companyId for non-admin roles
+
+  // Only filter by companyId for non-admin roles (EXECUTIVE, SUPERVISOR)
   if (!isAdmin) {
     where.companyId = companyId;
   }
@@ -124,14 +126,15 @@ systemLogsRoutes.get('/', async (c) => {
   });
 });
 
-// GET /system-logs/stats - Get log statistics (Admin/Executive only)
+// GET /system-logs/stats - Get log statistics (Admin/Executive/Supervisor only)
 // ADMIN: Super admin - sees all stats across all companies
+// EXECUTIVE/SUPERVISOR: See only their own company's stats
 systemLogsRoutes.get('/stats', async (c) => {
   const user = c.get('user');
   const companyId = c.get('companyId');
 
-  if (!['ADMIN', 'EXECUTIVE'].includes(user.role)) {
-    return c.json({ error: 'Unauthorized: Admin access required' }, 403);
+  if (!['ADMIN', 'EXECUTIVE', 'SUPERVISOR'].includes(user.role)) {
+    return c.json({ error: 'Unauthorized: Admin/Executive/Supervisor access required' }, 403);
   }
 
   // Get company timezone for date calculations
@@ -235,8 +238,8 @@ systemLogsRoutes.get('/stats', async (c) => {
 systemLogsRoutes.get('/actions', async (c) => {
   const user = c.get('user');
 
-  if (!['ADMIN', 'EXECUTIVE'].includes(user.role)) {
-    return c.json({ error: 'Unauthorized: Admin access required' }, 403);
+  if (!['ADMIN', 'EXECUTIVE', 'SUPERVISOR'].includes(user.role)) {
+    return c.json({ error: 'Unauthorized: Admin/Executive/Supervisor access required' }, 403);
   }
 
   const actions = [
@@ -280,8 +283,8 @@ systemLogsRoutes.get('/actions', async (c) => {
 systemLogsRoutes.get('/entity-types', async (c) => {
   const user = c.get('user');
 
-  if (!['ADMIN', 'EXECUTIVE'].includes(user.role)) {
-    return c.json({ error: 'Unauthorized: Admin access required' }, 403);
+  if (!['ADMIN', 'EXECUTIVE', 'SUPERVISOR'].includes(user.role)) {
+    return c.json({ error: 'Unauthorized: Admin/Executive/Supervisor access required' }, 403);
   }
 
   const entityTypes = [
@@ -299,16 +302,18 @@ systemLogsRoutes.get('/entity-types', async (c) => {
 
 // GET /system-logs/:id - Get single log detail
 // ADMIN: Super admin - can access any log across all companies
+// EXECUTIVE/SUPERVISOR: Can only access logs from their own company
 systemLogsRoutes.get('/:id', async (c) => {
   const user = c.get('user');
   const companyId = c.get('companyId');
   const id = c.req.param('id');
 
-  if (!['ADMIN', 'EXECUTIVE'].includes(user.role)) {
-    return c.json({ error: 'Unauthorized: Admin access required' }, 403);
+  if (!['ADMIN', 'EXECUTIVE', 'SUPERVISOR'].includes(user.role)) {
+    return c.json({ error: 'Unauthorized: Admin/Executive/Supervisor access required' }, 403);
   }
 
   // ADMIN: Super admin - can access any log
+  // EXECUTIVE/SUPERVISOR: Only their company's logs
   const isAdmin = user.role?.toUpperCase() === 'ADMIN';
   const where: any = { id };
   if (!isAdmin) {

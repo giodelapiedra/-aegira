@@ -40,7 +40,7 @@ export interface ChatResponse {
 }
 
 export interface ChatAction {
-  type: 'generate_summary' | 'view_reports' | 'help' | 'none';
+  type: 'generate_summary' | 'view_reports' | 'help' | 'at_risk' | 'none';
   status: 'success' | 'error' | 'pending';
   data?: Record<string, unknown>;
 }

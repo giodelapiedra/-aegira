@@ -13,11 +13,15 @@ import {
   Clock,
   Calendar,
   Globe,
+  Power,
+  PowerOff,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { useToast } from '../../components/ui/Toast';
+import { Avatar } from '../../components/ui/Avatar';
 import { useUser } from '../../hooks/useUser';
 import api from '../../services/api';
 import { getTimezoneLabel } from '../../constants/timezones';
@@ -33,6 +37,9 @@ interface Team {
   workDays: string;
   shiftStart: string;
   shiftEnd: string;
+  deactivatedAt: string | null;
+  deactivatedReason: string | null;
+  reactivatedAt: string | null;
   leader: {
     id: string;
     firstName: string;
@@ -76,8 +83,12 @@ export function TeamsPage() {
   const [showMembersModal, setShowMembersModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showRemoveMemberConfirm, setShowRemoveMemberConfirm] = useState(false);
+  const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+  const [showReactivateConfirm, setShowReactivateConfirm] = useState(false);
+  const [showInactiveTeams, setShowInactiveTeams] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+  const [deactivationReason, setDeactivationReason] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -119,11 +130,12 @@ export function TeamsPage() {
     setFormData({ ...formData, workDays: orderedDays.join(',') });
   };
 
-  // Fetch teams
+  // Fetch teams (include inactive when toggle is on)
   const { data: teamsData, isLoading: teamsLoading } = useQuery({
-    queryKey: ['teams'],
+    queryKey: ['teams', showInactiveTeams],
     queryFn: async () => {
-      const response = await api.get('/teams');
+      const url = showInactiveTeams ? '/teams?includeInactive=true' : '/teams';
+      const response = await api.get(url);
       return response.data;
     },
   });
@@ -211,6 +223,41 @@ export function TeamsPage() {
     },
   });
 
+  // Deactivate team mutation
+  const deactivateMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const response = await api.post(`/teams/${id}/deactivate`, { reason });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      setShowDeactivateModal(false);
+      setSelectedTeam(null);
+      setDeactivationReason('');
+      toast.success('Team Deactivated', data.message || 'Workers are now exempted from check-in.');
+    },
+    onError: () => {
+      toast.error('Error', 'Failed to deactivate team. Please try again.');
+    },
+  });
+
+  // Reactivate team mutation
+  const reactivateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post(`/teams/${id}/reactivate`);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['teams'] });
+      setShowReactivateConfirm(false);
+      setSelectedTeam(null);
+      toast.success('Team Reactivated', data.message || 'Workers must check in starting today.');
+    },
+    onError: () => {
+      toast.error('Error', 'Failed to reactivate team. Please try again.');
+    },
+  });
+
   // Add member mutation
   const addMemberMutation = useMutation({
     mutationFn: async ({ teamId, userId }: { teamId: string; userId: string }) => {
@@ -253,11 +300,12 @@ export function TeamsPage() {
     team.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Users not in the selected team (for adding) - MEMBER or WORKER role
+  // Users without a team (for adding) - MEMBER or WORKER role only
+  // Only show users who have NO team assigned (teamId === null)
   const availableUsers = users.filter(
     (user) =>
       (user.role === 'MEMBER' || user.role === 'WORKER') &&
-      !teamMembers.some((member) => member.id === user.id)
+      user.teamId === null
   );
 
   // Only TEAM_LEAD role users can be assigned as team leaders
@@ -286,6 +334,17 @@ export function TeamsPage() {
     setShowDeleteConfirm(true);
   };
 
+  const openDeactivateModal = (team: Team) => {
+    setSelectedTeam(team);
+    setDeactivationReason('');
+    setShowDeactivateModal(true);
+  };
+
+  const openReactivateConfirm = (team: Team) => {
+    setSelectedTeam(team);
+    setShowReactivateConfirm(true);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -300,14 +359,25 @@ export function TeamsPage() {
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="flex-1 max-w-md">
-        <Input
-          placeholder="Search teams..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          leftIcon={<Search className="h-5 w-5" />}
-        />
+      {/* Search and Toggle */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div className="flex-1 max-w-md">
+          <Input
+            placeholder="Search teams..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            leftIcon={<Search className="h-5 w-5" />}
+          />
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showInactiveTeams}
+            onChange={(e) => setShowInactiveTeams(e.target.checked)}
+            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+          <span className="text-sm text-gray-600">Show inactive teams</span>
+        </label>
       </div>
 
       {/* Teams Grid */}
@@ -331,21 +401,44 @@ export function TeamsPage() {
           {filteredTeams.map((team) => (
             <div
               key={team.id}
-              className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow"
+              className={`bg-white rounded-xl border p-6 hover:shadow-md transition-shadow ${
+                team.isActive ? 'border-gray-200' : 'border-orange-200 bg-orange-50/50'
+              }`}
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
+                  <div className={`h-12 w-12 rounded-xl flex items-center justify-center ${
+                    team.isActive
+                      ? 'bg-gradient-to-br from-primary-500 to-primary-600'
+                      : 'bg-gradient-to-br from-orange-400 to-orange-500'
+                  }`}>
                     <Users className="h-6 w-6 text-white" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">{team.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-gray-900">{team.name}</h3>
+                      {!team.isActive && (
+                        <span className="px-2 py-0.5 text-xs font-medium bg-orange-100 text-orange-700 rounded-full">
+                          Inactive
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-gray-500">{team.memberCount} members</p>
                   </div>
                 </div>
               </div>
 
-              {team.description && (
+              {!team.isActive && team.deactivatedReason && (
+                <div className="flex items-start gap-2 mb-4 p-2 bg-orange-100 rounded-lg">
+                  <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-orange-800">
+                    <p className="font-medium">Deactivated</p>
+                    <p className="text-orange-700">{team.deactivatedReason}</p>
+                  </div>
+                </div>
+              )}
+
+              {team.description && team.isActive && (
                 <p className="text-sm text-gray-600 mb-4 line-clamp-2">{team.description}</p>
               )}
 
@@ -359,27 +452,55 @@ export function TeamsPage() {
               )}
 
               <div className="flex items-center gap-2 pt-4 border-t border-gray-100">
-                <button
-                  onClick={() => openMembersModal(team)}
-                  className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  <UserPlus className="h-4 w-4" />
-                  Members
-                </button>
-                <button
-                  onClick={() => openEditModal(team)}
-                  className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                  title="Edit Team"
-                >
-                  <Edit className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => openDeleteConfirm(team)}
-                  className="p-2 text-gray-400 hover:text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
-                  title="Delete Team"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                {team.isActive ? (
+                  <>
+                    <button
+                      onClick={() => openMembersModal(team)}
+                      className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      Members
+                    </button>
+                    <button
+                      onClick={() => openEditModal(team)}
+                      className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                      title="Edit Team"
+                    >
+                      <Edit className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => openDeactivateModal(team)}
+                      className="p-2 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                      title="Deactivate Team"
+                    >
+                      <PowerOff className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => openDeleteConfirm(team)}
+                      className="p-2 text-gray-400 hover:text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
+                      title="Delete Team"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => openReactivateConfirm(team)}
+                      className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
+                    >
+                      <Power className="h-4 w-4" />
+                      Reactivate
+                    </button>
+                    <button
+                      onClick={() => openDeleteConfirm(team)}
+                      className="p-2 text-gray-400 hover:text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
+                      title="Delete Team"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -752,11 +873,12 @@ export function TeamsPage() {
                         className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
-                            <span className="text-sm font-medium text-white">
-                              {member.firstName.charAt(0)}{member.lastName.charAt(0)}
-                            </span>
-                          </div>
+                          <Avatar
+                            src={member.avatar}
+                            firstName={member.firstName}
+                            lastName={member.lastName}
+                            size="md"
+                          />
                           <div>
                             <p className="font-medium text-gray-900">
                               {member.firstName} {member.lastName}
@@ -783,50 +905,59 @@ export function TeamsPage() {
                 )}
               </div>
 
-              {/* Add Members */}
-              <div>
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Add Members</h4>
-                {availableUsers.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-4 text-center">
-                    All users are already in this team
-                  </p>
-                ) : (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {availableUsers.map((user) => (
-                      <div
-                        key={user.id}
-                        className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:border-primary-200 hover:bg-primary-50/50 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
-                            <span className="text-sm font-medium text-gray-600">
-                              {user.firstName.charAt(0)}{user.lastName.charAt(0)}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">
-                              {user.firstName} {user.lastName}
-                            </p>
-                            <p className="text-sm text-gray-500">{user.role}</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() =>
-                            addMemberMutation.mutate({
-                              teamId: selectedTeam.id,
-                              userId: user.id,
-                            })
-                          }
-                          className="p-2 text-primary-600 hover:bg-primary-100 rounded-lg transition-colors"
-                          title="Add to team"
+              {/* Add Members - Only show for active teams */}
+              {selectedTeam.isActive ? (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">Add Members</h4>
+                  {availableUsers.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-4 text-center">
+                      No available workers without a team
+                    </p>
+                  ) : (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {availableUsers.map((user) => (
+                        <div
+                          key={user.id}
+                          className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:border-primary-200 hover:bg-primary-50/50 transition-colors"
                         >
-                          <UserPlus className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                          <div className="flex items-center gap-3">
+                            <Avatar
+                              src={user.avatar}
+                              firstName={user.firstName}
+                              lastName={user.lastName}
+                              size="md"
+                            />
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                {user.firstName} {user.lastName}
+                              </p>
+                              <p className="text-sm text-gray-500">{user.role}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() =>
+                              addMemberMutation.mutate({
+                                teamId: selectedTeam.id,
+                                userId: user.id,
+                              })
+                            }
+                            className="p-2 text-primary-600 hover:bg-primary-100 rounded-lg transition-colors"
+                            title="Add to team"
+                          >
+                            <UserPlus className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 bg-orange-50 border border-orange-100 rounded-lg">
+                  <p className="text-sm text-orange-700 text-center">
+                    Cannot add members to an inactive team. Reactivate the team first.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="mt-6 pt-4 border-t border-gray-100">
@@ -895,6 +1026,114 @@ export function TeamsPage() {
         type="danger"
         action="remove"
         isLoading={removeMemberMutation.isPending}
+      />
+
+      {/* Deactivate Team Modal */}
+      {showDeactivateModal && selectedTeam && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center">
+                  <PowerOff className="h-5 w-5 text-orange-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Deactivate Team</h3>
+                  <p className="text-sm text-gray-500">{selectedTeam.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDeactivateModal(false);
+                  setSelectedTeam(null);
+                  setDeactivationReason('');
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="bg-orange-50 border border-orange-100 rounded-lg p-4 mb-6">
+              <div className="flex gap-3">
+                <AlertTriangle className="h-5 w-5 text-orange-500 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-orange-800">
+                  <p className="font-medium mb-1">What happens when you deactivate a team:</p>
+                  <ul className="list-disc list-inside space-y-1 text-orange-700">
+                    <li>All {selectedTeam.memberCount} workers will be automatically exempted from check-in</li>
+                    <li>Their attendance scores will NOT be affected</li>
+                    <li>You can reactivate the team at any time</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason for deactivation <span className="text-danger-500">*</span>
+                </label>
+                <textarea
+                  value={deactivationReason}
+                  onChange={(e) => setDeactivationReason(e.target.value)}
+                  placeholder="e.g., Project completed, Team restructuring, Budget constraints..."
+                  className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-none"
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  setShowDeactivateModal(false);
+                  setSelectedTeam(null);
+                  setDeactivationReason('');
+                }}
+              >
+                Cancel
+              </Button>
+              <button
+                className="flex-1 px-4 py-2 bg-orange-500 text-white font-medium rounded-xl hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                onClick={() => {
+                  deactivateMutation.mutate({
+                    id: selectedTeam.id,
+                    reason: deactivationReason,
+                  });
+                }}
+                disabled={!deactivationReason.trim() || deactivateMutation.isPending}
+              >
+                {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate Team'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reactivate Team Confirmation */}
+      <ConfirmModal
+        isOpen={showReactivateConfirm && !!selectedTeam}
+        onClose={() => {
+          setShowReactivateConfirm(false);
+          setSelectedTeam(null);
+        }}
+        onConfirm={() => selectedTeam && reactivateMutation.mutate(selectedTeam.id)}
+        title="Reactivate Team?"
+        message={
+          <>
+            Are you sure you want to reactivate <span className="font-medium">{selectedTeam?.name}</span>?
+            <br /><br />
+            <span className="text-sm text-gray-600">
+              All workers will need to check in starting today. Their exemptions will be ended.
+            </span>
+          </>
+        }
+        confirmText="Reactivate"
+        type="primary"
+        action="update"
+        isLoading={reactivateMutation.isPending}
       />
     </div>
   );

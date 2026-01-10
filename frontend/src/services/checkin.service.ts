@@ -20,6 +20,8 @@ export interface LeaveException {
 export interface LeaveStatus {
   isOnLeave: boolean;
   isReturning: boolean;
+  isBeforeStart: boolean; // True if today is before user's effective start date
+  effectiveStartDate?: string; // YYYY-MM-DD format - when check-in requirement begins
   currentException?: LeaveException;
   lastException?: LeaveException;
 }
@@ -35,26 +37,6 @@ export interface AttendanceRecord {
   checkInTime?: string | null;
   minutesLate?: number;
   exceptionType?: string | null;
-}
-
-export interface AttendancePerformance {
-  score: number;
-  totalDays: number;
-  countedDays: number;
-  workDays: number;
-  grade: string;
-  label: string;
-  breakdown: {
-    green: number;
-    yellow: number;
-    absent: number;
-    excused: number;
-  };
-  period: {
-    days: number;
-    startDate: string;
-    endDate: string;
-  };
 }
 
 export interface CheckinWithAttendance extends Checkin {
@@ -99,7 +81,13 @@ export const checkinService = {
     return response.data;
   },
 
-  async getMyCheckins(params?: { page?: number; limit?: number; status?: string }): Promise<{
+  async getMyCheckins(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{
     data: Checkin[];
     pagination: { page: number; limit: number; total: number; totalPages: number };
   }> {
@@ -141,13 +129,6 @@ export const checkinService = {
   },
 
   // Attendance endpoints
-  async getAttendancePerformance(days: number | 'all' = 30): Promise<AttendancePerformance> {
-    const response = await api.get<AttendancePerformance>('/checkins/attendance/performance', {
-      params: { days: days === 'all' ? 'all' : days },
-    });
-    return response.data;
-  },
-
   async getAttendanceHistory(days: number = 30, status?: string): Promise<{
     data: AttendanceRecord[];
     period: { days: number; startDate: string; endDate: string };
@@ -163,4 +144,25 @@ export const checkinService = {
     const response = await api.patch<Checkin>(`/checkins/${checkinId}/low-score-reason`, data);
     return response.data;
   },
+
+  // Weekly stats for worker dashboard
+  async getWeekStats(): Promise<WeekStats> {
+    const response = await api.get<WeekStats>('/checkins/week-stats');
+    return response.data;
+  },
 };
+
+// Weekly stats types
+export interface WeekStats {
+  weekStart: string;
+  weekEnd: string;
+  totalCheckins: number;
+  scheduledDaysThisWeek: number;
+  scheduledDaysSoFar: number;
+  avgScore: number;
+  avgStatus: 'GREEN' | 'YELLOW' | 'RED' | null;
+  dailyStatus: Record<string, { status: string; score: number } | null>;
+  workDays: string[];
+  currentStreak: number;
+  longestStreak: number;
+}

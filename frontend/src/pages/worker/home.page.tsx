@@ -4,8 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { checkinService } from '../../services/checkin.service';
 import { teamService } from '../../services/team.service';
 import { getActiveExemptions } from '../../services/exemption.service';
+import { absenceService } from '../../services/absence.service';
 import { useUser } from '../../hooks/useUser';
-import { quickActions } from '../../config/navigation';
 import { Card, CardContent } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import {
@@ -27,13 +27,14 @@ import {
   Smile,
   Brain,
   Moon,
-  Heart,
   Lightbulb,
   TrendingUp,
-  TrendingDown,
   Calendar,
   Timer,
   Shield,
+  XCircle,
+  CheckCircle,
+  HelpCircle,
 } from 'lucide-react';
 
 // ============================================================================
@@ -82,15 +83,7 @@ const STATUS_CONFIG = {
   },
 } as const;
 
-const GRADE_CONFIG = {
-  A: { color: 'text-success-600', bgColor: 'bg-success-100', ringColor: 'ring-success-500', emoji: '🎉' },
-  B: { color: 'text-primary-600', bgColor: 'bg-primary-100', ringColor: 'ring-primary-500', emoji: '👍' },
-  C: { color: 'text-warning-600', bgColor: 'bg-warning-100', ringColor: 'ring-warning-500', emoji: '😐' },
-  DEFAULT: { color: 'text-danger-600', bgColor: 'bg-danger-100', ringColor: 'ring-danger-500', emoji: '😰' },
-} as const;
-
 const getStatusConfig = (status: string) => STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.DEFAULT;
-const getGradeConfig = (grade: string) => GRADE_CONFIG[grade as keyof typeof GRADE_CONFIG] || GRADE_CONFIG.DEFAULT;
 
 /** Create date formatter - memoize at call site */
 const createDateFormatter = (timezone: string) => new Intl.DateTimeFormat('en-US', {
@@ -149,17 +142,16 @@ export function HomePage() {
     queryFn: () => teamService.getMyTeam(),
   });
 
-  const { data: attendancePerformance } = useQuery({
-    queryKey: ['attendance', 'performance'],
-    queryFn: () => checkinService.getAttendancePerformance('all'),
-    enabled: !!user?.teamId,
-  });
-
   const { data: activeExemptions } = useQuery({
     queryKey: ['exemptions', 'active'],
     queryFn: () => getActiveExemptions(),
   });
 
+  // Fetch absence history for the worker (to show in week calendar)
+  const { data: absenceHistory } = useQuery({
+    queryKey: ['absences', 'my-history'],
+    queryFn: () => absenceService.getMyHistory(14), // Last 14 days
+  });
 
   // Calculate next check-in date/time
   const getNextCheckin = () => {
@@ -538,18 +530,23 @@ export function HomePage() {
     };
 
     // Find the final return date (must be a work day)
-    let finalYear = returnYear;
-    let finalMonth = returnMonth;
-    let finalDay = returnDay;
-    let finalDate = new Date(Date.UTC(returnYear, returnMonth, returnDay, 12, 0, 0));
+    // IMPORTANT: Return date is the day AFTER endDate (endDate is last day of exemption)
+    // Start from endDate + 1 and find the next work day
+    let finalDate = new Date(Date.UTC(returnYear, returnMonth, returnDay + 1, 12, 0, 0));
+
+    // Get the date parts for the day after endDate
+    const nextDayParts = todayFormatter.formatToParts(finalDate);
+    let finalYear = parseInt(nextDayParts.find(p => p.type === 'year')!.value);
+    let finalMonth = parseInt(nextDayParts.find(p => p.type === 'month')!.value) - 1;
+    let finalDay = parseInt(nextDayParts.find(p => p.type === 'day')!.value);
 
     // Check if return date is a work day, if not find next work day
     let returnDayCode = getDayCodeInTimezone(finalDate);
 
     if (!workDays.includes(returnDayCode)) {
-      // Search for next work day (max 7 days)
+      // Search for next work day (max 7 days) starting from day after endDate
       for (let i = 1; i <= 7; i++) {
-        const candidateDate = new Date(Date.UTC(returnYear, returnMonth, returnDay + i, 12, 0, 0));
+        const candidateDate = new Date(Date.UTC(returnYear, returnMonth, returnDay + 1 + i, 12, 0, 0));
         const candidateDayCode = getDayCodeInTimezone(candidateDate);
 
         if (workDays.includes(candidateDayCode)) {
@@ -634,6 +631,17 @@ export function HomePage() {
         return checkinDateStr === dateStr;
       });
 
+      // Find absence record for this date (if any)
+      const absence = absenceHistory?.data?.find(a => {
+        const absenceDateObj = new Date(a.absenceDate);
+        const absenceParts = dateFormatter.formatToParts(absenceDateObj);
+        const absenceYear = parseInt(absenceParts.find(p => p.type === 'year')!.value);
+        const absenceMonth = parseInt(absenceParts.find(p => p.type === 'month')!.value) - 1;
+        const absenceDay = parseInt(absenceParts.find(p => p.type === 'day')!.value);
+        const absenceDateStr = `${absenceYear}-${String(absenceMonth + 1).padStart(2, '0')}-${String(absenceDay).padStart(2, '0')}`;
+        return absenceDateStr === dateStr;
+      });
+
       // Check if this date is in the future (in company timezone)
       const isFuture = dateStr > todayStr;
 
@@ -643,11 +651,13 @@ export function HomePage() {
       days.push({
         dayName: DAY_CODE_TO_SHORT[dayCode],
         dayNum: dateDay,
+        dateStr,
         isToday: dateStr === todayStr,
         isWorkDay: isWorkDayFlag,
         isFuture,
         checkin,
         isExempted,
+        absence, // Add absence data
       });
     }
     return days;
@@ -709,15 +719,25 @@ export function HomePage() {
     [myTeam?.company?.timezone]
   );
 
-  // Memoize weekly summary
+  // Memoize weekly summary - count check-ins from current week only
   const weeklySummary = useMemo(() => {
-    if (!recentCheckins?.data || recentCheckins.data.length === 0) return null;
-    const data = recentCheckins.data;
-    const avgScore = Math.round(data.reduce((sum, c) => sum + c.readinessScore, 0) / data.length);
-    const greenDays = data.filter(c => c.readinessStatus === 'GREEN').length;
-    const trend = data.length >= 2 ? data[0].readinessScore - data[1].readinessScore : 0;
-    return { avgScore, greenDays, totalDays: data.length, trend };
-  }, [recentCheckins?.data]);
+    const weekData = getWeekCalendar();
+    const checkinsThisWeek = weekData.filter(day => day.checkin).length;
+    const workDaysThisWeek = weekData.filter(day => day.isWorkDay).length;
+    const workDaysPassed = weekData.filter(day => day.isWorkDay && !day.isFuture).length;
+    const excusedAbsences = weekData.filter(day => day.absence?.status === 'EXCUSED').length;
+    const unexcusedAbsences = weekData.filter(day => day.absence?.status === 'UNEXCUSED').length;
+    const pendingAbsences = weekData.filter(day => day.absence?.status === 'PENDING_JUSTIFICATION').length;
+    return {
+      checkinsThisWeek,
+      workDaysThisWeek,
+      workDaysPassed,
+      excusedAbsences,
+      unexcusedAbsences,
+      pendingAbsences,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myTeam?.workDays, timezone, recentCheckins?.data, activeExemptions, user?.id, absenceHistory?.data]);
 
   // Memoize return to work date - heavy calculation
   const returnToWorkDate = useMemo(
@@ -737,7 +757,7 @@ export function HomePage() {
   const weekCalendar = useMemo(
     () => getWeekCalendar(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [myTeam?.workDays, timezone, recentCheckins?.data, activeExemptions, user?.id]
+    [myTeam?.workDays, timezone, recentCheckins?.data, activeExemptions, user?.id, absenceHistory?.data]
   );
 
   // Memoize dynamic tip
@@ -993,11 +1013,10 @@ export function HomePage() {
                     <Badge variant={todayCheckin.readinessStatus === 'GREEN' ? 'success' : todayCheckin.readinessStatus === 'YELLOW' ? 'warning' : 'danger'}>
                       {getStatusConfig(todayCheckin.readinessStatus).label}
                     </Badge>
-                    <span className="text-2xl font-bold text-gray-900 animate-fade-in">{todayCheckin.readinessScore}%</span>
                   </div>
                   <p className="text-sm text-gray-500 flex items-center gap-1 animate-fade-in">
                     <Clock className="h-4 w-4" />
-                    Last check-in: {formatDisplayDateTime(todayCheckin.createdAt, myTeam?.company?.timezone)}
+                    Checked in: {formatDisplayDateTime(todayCheckin.createdAt, myTeam?.company?.timezone)}
                   </p>
                 </div>
               </div>
@@ -1038,265 +1057,189 @@ export function HomePage() {
         </Card>
       )}
 
-      {/* Attendance Performance Card */}
-      {attendancePerformance ? (
-        <Card className="border border-gray-200 overflow-hidden min-h-[180px]">
-          <CardContent className="py-5">
-            {attendancePerformance.countedDays > 0 ? (
-              <>
-                <div className="flex items-center gap-4 mb-4">
-                  {/* Grade Circle with Emoji */}
-                  <div className={`h-20 w-20 rounded-2xl bg-gradient-to-br flex items-center justify-center shadow-lg relative overflow-hidden ${getGradeConfig(attendancePerformance.grade).bgColor} ${getGradeConfig(attendancePerformance.grade).ringColor} ring-4`}>
-                    <span className="text-4xl animate-bounce-slow relative z-10">
-                      {getGradeConfig(attendancePerformance.grade).emoji}
-                    </span>
-                    <div className={`absolute inset-0 ${getGradeConfig(attendancePerformance.grade).bgColor} opacity-20 animate-pulse`} />
-                  </div>
-                  {/* Score & Label */}
-                  <div className="flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-2xl font-bold text-gray-900">{attendancePerformance.score}%</span>
-                      <span className={`text-sm font-medium ${getGradeConfig(attendancePerformance.grade).color}`}>
-                        {attendancePerformance.label}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <p className="text-sm text-gray-500">Attendance Score</p>
-                      <span className={`text-lg font-black ${getGradeConfig(attendancePerformance.grade).color}`}>
-                        {attendancePerformance.grade}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                {/* Breakdown Stats */}
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <div className="p-2 bg-success-50 rounded-lg">
-                    <p className="text-lg font-bold text-success-600">{attendancePerformance.breakdown.green}</p>
-                    <p className="text-xs text-gray-500">On-time</p>
-                  </div>
-                  <div className="p-2 bg-warning-50 rounded-lg">
-                    <p className="text-lg font-bold text-warning-600">{attendancePerformance.breakdown.yellow}</p>
-                    <p className="text-xs text-gray-500">Late</p>
-                  </div>
-                  <div className="p-2 bg-danger-50 rounded-lg">
-                    <p className="text-lg font-bold text-danger-600">{attendancePerformance.breakdown.absent}</p>
-                    <p className="text-xs text-gray-500">Absent</p>
-                  </div>
-                  <div className="p-2 bg-gray-50 rounded-lg">
-                    <p className="text-lg font-bold text-gray-600">{attendancePerformance.breakdown.excused}</p>
-                    <p className="text-xs text-gray-500">Excused</p>
-                  </div>
-                </div>
-                <p className="text-xs text-gray-400 text-center mt-3">
-                  Based on {attendancePerformance.countedDays} work day{attendancePerformance.countedDays !== 1 ? 's' : ''}
-                </p>
-              </>
-            ) : (
-              /* No Data State */
-              <div className="flex items-center gap-4">
-                <div className="h-16 w-16 rounded-full flex items-center justify-center bg-gray-100 ring-4 ring-gray-200">
-                  <span className="text-2xl font-bold text-gray-400">—</span>
-                </div>
-                <div className="flex-1">
-                  <p className="text-lg font-medium text-gray-500">No record yet</p>
-                  <p className="text-sm text-gray-400 mt-0.5">Attendance score will appear after your first work day</p>
+      {/* Week Calendar - Always visible */}
+      <Card className="overflow-hidden">
+        <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-5 py-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-white shadow-sm flex items-center justify-center">
+                <Calendar className="h-5 w-5 text-primary-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">This Week</h3>
+                <p className="text-xs text-gray-500">Your attendance overview</p>
+              </div>
+            </div>
+            {weeklySummary && (
+              <div className="flex items-center gap-2">
+                <div className="text-right">
+                  <p className="text-lg font-bold text-primary-600">
+                    {weeklySummary.checkinsThisWeek}/{weeklySummary.workDaysPassed}
+                  </p>
+                  <p className="text-xs text-gray-500">check-ins</p>
                 </div>
               </div>
             )}
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="border border-gray-200 overflow-hidden min-h-[180px]">
-          <CardContent className="py-5">
-            <div className="flex items-center gap-4">
-              <div className="h-16 w-16 rounded-full flex items-center justify-center bg-gray-100 ring-4 ring-gray-200">
-                <span className="text-2xl font-bold text-gray-400">—</span>
-              </div>
-              <div className="flex-1">
-                <p className="text-lg font-medium text-gray-500">Loading attendance...</p>
-                <p className="text-sm text-gray-400 mt-0.5">Calculating your performance score</p>
-              </div>
+          </div>
+        </div>
+
+        <CardContent className="p-4">
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-xs">
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-3 rounded-full bg-success-500" />
+              <span className="text-gray-600">Green</span>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-3 rounded-full bg-warning-500" />
+              <span className="text-gray-600">Yellow</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="h-3 w-3 rounded-full bg-blue-500" />
+              <span className="text-gray-600">Exempt</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle className="h-3 w-3 text-teal-500" />
+              <span className="text-gray-600">Excused</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <XCircle className="h-3 w-3 text-red-500" />
+              <span className="text-gray-600">Unexcused</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <HelpCircle className="h-3 w-3 text-orange-500" />
+              <span className="text-gray-600">Pending</span>
+            </div>
+          </div>
 
-      {/* Today's Metrics + Week Calendar Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {todayCheckin ? (
-          <>
-          {/* Today's Metrics */}
-          <Card>
-            <CardContent className="py-5">
-              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Today's Metrics</h3>
-              <div className="grid grid-cols-4 gap-3">
-                <div className="text-center">
-                  <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center mx-auto mb-2">
-                    <Smile className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <p className="text-xl font-bold text-gray-900">{todayCheckin.mood}</p>
-                  <p className="text-xs text-gray-500">Mood</p>
-                </div>
-                <div className="text-center">
-                  <div className="h-10 w-10 rounded-lg bg-purple-50 flex items-center justify-center mx-auto mb-2">
-                    <Brain className="h-5 w-5 text-purple-600" />
-                  </div>
-                  <p className="text-xl font-bold text-gray-900">{todayCheckin.stress}</p>
-                  <p className="text-xs text-gray-500">Stress</p>
-                </div>
-                <div className="text-center">
-                  <div className="h-10 w-10 rounded-lg bg-indigo-50 flex items-center justify-center mx-auto mb-2">
-                    <Moon className="h-5 w-5 text-indigo-600" />
-                  </div>
-                  <p className="text-xl font-bold text-gray-900">{todayCheckin.sleep}</p>
-                  <p className="text-xs text-gray-500">Sleep</p>
-                </div>
-                <div className="text-center">
-                  <div className="h-10 w-10 rounded-lg bg-status-red-50 flex items-center justify-center mx-auto mb-2">
-                    <Heart className="h-5 w-5 text-status-red-600" />
-                  </div>
-                  <p className="text-xl font-bold text-gray-900">{todayCheckin.physicalHealth}</p>
-                  <p className="text-xs text-gray-500">Physical</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Calendar Grid */}
+          <div className="grid grid-cols-7 gap-1.5">
+            {weekCalendar.map((day, index) => {
+              const isCheckedIn = !!day.checkin;
+              const isGreen = day.checkin?.readinessStatus === 'GREEN';
+              const isYellow = day.checkin?.readinessStatus === 'YELLOW';
+              const isRed = day.checkin?.readinessStatus === 'RED';
 
-          {/* Week at a Glance */}
-          <Card>
-            <CardContent className="py-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">This Week</h3>
-                {weeklySummary && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-900">{weeklySummary.avgScore}% avg</span>
-                    {weeklySummary.trend !== 0 && (
-                      <span className={`flex items-center text-xs ${weeklySummary.trend > 0 ? 'text-success-600' : 'text-danger-600'}`}>
-                        {weeklySummary.trend > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="grid grid-cols-7 gap-2">
-                {weekCalendar.map((day, index) => (
-                  <div
-                    key={index}
-                    className={`text-center p-2 rounded-lg relative ${
-                      day.isToday ? 'ring-2 ring-primary-500 ring-offset-1' : ''
-                    } ${
-                      day.checkin
-                        ? day.checkin.readinessStatus === 'GREEN'
-                          ? 'bg-success-100'
-                          : day.checkin.readinessStatus === 'YELLOW'
-                          ? 'bg-warning-100'
-                          : 'bg-danger-100'
-                        : day.isExempted
-                        ? 'bg-blue-50 border border-blue-300'
-                        : day.isFuture && day.isWorkDay
-                        ? 'bg-primary-50 border border-primary-200 border-dashed'
-                        : day.isWorkDay && !day.isFuture
-                        ? 'bg-gray-100'
-                        : 'bg-gray-50'
-                    }`}
-                  >
-                    <p className={`text-xs font-medium ${day.isWorkDay ? 'text-gray-600' : 'text-gray-400'}`}>{day.dayName}</p>
-                    <p className={`text-sm font-bold ${day.isToday ? 'text-primary-600' : 'text-gray-900'}`}>
-                      {day.dayNum}
-                    </p>
-                    {day.checkin ? (
-                      <div className={`text-xs font-medium ${
-                        day.checkin.readinessStatus === 'GREEN' ? 'text-success-700' :
-                        day.checkin.readinessStatus === 'YELLOW' ? 'text-warning-700' : 'text-danger-700'
+              // Absence status
+              const hasAbsence = !!day.absence;
+              const isExcused = day.absence?.status === 'EXCUSED';
+              const isUnexcused = day.absence?.status === 'UNEXCUSED';
+              const isPendingJustification = day.absence?.status === 'PENDING_JUSTIFICATION';
+
+              // Determine background based on priority: checkin > absence > exempted > future > rest
+              const getBackgroundClass = () => {
+                if (isCheckedIn) {
+                  if (isGreen) return 'bg-gradient-to-br from-success-50 to-success-100 border border-success-200';
+                  if (isYellow) return 'bg-gradient-to-br from-warning-50 to-warning-100 border border-warning-200';
+                  return 'bg-gradient-to-br from-danger-50 to-danger-100 border border-danger-200';
+                }
+                if (hasAbsence) {
+                  if (isExcused) return 'bg-gradient-to-br from-teal-50 to-teal-100 border border-teal-200';
+                  if (isUnexcused) return 'bg-gradient-to-br from-red-50 to-red-100 border border-red-200';
+                  if (isPendingJustification) return 'bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200';
+                }
+                if (day.isExempted) return 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200';
+                if (day.isFuture && day.isWorkDay) return 'bg-white border-2 border-dashed border-gray-200';
+                if (day.isWorkDay && !day.isFuture) return 'bg-gray-50 border border-gray-200';
+                return 'bg-gray-50/50 border border-gray-100';
+              };
+
+              return (
+                <div
+                  key={index}
+                  className={`relative rounded-xl p-2 transition-all ${
+                    day.isToday ? 'ring-2 ring-primary-500 ring-offset-2 shadow-md' : ''
+                  } ${getBackgroundClass()}`}
+                >
+                  {/* Day name */}
+                  <p className={`text-[10px] font-semibold text-center uppercase tracking-wider mb-0.5 ${
+                    day.isWorkDay ? 'text-gray-500' : 'text-gray-400'
+                  }`}>
+                    {day.dayName}
+                  </p>
+
+                  {/* Day number */}
+                  <p className={`text-center font-bold mb-1 ${
+                    day.isToday
+                      ? 'text-lg text-primary-600'
+                      : 'text-base text-gray-900'
+                  }`}>
+                    {day.dayNum}
+                  </p>
+
+                  {/* Status indicator */}
+                  <div className="flex justify-center">
+                    {isCheckedIn ? (
+                      <div className={`h-5 w-5 rounded-full flex items-center justify-center ${
+                        isGreen ? 'bg-success-500' : isYellow ? 'bg-warning-500' : 'bg-danger-500'
                       }`}>
-                        {day.checkin.readinessScore}%
+                        <span className="text-white text-xs">✓</span>
                       </div>
+                    ) : hasAbsence ? (
+                      // Show absence status
+                      isExcused ? (
+                        <div className="h-5 w-5 rounded-full bg-teal-500 flex items-center justify-center" title="Excused - No penalty">
+                          <CheckCircle className="h-3 w-3 text-white" />
+                        </div>
+                      ) : isUnexcused ? (
+                        <div className="h-5 w-5 rounded-full bg-red-500 flex items-center justify-center" title="Unexcused - 0 points">
+                          <XCircle className="h-3 w-3 text-white" />
+                        </div>
+                      ) : (
+                        <div className="h-5 w-5 rounded-full bg-orange-500 flex items-center justify-center animate-pulse" title="Pending review">
+                          <HelpCircle className="h-3 w-3 text-white" />
+                        </div>
+                      )
                     ) : day.isExempted ? (
-                      <div className="flex items-center justify-center gap-1 mt-1">
-                        <Shield className="h-3 w-3 text-blue-600" />
-                        <span className="text-xs font-medium text-blue-700">Exempt</span>
+                      <div className="h-5 w-5 rounded-full bg-blue-500 flex items-center justify-center" title="Exempted">
+                        <Shield className="h-3 w-3 text-white" />
                       </div>
                     ) : day.isFuture && day.isWorkDay ? (
-                      <div className="text-xs text-primary-500">○</div>
+                      <div className="h-5 w-5 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center">
+                        <span className="text-[8px] text-gray-400">—</span>
+                      </div>
                     ) : !day.isWorkDay ? (
-                      <div className="text-xs text-gray-300">off</div>
+                      <div className="h-5 w-5 rounded-full bg-gray-200 flex items-center justify-center">
+                        <span className="text-[8px] text-gray-500 font-medium">off</span>
+                      </div>
                     ) : (
-                      <div className="text-xs text-gray-400">-</div>
+                      <div className="h-5 w-5 rounded-full bg-gray-200 flex items-center justify-center">
+                        <span className="text-xs text-gray-400">—</span>
+                      </div>
                     )}
                   </div>
-                ))}
-              </div>
-              {weeklySummary && weeklySummary.totalDays > 0 && (
-                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-center gap-4 text-xs">
-                  <span className="text-success-600 font-medium">{weeklySummary.greenDays} green</span>
-                  <span className="text-gray-400">•</span>
-                  <span className="text-gray-600">{weeklySummary.totalDays} check-ins</span>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-          </>
-        ) : (
-          <>
-            {/* Today's Metrics - Placeholder */}
-            <Card className="min-h-[200px]">
-              <CardContent className="py-5">
-                <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">Today's Metrics</h3>
-                <div className="grid grid-cols-4 gap-3">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="text-center">
-                      <div className="h-10 w-10 rounded-lg bg-gray-100 animate-pulse mx-auto mb-2" />
-                      <div className="h-6 bg-gray-100 rounded w-8 mx-auto mb-1 animate-pulse" />
-                      <div className="h-3 bg-gray-100 rounded w-12 mx-auto animate-pulse" />
-        </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-            {/* Week Calendar - Placeholder */}
-            <Card className="min-h-[200px]">
-              <CardContent className="py-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">This Week</h3>
-                  <div className="h-4 bg-gray-100 rounded w-16 animate-pulse" />
-                </div>
-                <div className="grid grid-cols-7 gap-2">
-                  {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-                    <div key={i} className="text-center p-2 rounded-lg bg-gray-100 animate-pulse">
-                      <div className="h-3 bg-gray-200 rounded mb-1" />
-                      <div className="h-4 bg-gray-200 rounded mb-1" />
-                      <div className="h-3 bg-gray-200 rounded" />
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        )}
-      </div>
+              );
+            })}
+          </div>
 
-      {/* Quick Actions */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {quickActions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <Link key={action.id} to={action.href}>
-                <Card className="h-full hover:shadow-md hover:border-primary-200 transition-all group cursor-pointer">
-                  <CardContent className="py-6 text-center">
-                    <div className="h-12 w-12 rounded-xl bg-primary-50 group-hover:bg-primary-100 flex items-center justify-center mx-auto mb-3 transition-colors">
-                      <Icon className="h-6 w-6 text-primary-600" />
-                    </div>
-                    <h3 className="font-medium text-gray-900 mb-1">{action.label}</h3>
-                    <p className="text-xs text-gray-500">{action.description}</p>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
+          {/* Weekly progress bar */}
+          {weeklySummary && weeklySummary.workDaysPassed > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="text-gray-500">Weekly Progress</span>
+                <span className="font-medium text-gray-700">
+                  {Math.round((weeklySummary.checkinsThisWeek / weeklySummary.workDaysPassed) * 100)}%
+                </span>
+              </div>
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    weeklySummary.checkinsThisWeek === weeklySummary.workDaysPassed
+                      ? 'bg-success-500'
+                      : weeklySummary.checkinsThisWeek >= weeklySummary.workDaysPassed * 0.8
+                      ? 'bg-primary-500'
+                      : 'bg-warning-500'
+                  }`}
+                  style={{
+                    width: `${Math.min(100, (weeklySummary.checkinsThisWeek / weeklySummary.workDaysPassed) * 100)}%`
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Dynamic Tips Section */}
           <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100">

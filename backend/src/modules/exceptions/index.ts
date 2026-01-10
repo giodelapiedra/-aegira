@@ -200,14 +200,24 @@ exceptionsRoutes.post('/', async (c) => {
     }
   }
 
+  // Validate date range: startDate must be <= endDate
+  const startDate = new Date(body.startDate);
+  const endDate = new Date(body.endDate);
+  if (startDate > endDate) {
+    return c.json({
+      error: 'Start date cannot be after end date',
+      code: 'INVALID_DATE_RANGE',
+    }, 400);
+  }
+
   const exception = await prisma.exception.create({
     data: {
       userId,
       companyId,
       type: body.type,
       reason: body.reason,
-      startDate: new Date(body.startDate),
-      endDate: new Date(body.endDate),
+      startDate, // Use pre-validated dates
+      endDate,   // Use pre-validated dates
       notes: body.notes || null,
       linkedIncidentId: body.linkedIncidentId || null,
     },
@@ -321,6 +331,14 @@ exceptionsRoutes.put('/:id', async (c) => {
 
   // Validate input
   const validatedBody = updateExceptionSchema.parse(body);
+
+  // FIX: Validate that existing exception has valid dates before updating
+  if (!existing.startDate || !existing.endDate) {
+    return c.json({
+      error: 'Exception has invalid date range',
+      code: 'INVALID_DATE_RANGE',
+    }, 400);
+  }
 
   const oldEndDate = existing.endDate;
   const newEndDate = validatedBody.endDate ? new Date(validatedBody.endDate) : existing.endDate;

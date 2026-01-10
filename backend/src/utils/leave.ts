@@ -12,6 +12,8 @@ import {
   getNowDT,
   getDateStringInTimezone,
   getDayOfWeekInTimezone,
+  getStartOfNextDay,
+  formatLocalDate,
   DEFAULT_TIMEZONE,
   DAY_NAMES,
 } from './date-helpers.js';
@@ -23,6 +25,8 @@ import {
 export interface LeaveStatus {
   isOnLeave: boolean;
   isReturning: boolean;
+  isBeforeStart: boolean; // True if today is before user's effective start date
+  effectiveStartDate?: string; // YYYY-MM-DD format - when check-in requirement begins
   currentException?: {
     id: string;
     type: string;
@@ -52,6 +56,10 @@ export interface LeaveStatus {
  * - If exemption endDate >= today: User is ON LEAVE (cannot check in)
  * - If exemption endDate < today (within 3 days): User is RETURNING
  * - Example: Exemption ends Jan 6 → Jan 6 is still ON LEAVE → Jan 7 is first required check-in
+ *
+ * Start Date Logic:
+ * - Check-in requirement starts the DAY AFTER joining the team
+ * - If user joined today, they are NOT required to check in today
  */
 export async function getUserLeaveStatus(
   userId: string,
@@ -62,15 +70,49 @@ export async function getUserLeaveStatus(
   const todayStart = now.startOf('day');
   const tomorrow = todayStart.plus({ days: 1 });
 
+  // First, check if user is before their effective start date
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      teamJoinedAt: true,
+      createdAt: true,
+      team: { select: { createdAt: true } },
+    },
+  });
+
+  if (user) {
+    const userJoinDate = user.teamJoinedAt || user.createdAt;
+    const teamCreateDate = user.team?.createdAt || user.createdAt;
+    const joinDate = userJoinDate > teamCreateDate ? userJoinDate : teamCreateDate;
+    // Effective start is NEXT DAY after joining
+    const effectiveStartDate = getStartOfNextDay(joinDate, timezone);
+    const effectiveStartStr = formatLocalDate(effectiveStartDate, timezone);
+    const todayStr = formatLocalDate(todayStart.toJSDate(), timezone);
+
+    // If today is before the effective start date, user is not required to check in
+    if (todayStr < effectiveStartStr) {
+      return {
+        isOnLeave: false,
+        isReturning: false,
+        isBeforeStart: true,
+        effectiveStartDate: effectiveStartStr,
+      };
+    }
+  }
+
   // Check if user has an approved exception covering today
   // End date = LAST DAY of exemption (not return date)
   // If exemption ends today → today is still on leave → tomorrow is first check-in day
+  // Handle null endDate (indefinite exemptions like TEAM_INACTIVE)
   const currentException = await prisma.exception.findFirst({
     where: {
       userId,
       status: 'APPROVED',
       startDate: { lte: tomorrow.toJSDate() },
-      endDate: { gte: todayStart.toJSDate() }, // >= today (includes end date as last day of leave)
+      OR: [
+        { endDate: null }, // Indefinite exemption (no end date)
+        { endDate: { gte: todayStart.toJSDate() } }, // >= today (includes end date as last day of leave)
+      ],
     },
     select: {
       id: true,
@@ -85,6 +127,7 @@ export async function getUserLeaveStatus(
     return {
       isOnLeave: true,
       isReturning: false,
+      isBeforeStart: false,
       currentException,
     };
   }
@@ -125,6 +168,7 @@ export async function getUserLeaveStatus(
       return {
         isOnLeave: false,
         isReturning: true,
+        isBeforeStart: false,
         lastException: recentException,
       };
     }
@@ -133,6 +177,7 @@ export async function getUserLeaveStatus(
   return {
     isOnLeave: false,
     isReturning: false,
+    isBeforeStart: false,
   };
 }
 
@@ -242,7 +287,10 @@ export async function getLeaveForDate(
       userId,
       status: 'APPROVED',
       startDate: { lte: checkDate.toJSDate() },
-      endDate: { gte: checkDate.toJSDate() }, // Include end date as last day of exemption
+      OR: [
+        { endDate: null }, // Indefinite exemption
+        { endDate: { gte: checkDate.toJSDate() } }, // Include end date as last day of exemption
+      ],
     },
     select: {
       id: true,
@@ -258,6 +306,9 @@ export async function getLeaveForDate(
 /**
  * Get all active leaves for a list of users on a specific date
  * Useful for team dashboards
+ *
+ * IMPORTANT: endDate is the LAST DAY of exemption (not return date)
+ * If exemption ends Jan 6 → Jan 6 user is still ON LEAVE → Jan 7 is first work day
  */
 export async function getActiveLeaves(
   userIds: string[],
@@ -271,7 +322,10 @@ export async function getActiveLeaves(
       userId: { in: userIds },
       status: 'APPROVED',
       startDate: { lte: checkDate.toJSDate() },
-      endDate: { gt: checkDate.toJSDate() },
+      OR: [
+        { endDate: null }, // Indefinite exemption
+        { endDate: { gte: checkDate.toJSDate() } }, // >= today to include last day of leave
+      ],
     },
     select: {
       userId: true,

@@ -1,0 +1,215 @@
+You are an expert in TypeScript, React, Hono, Prisma, and Tailwind CSS working on the Aegira Attendance Management System.
+
+## Tech Stack
+- Backend: Hono + Prisma + TypeScript + Supabase
+- Frontend: React + Zustand + React Query + Tailwind CSS
+- Database: PostgreSQL (Supabase)
+- Auth: Supabase Auth + JWT
+
+## Project Structure
+
+### Backend (backend/src/)
+- modules/{feature}/index.ts - Feature routes & logic
+- utils/ - Utility functions
+- middlewares/ - Express-like middlewares
+- types/ - TypeScript types
+- config/ - Configuration files
+
+### Frontend (frontend/src/)
+- pages/{role}/{feature}.page.tsx - Page components
+- components/ui/ - Base UI components
+- components/{category}/ - Feature components
+- services/{feature}.service.ts - API services
+- store/{name}.store.ts - Zustand stores
+- types/ - TypeScript types
+- hooks/ - Custom hooks
+- lib/ - Utilities
+
+## Naming Conventions
+- Files: kebab-case (date-helpers.ts, checkin.page.tsx)
+- Components: PascalCase (Button.tsx)
+- Functions/Variables: camelCase
+- Types/Interfaces: PascalCase
+- Constants: SCREAMING_SNAKE_CASE
+
+## Backend API Rules
+
+### Module Structure
+```typescript
+import { Hono } from 'hono';
+import type { AppContext } from '../../types/context.js';
+import { prisma } from '../../config/prisma.js';
+import { parsePagination, isValidUUID } from '../../utils/validator.js';
+
+const featureRoutes = new Hono<AppContext>();
+
+// Always scope by company
+const companyId = c.get('companyId');
+const user = c.get('user');
+
+// Non-admin users must be company-scoped
+if (user.role !== 'ADMIN') {
+  where.companyId = companyId;
+}
+```
+
+### Response Patterns
+```typescript
+// Success
+return c.json(data, 200);
+return c.json(data, 201);
+return c.json({ success: true }, 200);
+
+// Errors
+return c.json({ error: 'message' }, 400);
+return c.json({ error: 'Unauthorized' }, 401);
+return c.json({ error: 'Forbidden' }, 403);
+return c.json({ error: 'Not found' }, 404);
+
+// Paginated
+return c.json({
+  data: items,
+  pagination: { page, limit, total, totalPages }
+});
+```
+
+### Validation
+- Always validate with Zod before database operations
+- Always validate UUID format with isValidUUID()
+- Limit pagination to max 100 items
+
+## Frontend Rules
+
+### Page Component Pattern
+```tsx
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { EmptyState } from '@/components/ui/EmptyState';
+
+export function FeaturePage() {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['features'],
+    queryFn: () => featureService.getAll(),
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (!data?.length) return <EmptyState message="No items" />;
+
+  return (
+    <div className="container mx-auto py-8 space-y-6">
+      {/* Content */}
+    </div>
+  );
+}
+```
+
+### Service Pattern
+```typescript
+export const featureService = {
+  async getAll(params?: { page?: number; limit?: number }) {
+    const response = await api.get('/features', { params });
+    return response.data;
+  },
+  async create(data: CreateFeatureData): Promise<Feature> {
+    const response = await api.post('/features', data);
+    return response.data;
+  },
+};
+```
+
+### Query Key Convention
+- ['features'] - List all
+- ['features', id] - Single item
+- ['features', 'my'] - User's items
+- ['features', { status: 'active' }] - Filtered
+
+## Database Rules (Prisma)
+
+### Model Pattern
+```prisma
+model FeatureName {
+  id          String   @id @default(uuid())
+  name        String
+  status      Status   @default(PENDING)
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+}
+```
+
+### Query Rules
+- Always use select to specify returned fields
+- Never expose sensitive fields (passwords, tokens)
+- Use transactions for multiple operations
+- Always cascade delete for company-scoped data
+
+## Security Rules
+- Always check user.role before sensitive operations
+- Always scope queries by companyId for non-admin users
+- Team leads can only see their team's data
+- Log sensitive actions to SystemLog
+- Never expose password hashes
+- Validate all user input with Zod
+
+## UI Components Available
+- Button: primary, secondary, danger, success, ghost variants
+- Card: CardHeader, CardTitle, CardDescription, CardContent, CardFooter
+- Badge: success, warning, danger, default variants
+- DataTable: sortable, filterable, paginated
+- LoadingSpinner, EmptyState, ConfirmModal
+
+## Tailwind Patterns
+```tsx
+// Container
+className="container mx-auto py-8"
+
+// Flex
+className="flex items-center justify-between"
+className="flex flex-col gap-4"
+
+// Grid
+className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+
+// Spacing
+className="space-y-4"
+className="space-x-2"
+```
+
+## Date Handling
+- Always use company timezone (Asia/Manila default)
+- Use getTodayRange(timezone) for date queries
+- Use formatDisplayDate() for frontend display
+
+## Role Hierarchy
+ADMIN > EXECUTIVE > SUPERVISOR > TEAM_LEAD > WORKER
+
+## Import Paths
+```typescript
+// Backend
+import { prisma } from '../config/prisma.js';
+import { parsePagination, isValidUUID } from '../utils/validator.js';
+import type { AppContext } from '../types/context.js';
+
+// Frontend
+import { Button } from '@/components/ui/Button';
+import { useAuthStore } from '@/store/auth.store';
+import api from '@/services/api';
+```
+
+## DO NOT
+- Expose sensitive data in API responses
+- Skip Zod validation
+- Use raw SQL queries
+- Hardcode company IDs
+- Skip company scoping for non-admin users
+- Create files without proper structure
+- Use any type without good reason

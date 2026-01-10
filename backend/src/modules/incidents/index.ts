@@ -82,13 +82,36 @@ incidentsRoutes.get('/my', async (c) => {
 // GET /incidents - List all incidents (company-scoped)
 incidentsRoutes.get('/', async (c) => {
   const companyId = c.get('companyId');
+  const currentUser = c.get('user');
+  const currentUserId = c.get('userId');
   const page = parseInt(c.req.query('page') || '1');
   const limit = parseInt(c.req.query('limit') || '10');
   const status = c.req.query('status');
   const severity = c.req.query('severity');
-  const teamId = c.req.query('teamId');
+  let teamId = c.req.query('teamId');
 
   const skip = (page - 1) * limit;
+
+  // TEAM_LEAD: Can only see incidents from their own team
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: currentUserId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam) {
+      return c.json({ error: 'You are not assigned as a team leader' }, 403);
+    }
+
+    // If teamId is provided, verify it matches their team
+    if (teamId && teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only view incidents for your own team' }, 403);
+    }
+
+    // Force teamId to their team
+    teamId = leaderTeam.id;
+  }
 
   const where: any = { companyId };
   if (status) where.status = status;
