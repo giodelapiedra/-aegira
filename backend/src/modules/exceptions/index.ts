@@ -3,6 +3,7 @@ import { prisma } from '../../config/prisma.js';
 import { createSystemLog } from '../system-logs/index.js';
 import { createExceptionSchema, updateExceptionSchema } from '../../utils/validator.js';
 import { getTodayStart, getTodayEnd, getNowDT, formatDisplayDate, DEFAULT_TIMEZONE } from '../../utils/date-helpers.js';
+import { recalculateSummariesForDateRange } from '../../utils/daily-summary.js';
 import type { AppContext } from '../../types/context.js';
 
 const exceptionsRoutes = new Hono<AppContext>();
@@ -309,6 +310,9 @@ exceptionsRoutes.put('/:id', async (c) => {
   // Verify exception belongs to company
   const existing = await prisma.exception.findFirst({
     where: { id, companyId },
+    include: {
+      user: { select: { teamId: true } },
+    },
   });
 
   if (!existing) {
@@ -371,6 +375,43 @@ exceptionsRoutes.put('/:id', async (c) => {
     });
   }
 
+  // If exception is APPROVED and dates changed, recalculate summaries
+  // (PENDING exceptions don't affect summaries)
+  if (existing.status === 'APPROVED' && existing.user.teamId) {
+    const oldStart = existing.startDate;
+    const oldEnd = existing.endDate;
+    const newStart = validatedBody.startDate ? new Date(validatedBody.startDate) : existing.startDate;
+
+    // Check if dates actually changed
+    const startChanged = oldStart && newStart && oldStart.getTime() !== newStart.getTime();
+    const endChanged = oldEndDate && newEndDate && oldEndDate.getTime() !== newEndDate.getTime();
+
+    if (startChanged || endChanged) {
+      // Get company timezone
+      const company = await prisma.company.findUnique({
+        where: { id: companyId },
+        select: { timezone: true },
+      });
+      const timezone = company?.timezone || DEFAULT_TIMEZONE;
+
+      // Recalculate for the union of old and new date ranges
+      const minStart = oldStart && newStart ? (oldStart < newStart ? oldStart : newStart) : (oldStart || newStart);
+      const maxEnd = oldEnd && newEndDate ? (oldEnd > newEndDate ? oldEnd : newEndDate) : (oldEnd || newEndDate);
+
+      if (minStart && maxEnd) {
+        // Fire and forget
+        recalculateSummariesForDateRange(
+          existing.user.teamId,
+          minStart,
+          maxEnd,
+          timezone
+        ).catch(err => {
+          console.error('Failed to recalculate summaries after exception date update:', err);
+        });
+      }
+    }
+  }
+
   return c.json(exception);
 });
 
@@ -384,6 +425,11 @@ exceptionsRoutes.patch('/:id/approve', async (c) => {
   // Verify exception belongs to company
   const existing = await prisma.exception.findFirst({
     where: { id, companyId },
+    include: {
+      user: {
+        select: { teamId: true },
+      },
+    },
   });
 
   if (!existing) {
@@ -455,6 +501,26 @@ exceptionsRoutes.patch('/:id/approve', async (c) => {
         type: 'COMMENT',
         comment: `${reviewer?.firstName} ${reviewer?.lastName} approved the linked leave request`,
       },
+    });
+  }
+
+  // Recalculate daily team summaries for the leave period (affects expectedToCheckIn)
+  if (existing.user.teamId && existing.startDate && existing.endDate) {
+    // Get company timezone
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { timezone: true },
+    });
+    const timezone = company?.timezone || DEFAULT_TIMEZONE;
+
+    // Fire and forget - don't block response
+    recalculateSummariesForDateRange(
+      existing.user.teamId,
+      existing.startDate,
+      existing.endDate,
+      timezone
+    ).catch(err => {
+      console.error('Failed to recalculate summaries after exception approval:', err);
     });
   }
 
@@ -564,6 +630,7 @@ exceptionsRoutes.patch('/:id/end-early', async (c) => {
           id: true,
           firstName: true,
           lastName: true,
+          teamId: true,
         },
       },
     },
@@ -701,6 +768,23 @@ exceptionsRoutes.patch('/:id/end-early', async (c) => {
     },
   });
 
+  // Recalculate daily team summaries for cancelled dates (worker no longer on leave)
+  if (existing.user.teamId) {
+    // Recalculate from day after new end date to original end date
+    const recalcStartDate = new Date(newEndDate);
+    recalcStartDate.setDate(recalcStartDate.getDate() + 1);
+
+    // Fire and forget - don't block response
+    recalculateSummariesForDateRange(
+      existing.user.teamId,
+      recalcStartDate,
+      originalEndDate,
+      timezone
+    ).catch(err => {
+      console.error('Failed to recalculate summaries after exception end-early:', err);
+    });
+  }
+
   return c.json(exception);
 });
 
@@ -721,6 +805,7 @@ exceptionsRoutes.delete('/:id', async (c) => {
           id: true,
           firstName: true,
           lastName: true,
+          teamId: true,
         },
       },
     },
@@ -782,6 +867,27 @@ exceptionsRoutes.delete('/:id', async (c) => {
       endDate: existing.endDate?.toISOString(),
     },
   });
+
+  // Recalculate daily team summaries if the cancelled exception was APPROVED
+  // (PENDING exceptions don't affect summaries)
+  if (existing.status === 'APPROVED' && existing.user.teamId && existing.startDate && existing.endDate) {
+    // Get company timezone
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { timezone: true },
+    });
+    const timezone = company?.timezone || DEFAULT_TIMEZONE;
+
+    // Fire and forget - don't block response
+    recalculateSummariesForDateRange(
+      existing.user.teamId,
+      existing.startDate,
+      existing.endDate,
+      timezone
+    ).catch(err => {
+      console.error('Failed to recalculate summaries after exception cancellation:', err);
+    });
+  }
 
   return c.json({ message: 'Exception cancelled successfully' });
 });

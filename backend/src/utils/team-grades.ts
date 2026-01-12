@@ -225,6 +225,7 @@ export async function calculateTeamsOverview(
           lastName: true,
           teamJoinedAt: true,
           createdAt: true,
+          totalCheckins: true,  // Include for onboarding threshold check
         },
       },
     },
@@ -329,7 +330,7 @@ async function calculateSingleTeamGrade(params: {
     name: string;
     workDays: string;
     leader: { id: string; firstName: string; lastName: string; avatar: string | null } | null;
-    members: { id: string; firstName: string; lastName: string; teamJoinedAt: Date | null; createdAt: Date }[];
+    members: { id: string; firstName: string; lastName: string; teamJoinedAt: Date | null; createdAt: Date; totalCheckins: number }[];
   };
   startDate: Date;
   endDate: Date;
@@ -369,12 +370,38 @@ async function calculateSingleTeamGrade(params: {
     },
   });
 
+  // Fetch EXCUSED absences for all members (TL approved = no penalty, like exemptions)
+  const excusedAbsences = await prisma.absence.findMany({
+    where: {
+      userId: { in: memberIds },
+      status: 'EXCUSED',
+      absenceDate: { gte: startDate, lte: endDate },
+    },
+    select: {
+      userId: true,
+      absenceDate: true,
+    },
+  });
+
+  // NOTE: totalCheckins is now included in member data from the team query
+  // No need for separate groupBy query - uses pre-computed user.totalCheckins field
+
   // Build exemption map
   const exemptionsByUser = new Map<string, typeof exemptions>();
   for (const ex of exemptions) {
     const userExemptions = exemptionsByUser.get(ex.userId) || [];
     userExemptions.push(ex);
     exemptionsByUser.set(ex.userId, userExemptions);
+  }
+
+  // Build EXCUSED absences map: userId -> Set of date strings
+  const excusedAbsencesByUser = new Map<string, Set<string>>();
+  for (const absence of excusedAbsences) {
+    const dateStr = formatLocalDate(absence.absenceDate, timezone);
+    if (!excusedAbsencesByUser.has(absence.userId)) {
+      excusedAbsencesByUser.set(absence.userId, new Set());
+    }
+    excusedAbsencesByUser.get(absence.userId)!.add(dateStr);
   }
 
   // Calculate scores for each member
@@ -404,9 +431,9 @@ async function calculateSingleTeamGrade(params: {
       currentHolidayDates
     );
 
-    // Count exemption days
+    // Count exemption days (approved leave requests)
     const userExemptions = exemptionsByUser.get(member.id) || [];
-    const exemptedDates = countExemptedDays(
+    const exemptedDatesFromExceptions = countExemptedDays(
       userExemptions,
       effectiveStartDate,
       endDate,
@@ -414,6 +441,20 @@ async function calculateSingleTeamGrade(params: {
       timezone,
       currentHolidayDates
     );
+
+    // Count EXCUSED absence days (TL approved = no penalty)
+    const userExcusedAbsences = excusedAbsencesByUser.get(member.id) || new Set();
+    const excusedAbsenceDays = countExcusedAbsenceDays(
+      userExcusedAbsences,
+      effectiveStartDate,
+      endDate,
+      team.workDays,
+      timezone,
+      currentHolidayDates
+    );
+
+    // Total exempted days = approved exceptions + EXCUSED absences
+    const exemptedDates = exemptedDatesFromExceptions + excusedAbsenceDays;
 
     const expectedWorkDays = Math.max(0, memberWorkDays - exemptedDates);
 
@@ -436,10 +477,11 @@ async function calculateSingleTeamGrade(params: {
     // NOT counted: ABSENT, UNEXCUSED, EXCUSED, holidays - no readiness data
     const actualCheckinDays = performance.breakdown.green + performance.breakdown.yellow;
 
-    // Skip members with < MIN_CHECKIN_DAYS_THRESHOLD actual check-ins (onboarding)
-    // Members need 3+ actual check-ins before being included in team grade
-    // This ensures we have enough readiness DATA to assess the member
-    if (actualCheckinDays < MIN_CHECKIN_DAYS_THRESHOLD) {
+    // Skip members with < MIN_CHECKIN_DAYS_THRESHOLD total check-ins EVER (onboarding)
+    // Members need 3+ check-ins EVER before being included in team grade
+    // This ensures new workers aren't penalized during filtering
+    // Uses pre-computed user.totalCheckins field instead of querying
+    if (member.totalCheckins < MIN_CHECKIN_DAYS_THRESHOLD) {
       onboardingCount++;
       continue;
     }
@@ -564,6 +606,40 @@ function countExemptedDays(
   }
 
   return exemptedDatesSet.size;
+}
+
+/**
+ * Count EXCUSED absence work days for a user
+ */
+function countExcusedAbsenceDays(
+  excusedDates: Set<string>,
+  effectiveStart: Date,
+  endDate: Date,
+  workDaysString: string,
+  timezone: string,
+  holidayDates: string[]
+): number {
+  const holidaySet = new Set(holidayDates);
+  const workDays = workDaysString.split(',').map(d => d.trim().toUpperCase());
+  const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  let count = 0;
+
+  for (const dateStr of excusedDates) {
+    // Parse the date string to check if it's a work day
+    const date = new Date(dateStr + 'T12:00:00');
+    const dayOfWeek = date.getDay();
+
+    // Only count if it's a work day, not a holiday, and within the effective range
+    if (workDays.includes(dayNames[dayOfWeek]) && !holidaySet.has(dateStr)) {
+      const effectiveStartStr = formatLocalDate(effectiveStart, timezone);
+      const endDateStr = formatLocalDate(endDate, timezone);
+      if (dateStr >= effectiveStartStr && dateStr <= endDateStr) {
+        count++;
+      }
+    }
+  }
+
+  return count;
 }
 
 /**

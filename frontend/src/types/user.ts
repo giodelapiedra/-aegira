@@ -48,6 +48,10 @@ export interface User {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  // Pre-computed stats (updated on each check-in)
+  totalCheckins?: number;
+  avgReadinessScore?: number;
+  lastReadinessStatus?: ReadinessStatus;
 }
 
 export interface AuthTokens {

@@ -1,5 +1,12 @@
 // Chatbot module types
 
+export interface QuickAction {
+  id: string;
+  label: string;
+  command: string;
+  icon?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -7,6 +14,7 @@ export interface ChatMessage {
   timestamp: Date;
   links?: ChatLink[];
   summaryPreview?: SummaryPreview;
+  quickActions?: QuickAction[];
 }
 
 export interface ChatLink {
@@ -53,14 +61,50 @@ export interface ChatSuggestion {
   icon?: string;
 }
 
-// Command definitions for Team Leader
+// Command definitions for Team Leader (English + Tagalog keywords)
 export const TEAM_LEAD_COMMANDS = {
-  GENERATE_SUMMARY: ['generate summary', 'create summary', 'summary please', 'create report', 'generate report', 'new summary', 'make summary'],
-  VIEW_REPORTS: ['view reports', 'show reports', 'my reports', 'ai insights', 'show insights', 'past reports', 'history'],
-  TEAM_STATUS: ['team status', 'status', 'team overview', 'how is my team', 'team today'],
-  AT_RISK: ['at risk', 'risk', 'attendance issues', 'low attendance', 'poor attendance', 'missed checkins', 'who needs attention', 'problems', 'issues', 'concerns', 'struggling'],
-  HELP: ['help', 'commands', 'what can you do', 'options', 'menu'],
+  GENERATE_SUMMARY: [
+    // English
+    'generate summary', 'create summary', 'summary please', 'create report', 'generate report',
+    'new summary', 'make summary', 'analyze team', 'team analysis', 'performance report',
+    // Tagalog
+    'gawa report', 'gawa summary', 'gawan report', 'gawan summary', 'i-generate', 'mag-generate',
+    'paki-gawa', 'pakigawa', 'report please', 'summary ng team',
+  ],
+  VIEW_REPORTS: [
+    // English
+    'view reports', 'show reports', 'my reports', 'ai insights', 'show insights',
+    'past reports', 'history', 'previous reports', 'old reports',
+    // Tagalog
+    'tignan reports', 'tingnan reports', 'mga report', 'dati reports', 'lumang reports',
+  ],
+  TEAM_STATUS: [
+    // English
+    'team status', 'status', 'team overview', 'how is my team', 'team today',
+    'today status', 'current status', 'team now',
+    // Tagalog
+    'kamusta team', 'kumusta team', 'status ng team', 'ano status', 'anong status',
+    'paano team', 'team ko', 'ngayon', 'today',
+  ],
+  AT_RISK: [
+    // English
+    'at risk', 'risk', 'attendance issues', 'low attendance', 'poor attendance',
+    'missed checkins', 'who needs attention', 'problems', 'issues', 'concerns', 'struggling',
+    'who is absent', 'absent', 'not checking in',
+    // Tagalog
+    'sino absent', 'sino wala', 'may problema', 'sino may issue', 'hindi nag-checkin',
+    'hindi nagcheckin', 'kulang attendance', 'sino kulang',
+  ],
+  HELP: [
+    // English
+    'help', 'commands', 'what can you do', 'options', 'menu', 'how to use',
+    // Tagalog
+    'tulong', 'paano', 'ano pwede', 'anong pwede', 'pano gamitin',
+  ],
 } as const;
+
+// Intent types for AI detection
+export type ChatIntent = 'GENERATE_SUMMARY' | 'VIEW_REPORTS' | 'TEAM_STATUS' | 'AT_RISK' | 'HELP' | 'GREETING' | 'OUT_OF_SCOPE' | 'UNKNOWN';
 
 // Suggestions shown to user
 export const TEAM_LEAD_SUGGESTIONS: ChatSuggestion[] = [

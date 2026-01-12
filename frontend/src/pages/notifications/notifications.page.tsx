@@ -22,6 +22,7 @@ import { Button } from '../../components/ui/Button';
 import { Pagination } from '../../components/ui/Pagination';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { useToast } from '../../components/ui/Toast';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { cn } from '../../lib/utils';
 import { formatRelativeTime, formatDisplayDateTime } from '../../lib/date-utils';
 import { useUser } from '../../hooks/useUser';
@@ -229,7 +230,7 @@ export function NotificationsPage() {
       {/* Notifications List */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
-          <div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full" />
+          <LoadingSpinner size="lg" />
         </div>
       ) : paginatedNotifications.length === 0 ? (
         /* Empty State - Yellow Card like reference image */

@@ -1,9 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
+/**
+ * Sidebar Component - Icon Rail Style
+ * Mobile: Full-width drawer with expanded navigation
+ * Desktop: Collapsed icon-only sidebar with hover flyout
+ */
+
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 import { useUser } from '../../hooks/useUser';
-import { getNavigationForRole } from '../../config/navigation';
-import { X, LogOut, Settings, ChevronRight, ChevronUp } from 'lucide-react';
+import { getNavigationForRole, type NavItem, type NavSection } from '../../config/navigation';
+import { X, LogOut, Settings, ChevronRight, ChevronDown } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { Logo } from '../ui/Logo';
 import { Avatar } from '../ui/Avatar';
@@ -11,24 +17,45 @@ import { Avatar } from '../ui/Avatar';
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  isExpanded: boolean;
-  onExpandChange: (expanded: boolean) => void;
+  /** ID of nav item that has persistent SubMenuPanel visible */
+  activeSubMenuId?: string;
 }
 
-export function Sidebar({ isOpen, onClose, isExpanded, onExpandChange }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, activeSubMenuId }: SidebarProps) {
   const { user } = useUser();
   const { logout } = useAuth();
   const location = useLocation();
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [hoveredItem, setHoveredItem] = useState<NavItem | null>(null);
+  const [flyoutPosition, setFlyoutPosition] = useState<number>(0);
+  const [expandedMobileItem, setExpandedMobileItem] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const profileFlyoutRef = useRef<HTMLDivElement>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const navItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
+  // Memoize navigation based on role
   const userRole = user?.role || 'MEMBER';
-  const navigation = getNavigationForRole(userRole as any);
+  const navigation = useMemo(
+    () => getNavigationForRole(userRole as any),
+    [userRole]
+  );
+
+  // Memoize flattened nav items
+  const allNavItems = useMemo(
+    () => navigation.flatMap(section => section.items),
+    [navigation]
+  );
 
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const isOutsideProfileButton = profileMenuRef.current && !profileMenuRef.current.contains(target);
+      const isOutsideFlyout = profileFlyoutRef.current && !profileFlyoutRef.current.contains(target);
+
+      // Only close if click is outside both the profile button and the flyout menu
+      if (isOutsideProfileButton && (isOutsideFlyout || !profileFlyoutRef.current)) {
         setProfileMenuOpen(false);
       }
     }
@@ -36,24 +63,78 @@ export function Sidebar({ isOpen, onClose, isExpanded, onExpandChange }: Sidebar
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Close profile menu when sidebar collapses
+  // Cleanup timeout on unmount
   useEffect(() => {
-    if (!isExpanded) {
-      setProfileMenuOpen(false);
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Handle mouse enter on nav item - with position tracking (desktop only)
+  const handleMouseEnter = useCallback((item: NavItem, itemId: string) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
     }
-  }, [isExpanded]);
+    if (item.children && item.children.length > 0 && item.id !== activeSubMenuId) {
+      const element = navItemRefs.current.get(itemId);
+      if (element) {
+        const rect = element.getBoundingClientRect();
+        setFlyoutPosition(rect.top);
+      }
+      setHoveredItem(item);
+    }
+  }, [activeSubMenuId]);
+
+  // Handle mouse leave with delay
+  const handleMouseLeave = useCallback(() => {
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredItem(null);
+    }, 200);
+  }, []);
+
+  // Handle flyout mouse enter (cancel the hide timeout)
+  const handleFlyoutMouseEnter = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Close flyout on click
+  const handleFlyoutItemClick = useCallback(() => {
+    setHoveredItem(null);
+    onClose();
+  }, [onClose]);
+
+  // Toggle mobile expanded item
+  const toggleMobileExpand = useCallback((itemId: string) => {
+    setExpandedMobileItem(prev => prev === itemId ? null : itemId);
+  }, []);
 
   // Get role display name
-  const getRoleDisplay = (role: string) => {
+  const getRoleDisplay = useCallback((role: string) => {
     const roleMap: Record<string, string> = {
       'EXECUTIVE': 'Executive',
       'ADMIN': 'Administrator',
       'SUPERVISOR': 'Supervisor',
       'TEAM_LEAD': 'Team Leader',
       'MEMBER': 'Team Member',
+      'WORKER': 'Team Member',
     };
     return roleMap[role] || role;
-  };
+  }, []);
+
+  // Set ref for nav item
+  const setNavItemRef = useCallback((id: string, element: HTMLDivElement | null) => {
+    if (element) {
+      navItemRefs.current.set(id, element);
+    } else {
+      navItemRefs.current.delete(id);
+    }
+  }, []);
 
   return (
     <>
@@ -66,187 +147,398 @@ export function Sidebar({ isOpen, onClose, isExpanded, onExpandChange }: Sidebar
         />
       )}
 
-      {/* Sidebar */}
+      {/* ============================================ */}
+      {/* MOBILE SIDEBAR - Full drawer */}
+      {/* ============================================ */}
       <aside
-        onMouseEnter={() => onExpandChange(true)}
-        onMouseLeave={() => onExpandChange(false)}
         className={cn(
-          'fixed top-0 left-0 z-50 h-screen bg-white border-r border-gray-200',
-          'transform transition-all duration-200 ease-out',
+          'fixed top-0 left-0 z-50 h-screen lg:hidden',
+          'bg-slate-900',
           'flex flex-col',
-          // Mobile: full width when open, hidden when closed
-          'lg:translate-x-0',
-          isOpen ? 'translate-x-0 w-72 shadow-xl' : '-translate-x-full w-72',
-          // Desktop: collapsed by default, expanded on hover with shadow
-          isExpanded ? 'lg:w-72 lg:shadow-2xl' : 'lg:w-[72px]'
+          'transition-transform duration-300 ease-out',
+          'w-[280px]',
+          isOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        {/* Logo Header */}
-        <div className={cn(
-          'h-16 flex items-center border-b border-gray-100 flex-shrink-0 bg-gradient-to-r from-primary-50 to-white',
-          isExpanded ? 'justify-between px-5' : 'justify-center lg:justify-center px-5 lg:px-0'
-        )}>
-          <div className={cn(
-            'flex items-center gap-3',
-            !isExpanded && 'lg:justify-center'
-          )}>
-            <Logo
-              size="md"
-              showText={isExpanded}
-              textVariant="full"
-              containerClassName={cn(
-                !isExpanded && 'lg:justify-center'
-              )}
-            />
-          </div>
+        {/* Mobile Header */}
+        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-800 flex-shrink-0">
+          <Logo size="sm" showText={true} />
           <button
             onClick={onClose}
-            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            className="p-2 rounded-xl hover:bg-slate-800 transition-colors"
             aria-label="Close sidebar"
           >
-            <X className="h-5 w-5 text-gray-500" />
+            <X className="h-5 w-5 text-slate-400" />
           </button>
         </div>
 
-        {/* Navigation */}
-        <nav className={cn(
-          'flex-1 overflow-y-auto py-4',
-          isExpanded ? 'px-3' : 'px-3 lg:px-2'
-        )}>
-          {navigation.map((section, sectionIndex) => (
-            <div key={section.id} className={cn(sectionIndex > 0 && 'mt-6')}>
-              {/* Section Header - hidden when collapsed */}
-              <div className={cn(
-                'flex items-center gap-2 px-3 mb-2 transition-all duration-300',
-                isExpanded ? 'opacity-100' : 'lg:opacity-0 lg:h-0 lg:mb-0 lg:overflow-hidden'
-              )}>
-                <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">
-                  {section.title}
-                </p>
-                <div className="flex-1 h-px bg-gray-100" />
-              </div>
-
-              {/* Section Items */}
-              <div className="space-y-1">
-                {section.items.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = location.pathname === item.href ||
-                    (item.href !== '/' && location.pathname.startsWith(item.href));
-
-                  return (
-                    <NavLink
-                      key={item.id}
-                      to={item.href}
-                      onClick={onClose}
-                      title={!isExpanded ? item.label : undefined}
-                      className={cn(
-                        'flex items-center gap-3 rounded-xl text-sm font-medium',
-                        'transition-all duration-200 group relative',
-                        isExpanded ? 'px-3 py-2.5' : 'px-3 py-2.5 lg:px-0 lg:py-2 lg:justify-center',
-                        isActive
-                          ? 'bg-primary-50 text-primary-700 shadow-sm border border-primary-100'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      )}
-                    >
-                      {/* Active indicator bar */}
-                      {isActive && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary-500 rounded-r-full" />
-                      )}
-
-                      <div className={cn(
-                        'h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors',
-                        isActive
-                          ? 'bg-primary-100 text-primary-600'
-                          : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200 group-hover:text-gray-700'
-                      )}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-
-                      <span className={cn(
-                        'flex-1 truncate transition-all duration-300',
-                        isExpanded ? 'opacity-100 w-auto' : 'lg:opacity-0 lg:w-0 lg:hidden'
-                      )}>
-                        {item.label}
-                      </span>
-
-                      {/* Hover arrow - only when expanded */}
-                      <ChevronRight className={cn(
-                        'h-4 w-4 transition-all',
-                        isExpanded
-                          ? 'opacity-0 -translate-x-2 group-hover:opacity-50 group-hover:translate-x-0'
-                          : 'hidden',
-                        isActive && isExpanded && 'opacity-50 translate-x-0'
-                      )} />
-                    </NavLink>
-                  );
-                })}
-              </div>
+        {/* Mobile User Profile */}
+        <div className="p-4 border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Avatar
+                src={user?.avatar}
+                firstName={user?.firstName}
+                lastName={user?.lastName}
+                size="md"
+              />
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-slate-900 rounded-full" />
             </div>
-          ))}
-        </nav>
-
-        {/* Bottom Section - Profile with Dropdown */}
-        <div className="border-t border-gray-200 flex-shrink-0 bg-gray-50/50 relative" ref={profileMenuRef}>
-          {/* Dropdown Menu - only when expanded */}
-          {profileMenuOpen && isExpanded && (
-            <div className="absolute bottom-full left-3 right-3 mb-2 bg-white rounded-xl shadow-lg border border-gray-200 py-1 z-10">
-              <NavLink
-                to="/settings/profile"
-                onClick={() => {
-                  setProfileMenuOpen(false);
-                  onClose();
-                }}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <Settings className="h-4 w-4 text-gray-500" />
-                <span>Settings</span>
-              </NavLink>
-              <button
-                onClick={() => {
-                  setProfileMenuOpen(false);
-                  logout();
-                }}
-                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-danger-600 hover:bg-danger-50 transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-                <span>Sign Out</span>
-              </button>
-            </div>
-          )}
-
-          {/* Profile Button */}
-          <button
-            onClick={() => isExpanded && setProfileMenuOpen(!profileMenuOpen)}
-            className={cn(
-              'w-full flex items-center gap-3 hover:bg-gray-100 transition-colors',
-              isExpanded ? 'px-4 py-3' : 'px-4 py-3 lg:px-0 lg:py-3 lg:justify-center'
-            )}
-          >
-            <Avatar
-              src={user?.avatar}
-              firstName={user?.firstName}
-              lastName={user?.lastName}
-              size="md"
-            />
-            <div className={cn(
-              'flex-1 min-w-0 text-left transition-all duration-300',
-              isExpanded ? 'opacity-100 w-auto' : 'lg:opacity-0 lg:w-0 lg:hidden'
-            )}>
-              <p className="text-sm font-semibold text-gray-900 truncate">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white truncate">
                 {user?.firstName} {user?.lastName}
               </p>
-              <p className="text-xs text-primary-600 font-medium">
+              <p className="text-xs text-slate-400 truncate">{user?.email}</p>
+              <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-700 text-slate-300">
                 {getRoleDisplay(user?.role || 'MEMBER')}
-              </p>
+              </span>
             </div>
-            <ChevronUp className={cn(
-              'h-4 w-4 text-gray-400 transition-transform',
-              profileMenuOpen ? 'rotate-180' : '',
-              !isExpanded && 'lg:hidden'
+          </div>
+        </div>
+
+        {/* Mobile Navigation */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-4 px-3">
+          <div className="space-y-1">
+            {allNavItems.map((item) => {
+              const Icon = item.icon;
+              const basePath = item.href.split('?')[0];
+              const isActive = location.pathname === basePath ||
+                (basePath !== '/' && location.pathname.startsWith(basePath));
+              const hasChildren = item.children && item.children.length > 0;
+              const isExpanded = expandedMobileItem === item.id;
+
+              return (
+                <div key={item.id}>
+                  {hasChildren ? (
+                    // Parent item with children - expandable
+                    <>
+                      <button
+                        onClick={() => toggleMobileExpand(item.id)}
+                        className={cn(
+                          'w-full flex items-center gap-3 px-4 py-3 rounded-xl',
+                          'transition-all duration-200',
+                          isActive
+                            ? 'bg-primary-600 text-white'
+                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        )}
+                      >
+                        <Icon className="h-5 w-5 flex-shrink-0" />
+                        <span className="flex-1 text-left text-sm font-medium">{item.label}</span>
+                        <ChevronDown className={cn(
+                          'h-4 w-4 transition-transform duration-200',
+                          isExpanded ? 'rotate-180' : ''
+                        )} />
+                      </button>
+
+                      {/* Expanded children */}
+                      {isExpanded && (
+                        <div className="mt-1 ml-4 pl-4 border-l border-slate-700 space-y-1">
+                          {item.children!.map((child) => {
+                            const ChildIcon = child.icon;
+                            const childTabId = child.href.split('tab=')[1];
+                            const currentTab = location.search.split('tab=')[1];
+                            const isChildActive =
+                              location.pathname + location.search === child.href ||
+                              (location.pathname === basePath && currentTab === childTabId) ||
+                              (location.pathname === basePath && !currentTab && child.id === item.children![0].id);
+
+                            return (
+                              <NavLink
+                                key={child.id}
+                                to={child.href}
+                                onClick={onClose}
+                                className={cn(
+                                  'flex items-center gap-3 px-4 py-2.5 rounded-xl',
+                                  'transition-all duration-200 text-sm',
+                                  isChildActive
+                                    ? 'bg-primary-600/20 text-primary-400 font-medium'
+                                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                                )}
+                              >
+                                <ChildIcon className="h-4 w-4 flex-shrink-0" />
+                                <span>{child.label}</span>
+                              </NavLink>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    // Regular item without children
+                    <NavLink
+                      to={item.href}
+                      onClick={onClose}
+                      className={cn(
+                        'flex items-center gap-3 px-4 py-3 rounded-xl',
+                        'transition-all duration-200',
+                        isActive
+                          ? 'bg-primary-600 text-white'
+                          : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                      )}
+                    >
+                      <Icon className="h-5 w-5 flex-shrink-0" />
+                      <span className="text-sm font-medium">{item.label}</span>
+                    </NavLink>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* Mobile Bottom Actions */}
+        <div className="p-3 border-t border-slate-800 space-y-1">
+          <NavLink
+            to="/settings/profile"
+            onClick={onClose}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <Settings className="h-5 w-5" />
+            <span className="text-sm font-medium">Settings</span>
+          </NavLink>
+          <button
+            onClick={() => { onClose(); logout(); }}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <LogOut className="h-5 w-5" />
+            <span className="text-sm font-medium">Sign Out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* ============================================ */}
+      {/* DESKTOP SIDEBAR - Icon Rail */}
+      {/* ============================================ */}
+      <aside
+        className={cn(
+          'fixed top-0 left-0 z-50 h-screen hidden lg:flex',
+          'bg-slate-900 border-r border-slate-800',
+          'flex-col w-[72px]'
+        )}
+      >
+        {/* Logo */}
+        <div className="h-16 flex items-center justify-center border-b border-slate-800 flex-shrink-0">
+          <Logo size="sm" showText={false} />
+        </div>
+
+        {/* Navigation Icons */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-2">
+          <div className="space-y-1">
+            {allNavItems.map((item) => {
+              const Icon = item.icon;
+              const basePath = item.href.split('?')[0];
+              const isActive = location.pathname === basePath ||
+                (basePath !== '/' && location.pathname.startsWith(basePath));
+              const hasChildren = item.children && item.children.length > 0;
+
+              return (
+                <div
+                  key={item.id}
+                  ref={(el) => setNavItemRef(item.id, el)}
+                  className="relative"
+                  onMouseEnter={() => handleMouseEnter(item, item.id)}
+                  onMouseLeave={handleMouseLeave}
+                >
+                  <NavLink
+                    to={item.href}
+                    className={cn(
+                      'flex flex-col items-center justify-center py-2.5 px-1 rounded-xl',
+                      'transition-all duration-200 group relative',
+                      isActive
+                        ? 'bg-primary-600 text-white'
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    )}
+                  >
+                    {/* Active indicator */}
+                    {isActive && (
+                      <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-white rounded-r-full" />
+                    )}
+
+                    <div className="relative">
+                      <Icon className="h-5 w-5" />
+                      {hasChildren && !isActive && (
+                        <ChevronRight className="absolute -right-1 -bottom-1 h-2.5 w-2.5 text-slate-500" />
+                      )}
+                    </div>
+                    <span className="text-[10px] mt-1 font-medium truncate max-w-full px-1">
+                      {item.label.split(' ')[0]}
+                    </span>
+
+                    {/* Tooltip - only for items WITHOUT children */}
+                    {!hasChildren && (
+                      <div className="absolute left-full ml-3 px-2.5 py-1.5 bg-slate-800 text-white text-xs font-medium rounded-lg whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[60] pointer-events-none shadow-lg">
+                        {item.label}
+                      </div>
+                    )}
+                  </NavLink>
+                </div>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* Bottom Section - Profile */}
+        <div className="border-t border-slate-800 flex-shrink-0 relative" ref={profileMenuRef}>
+          <button
+            onClick={() => setProfileMenuOpen(!profileMenuOpen)}
+            className={cn(
+              'w-full flex flex-col items-center justify-center py-3 transition-colors',
+              profileMenuOpen ? 'bg-slate-800' : 'hover:bg-slate-800'
+            )}
+          >
+            <div className="relative">
+              <Avatar
+                src={user?.avatar}
+                firstName={user?.firstName}
+                lastName={user?.lastName}
+                size="sm"
+              />
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-slate-900 rounded-full" />
+            </div>
+            <ChevronRight className={cn(
+              'h-3 w-3 text-slate-500 mt-1 transition-transform',
+              profileMenuOpen ? 'rotate-90' : ''
             )} />
           </button>
         </div>
       </aside>
+
+      {/* Desktop Profile Flyout Menu */}
+      {profileMenuOpen && (
+        <div
+          ref={profileFlyoutRef}
+          className="fixed left-[72px] bottom-4 z-[60] hidden lg:block"
+        >
+          <div className="w-64 bg-white rounded-xl border border-gray-200 shadow-2xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-150">
+            {/* User Info Header */}
+            <div className="p-4 bg-gradient-to-r from-primary-500 to-primary-600">
+              <div className="flex items-center gap-3">
+                <Avatar
+                  src={user?.avatar}
+                  firstName={user?.firstName}
+                  lastName={user?.lastName}
+                  size="md"
+                  className="ring-2 ring-white/30"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">
+                    {user?.firstName} {user?.lastName}
+                  </p>
+                  <p className="text-xs text-primary-100 truncate">
+                    {user?.email}
+                  </p>
+                  <span className="inline-flex items-center mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/20 text-white">
+                    {getRoleDisplay(user?.role || 'MEMBER')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Menu Items */}
+            <div className="p-2">
+              <NavLink
+                to="/settings/profile"
+                onClick={() => setProfileMenuOpen(false)}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                <div className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                  <Settings className="h-4 w-4 text-gray-500" />
+                </div>
+                <div>
+                  <p className="font-medium">Settings</p>
+                  <p className="text-xs text-gray-500">Manage your account</p>
+                </div>
+              </NavLink>
+
+              <div className="my-2 border-t border-gray-100" />
+
+              <button
+                onClick={() => { setProfileMenuOpen(false); logout(); }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <div className="h-8 w-8 rounded-lg bg-red-50 flex items-center justify-center">
+                  <LogOut className="h-4 w-4 text-red-500" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium">Sign Out</p>
+                  <p className="text-xs text-red-400">End your session</p>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Hover Flyout Submenu */}
+      {hoveredItem && hoveredItem.children && hoveredItem.children.length > 0 && (
+        <div
+          className="fixed z-[55] hidden lg:block"
+          style={{
+            left: '72px',
+            top: `${Math.max(flyoutPosition, 64)}px`,
+          }}
+          onMouseEnter={handleFlyoutMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        >
+          {/* Bridge element */}
+          <div className="absolute -left-2 top-0 w-2 h-full" />
+
+          <div className="w-56 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-150">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <h3 className="text-sm font-semibold text-gray-900">{hoveredItem.label}</h3>
+            </div>
+
+            <nav className="py-2 px-2">
+              <div className="space-y-0.5">
+                {hoveredItem.children.map((child) => {
+                  const ChildIcon = child.icon;
+                  const childTabId = child.href.split('tab=')[1];
+                  const currentTab = location.search.split('tab=')[1];
+                  const basePath = hoveredItem.href.split('?')[0];
+                  const isChildActive =
+                    location.pathname + location.search === child.href ||
+                    (location.pathname === basePath && currentTab === childTabId) ||
+                    (location.pathname === basePath && !currentTab && child.id === hoveredItem.children![0].id);
+
+                  return (
+                    <NavLink
+                      key={child.id}
+                      to={child.href}
+                      onClick={handleFlyoutItemClick}
+                      className={cn(
+                        'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm',
+                        'transition-all duration-150',
+                        isChildActive
+                          ? 'bg-primary-50 text-primary-700 font-medium'
+                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      )}
+                    >
+                      <ChildIcon className={cn(
+                        'h-4 w-4 flex-shrink-0',
+                        isChildActive ? 'text-primary-600' : 'text-gray-400'
+                      )} />
+                      <span className="truncate">{child.label}</span>
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </nav>
+          </div>
+        </div>
+      )}
     </>
   );
+}
+
+// Export helper to get active nav item with children
+export function getActiveNavItemWithChildren(pathname: string, navigation: NavSection[]): NavItem | null {
+  for (const section of navigation) {
+    for (const item of section.items) {
+      const basePath = item.href.split('?')[0];
+      if ((pathname === basePath || pathname.startsWith(basePath)) && item.children && item.children.length > 0) {
+        return item;
+      }
+    }
+  }
+  return null;
 }

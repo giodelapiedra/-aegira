@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { useToast } from '../../components/ui/Toast';
 import { Avatar } from '../../components/ui/Avatar';
@@ -383,7 +384,7 @@ export function TeamsPage() {
       {/* Teams Grid */}
       {teamsLoading ? (
         <div className="p-8 text-center">
-          <div className="animate-spin h-8 w-8 border-2 border-primary-500 border-t-transparent rounded-full mx-auto" />
+          <LoadingSpinner size="lg" className="mx-auto" />
           <p className="text-gray-500 mt-4">Loading teams...</p>
         </div>
       ) : filteredTeams.length === 0 ? (

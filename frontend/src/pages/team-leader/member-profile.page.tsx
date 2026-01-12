@@ -18,6 +18,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Pagination } from '../../components/ui/Pagination';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { useToast } from '../../components/ui/Toast';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { formatDisplayDate, formatTime, formatDisplayDateTime } from '../../lib/date-utils';
 import { cn } from '../../lib/utils';
 import { getExceptionTypeLabel } from '../../services/exemption.service';
@@ -66,6 +67,7 @@ export function MemberProfilePage() {
     queryKey: ['member-profile', userId],
     queryFn: () => teamService.getMemberProfile(userId!),
     enabled: !!userId,
+    staleTime: 1000 * 60 * 5, // 5 minutes - avoid refetching on tab switches
   });
 
   // Get all teams for transfer dropdown (forTransfer: true allows Team Leads to see all company teams)
@@ -85,6 +87,7 @@ export function MemberProfilePage() {
         status: checkinFilter === 'all' ? undefined : checkinFilter,
       }),
     enabled: !!userId && activeTab === 'checkins',
+    staleTime: 1000 * 60 * 2, // 2 minutes
   });
 
   // Get member exemptions
@@ -92,6 +95,7 @@ export function MemberProfilePage() {
     queryKey: ['member-exemptions', userId],
     queryFn: () => teamService.getMemberExemptions(userId!),
     enabled: !!userId && activeTab === 'exemptions',
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   // Get member incidents
@@ -99,25 +103,19 @@ export function MemberProfilePage() {
     queryKey: ['member-incidents', userId],
     queryFn: () => teamService.getMemberIncidents(userId!),
     enabled: !!userId && activeTab === 'incidents',
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
-  // Get member analytics for charts
+  // Get member analytics for charts (30 days to match UI label)
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
     queryKey: ['member-analytics', userId],
     queryFn: () => teamService.getMemberAnalytics(userId!, 30),
     enabled: !!userId && activeTab === 'overview',
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
-  // Get latest check-in for current status display
-  const { data: latestCheckinData } = useQuery({
-    queryKey: ['member-latest-checkin', userId],
-    queryFn: () =>
-      teamService.getMemberCheckins(userId!, {
-        page: 1,
-        limit: 1,
-      }),
-    enabled: !!userId && activeTab === 'overview',
-  });
+  // Use latest check-in from profile data (no separate API call needed)
+  const latestCheckin = member?.recentCheckins?.[0];
 
   // Deactivate mutation
   const deactivateMutation = useMutation({
@@ -219,7 +217,7 @@ export function MemberProfilePage() {
   if (profileLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
@@ -478,13 +476,12 @@ export function MemberProfilePage() {
             <div className="p-6">
               {analyticsLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary-500" />
+                  <LoadingSpinner size="md" />
                 </div>
               ) : analyticsData ? (
                 <div className="space-y-6">
                   {/* Current Status Card */}
-                  {latestCheckinData?.data && latestCheckinData.data.length > 0 && (() => {
-                    const latestCheckin = latestCheckinData.data[0];
+                  {latestCheckin && (() => {
                     const statusConfig = getStatusConfig(latestCheckin.readinessStatus);
                     return (
                       <Card className={`border-2 ${statusConfig.border} ${statusConfig.bg} transition-all duration-300 hover:shadow-lg`}>
@@ -595,7 +592,7 @@ export function MemberProfilePage() {
 
               {checkinsLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary-500" />
+                  <LoadingSpinner size="md" />
                 </div>
               ) : checkinsData?.data && checkinsData.data.length > 0 ? (
                 <>
@@ -722,7 +719,7 @@ export function MemberProfilePage() {
             <div>
               {exemptionsLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary-500" />
+                  <LoadingSpinner size="md" />
                 </div>
               ) : exemptionsData?.data && exemptionsData.data.length > 0 ? (
                 <div className="divide-y divide-gray-100">
@@ -813,7 +810,7 @@ export function MemberProfilePage() {
             <div>
               {incidentsLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary-500" />
+                  <LoadingSpinner size="md" />
                 </div>
               ) : incidentsData?.data && incidentsData.data.length > 0 ? (
                 <div className="divide-y divide-gray-100">

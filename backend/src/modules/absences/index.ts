@@ -25,7 +25,8 @@ import {
   getPendingReviews,
   getAbsenceHistory,
 } from '../../utils/absence.js';
-import { DEFAULT_TIMEZONE, formatDisplayDate } from '../../utils/date-helpers.js';
+import { DEFAULT_TIMEZONE, formatDisplayDate, toDbDate } from '../../utils/date-helpers.js';
+import { recalculateDailyTeamSummary } from '../../utils/daily-summary.js';
 import type { AppContext } from '../../types/context.js';
 
 const absencesRoutes = new Hono<AppContext>();
@@ -405,6 +406,14 @@ absencesRoutes.post('/:id/review', async (c) => {
       notes: body.notes,
     },
   });
+
+  // Recalculate DailyTeamSummary for the absence date
+  // This ensures the teams-overview breakdown (Absent vs Excused) is updated
+  if (absence.teamId) {
+    recalculateDailyTeamSummary(absence.teamId, absence.absenceDate, timezone).catch(err => {
+      console.error('Failed to recalculate daily team summary after absence review:', err);
+    });
+  }
 
   return c.json(updatedAbsence);
 });

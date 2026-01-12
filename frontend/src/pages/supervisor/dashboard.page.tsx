@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Avatar } from '../../components/ui/Avatar';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { cn } from '../../lib/utils';
 import { formatDisplayDateTime } from '../../lib/date-utils';
 import {
@@ -36,7 +37,7 @@ export function SupervisorDashboard() {
   if (statsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }

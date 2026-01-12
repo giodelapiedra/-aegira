@@ -93,7 +93,7 @@ calendarRoutes.get('/my', async (c) => {
   const endOfMonth = startOfMonthDT.endOf('month').toJSDate();
 
   // Fetch data in parallel
-  const [holidays, exemptions, checkins] = await Promise.all([
+  const [holidays, exemptions, checkins, excusedAbsences] = await Promise.all([
     // Company holidays for the month
     prisma.holiday.findMany({
       where: {
@@ -125,6 +125,21 @@ calendarRoutes.get('/my', async (c) => {
         },
       },
       orderBy: { createdAt: 'asc' },
+    }),
+    // User's EXCUSED absences (TL approved = no penalty)
+    prisma.absence.findMany({
+      where: {
+        userId,
+        status: 'EXCUSED',
+        absenceDate: {
+          gte: startOfMonth,
+          lte: endOfMonth,
+        },
+      },
+      select: {
+        absenceDate: true,
+        reasonCategory: true,
+      },
     }),
   ]);
 
@@ -158,6 +173,13 @@ calendarRoutes.get('/my', async (c) => {
   for (const holiday of holidays) {
     const dateKey = formatLocalDate(holiday.date, timezone);
     holidayMap.set(dateKey, holiday);
+  }
+
+  // Build EXCUSED absences map by date (TL approved = no penalty)
+  const excusedAbsenceMap = new Map<string, typeof excusedAbsences[0]>();
+  for (const absence of excusedAbsences) {
+    const dateKey = formatLocalDate(absence.absenceDate, timezone);
+    excusedAbsenceMap.set(dateKey, absence);
   }
 
   // Check if date is covered by exemption
@@ -204,8 +226,14 @@ calendarRoutes.get('/my', async (c) => {
     const isWorkDay = !isBeforeStart && workDays.includes(dayName);
     const holiday = holidayMap.get(dateStr);
     const exemption = getExemptionForDate(dateStr);
+    const excusedAbsence = excusedAbsenceMap.get(dateStr);
     const checkin = checkinMap.get(dateStr);
     const attendance = attendanceMap.get(dateStr);
+
+    // isExempted = has approved exception OR has EXCUSED absence (TL approved)
+    const isExempted = !!exemption || !!excusedAbsence;
+    // exemptionType: use exception type, or "Absence (Excused)" for TL-approved absences
+    const exemptionType = exemption?.type || (excusedAbsence ? `Absence (${excusedAbsence.reasonCategory || 'Excused'})` : undefined);
 
     days.push({
       date: dateStr,
@@ -213,8 +241,8 @@ calendarRoutes.get('/my', async (c) => {
       isWorkDay,
       isHoliday: !!holiday,
       holidayName: holiday?.name,
-      isExempted: !!exemption,
-      exemptionType: exemption?.type,
+      isExempted,
+      exemptionType,
       checkinStatus: checkin?.readinessStatus,
       checkinTime: checkin?.createdAt.toISOString(),
       readinessScore: checkin?.readinessScore,
@@ -382,7 +410,7 @@ calendarRoutes.get('/team', async (c) => {
   const endOfMonth = startOfMonthDT.endOf('month').toJSDate();
 
   // Fetch data in parallel
-  const [holidays, exemptions, checkins] = await Promise.all([
+  const [holidays, exemptions, checkins, excusedAbsences] = await Promise.all([
     // Company holidays
     prisma.holiday.findMany({
       where: {
@@ -433,6 +461,22 @@ calendarRoutes.get('/team', async (c) => {
       },
       orderBy: { createdAt: 'asc' },
     }),
+    // All team members' EXCUSED absences (TL approved = no penalty)
+    prisma.absence.findMany({
+      where: {
+        userId: { in: memberIds },
+        status: 'EXCUSED',
+        absenceDate: {
+          gte: startOfMonth,
+          lte: endOfMonth,
+        },
+      },
+      select: {
+        userId: true,
+        absenceDate: true,
+        reasonCategory: true,
+      },
+    }),
   ]);
 
   // Build maps
@@ -450,6 +494,16 @@ calendarRoutes.get('/team', async (c) => {
       checkinsByDate.set(dateKey, new Map());
     }
     checkinsByDate.get(dateKey)!.set(checkin.userId, checkin);
+  }
+
+  // Build EXCUSED absences by date and user (TL approved = no penalty)
+  const excusedAbsencesByDate = new Map<string, Map<string, typeof excusedAbsences[0]>>();
+  for (const absence of excusedAbsences) {
+    const dateKey = formatLocalDate(absence.absenceDate, timezone);
+    if (!excusedAbsencesByDate.has(dateKey)) {
+      excusedAbsencesByDate.set(dateKey, new Map());
+    }
+    excusedAbsencesByDate.get(dateKey)!.set(absence.userId, absence);
   }
 
   // Check exemption for user on date
@@ -502,20 +556,31 @@ calendarRoutes.get('/team', async (c) => {
     const isWorkDay = workDays.includes(dayName);
     const holiday = holidayMap.get(dateStr);
     const dayCheckins = checkinsByDate.get(dateStr) || new Map();
+    const dayExcusedAbsences = excusedAbsencesByDate.get(dateStr) || new Map();
 
     const memberStatuses = team.members.map(member => {
       const checkin = dayCheckins.get(member.id);
       const exemption = getExemptionForUserOnDate(member.id, dateStr);
+      const excusedAbsence = dayExcusedAbsences.get(member.id);
       const memberStartStr = memberStartDates.get(member.id) || teamStartStr;
       const isBeforeMemberStart = dateStr < memberStartStr;
 
       let status: 'checked_in' | 'exempted' | 'absent' | 'pending' | 'not_required';
+      let exemptionType: string | undefined;
+
       if (isBeforeMemberStart) {
         // Date is before this member joined - no check-in required
         status = 'not_required';
       } else if (checkin) {
         status = 'checked_in';
-      } else if (exemption || holiday) {
+      } else if (exemption) {
+        status = 'exempted';
+        exemptionType = exemption.type;
+      } else if (excusedAbsence) {
+        // EXCUSED absence by TL = exempted (no penalty)
+        status = 'exempted';
+        exemptionType = `Absence (${excusedAbsence.reasonCategory || 'Excused'})`;
+      } else if (holiday) {
         status = 'exempted';
       } else if (dateStr < todayStr && isWorkDay) {
         status = 'absent';
@@ -530,7 +595,7 @@ calendarRoutes.get('/team', async (c) => {
         status,
         checkinTime: checkin?.createdAt.toISOString(),
         readinessStatus: checkin?.readinessStatus,
-        exemptionType: exemption?.type,
+        exemptionType,
         startDate: memberStartStr, // When this member started requiring check-ins
       };
     });

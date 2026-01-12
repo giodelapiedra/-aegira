@@ -4,8 +4,8 @@ import { checkinService, LOW_SCORE_REASONS } from '../../services/checkin.servic
 import { useAuthStore } from '../../store/auth.store';
 import { Button } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
-import { Badge } from '../../components/ui/Badge';
 import { Pagination } from '../../components/ui/Pagination';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Calendar, FileText, X, ChevronDown } from 'lucide-react';
 import type { LowScoreReason, Checkin } from '../../types/user';
 
@@ -101,7 +101,7 @@ export function MyHistoryPage() {
   if (isLoading && !checkinsData) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full" />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
@@ -124,25 +124,28 @@ export function MyHistoryPage() {
             </p>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-3xl font-bold text-gray-900">{totalCheckins}</p>
-          <p className="text-sm text-gray-500">Total Check-ins</p>
+        <div className="text-right bg-primary-50 px-5 py-3 rounded-xl">
+          <p className="text-3xl font-bold text-primary-600">{totalCheckins}</p>
+          <p className="text-sm text-primary-600/70">Total Check-ins</p>
         </div>
       </div>
 
       {/* Filters Bar */}
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-600">
-            Filter by time period
-          </p>
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-gray-400" />
+            <p className="text-sm text-gray-600">
+              Filter by time period
+            </p>
+          </div>
 
           {/* Period Filter */}
           <div className="relative">
             <select
               value={filterPeriod}
               onChange={(e) => handlePeriodChange(e.target.value as FilterPeriod)}
-              className="appearance-none pl-4 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent cursor-pointer"
+              className="appearance-none pl-4 pr-10 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 cursor-pointer transition-all"
             >
               <option value="all">All Time</option>
               <option value="week">Last 7 Days</option>
@@ -154,22 +157,22 @@ export function MyHistoryPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         {/* Table Header */}
-        <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-gray-50 border-b border-gray-200">
-          <div className="col-span-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+        <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-gray-50/80 border-b border-gray-200">
+          <div className="col-span-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Date
           </div>
-          <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Day
           </div>
-          <div className="col-span-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="col-span-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Time
           </div>
-          <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Status
           </div>
-          <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <div className="col-span-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Note
           </div>
         </div>
@@ -202,7 +205,7 @@ export function MyHistoryPage() {
             {displayData.map((checkin) => (
               <div
                 key={checkin.id}
-                className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50 transition-colors items-center"
+                className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50/80 transition-all items-center border-l-2 border-l-transparent hover:border-l-primary-500"
               >
                 <div className="col-span-3">
                   <p className="text-sm font-medium text-gray-900">
@@ -210,9 +213,9 @@ export function MyHistoryPage() {
                   </p>
                 </div>
                 <div className="col-span-2">
-                  <p className="text-sm text-gray-600">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-gray-100 text-sm text-gray-600">
                     {formatDay(checkin.createdAt)}
-                  </p>
+                  </span>
                 </div>
                 <div className="col-span-3">
                   <p className="text-sm text-gray-600">
@@ -220,18 +223,20 @@ export function MyHistoryPage() {
                   </p>
                 </div>
                 <div className="col-span-2">
-                  <Badge variant="default">Completed</Badge>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                    Completed
+                  </span>
                 </div>
                 <div className="col-span-2">
                   {hasNote(checkin) ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                    <button
                       onClick={() => setSelectedCheckin(checkin)}
-                      leftIcon={<FileText className="w-3.5 h-3.5" />}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-primary-600 hover:bg-primary-50 transition-colors"
                     >
+                      <FileText className="w-3.5 h-3.5" />
                       View
-                    </Button>
+                    </button>
                   ) : (
                     <span className="text-sm text-gray-300">—</span>
                   )}
@@ -267,28 +272,28 @@ export function MyHistoryPage() {
       {selectedCheckin && (
         <>
           <div
-            className="fixed inset-0 bg-black/40 z-40"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
             onClick={() => setSelectedCheckin(null)}
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-primary-500 to-primary-600">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Note Details</h3>
-                  <p className="text-sm text-gray-500">
+                  <h3 className="text-lg font-semibold text-white">Note Details</h3>
+                  <p className="text-sm text-primary-100">
                     {formatFullDate(selectedCheckin.createdAt)} at {formatTime(selectedCheckin.createdAt)}
                   </p>
                 </div>
                 <button
                   onClick={() => setSelectedCheckin(null)}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
                 >
-                  <X className="w-5 h-5 text-gray-400" />
+                  <X className="w-5 h-5 text-white" />
                 </button>
               </div>
 
-              <div className="px-6 py-5">
-                <div className="bg-gray-50 rounded-lg p-4">
+              <div className="px-6 py-6">
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   <p className="text-gray-700 leading-relaxed">
                     {formatNoteContent(selectedCheckin)}
                   </p>

@@ -1,180 +1,270 @@
 /**
- * Test Script: 3 Check-in Threshold Logic
+ * TEST: 3 Check-in Threshold for Team Grades
  *
- * This script tests that:
- * 1. Members with < 3 check-ins are marked as "onboarding" and excluded from team grade
- * 2. Members with >= 3 check-ins are included in team grade calculation
- * 3. Only actual check-ins count (GREEN/YELLOW), not absences or exemptions
+ * This test verifies that the onboarding threshold (MIN_CHECKIN_DAYS_THRESHOLD = 3)
+ * is based on TOTAL historical check-ins, NOT the filtered period's check-ins.
+ *
+ * EXPECTED BEHAVIOR:
+ * - Workers with < 3 total check-ins EVER = onboarding (excluded from analytics)
+ * - Workers with >= 3 total check-ins EVER = included in analytics
+ * - Even if filter shows only 1-2 check-ins, worker should still be counted
+ *   if they have 3+ total historical check-ins
+ *
+ * Run: npx ts-node test-3checkin-threshold.ts
  */
 
 import { PrismaClient } from '@prisma/client';
+import { DateTime } from 'luxon';
+import { formatLocalDate, getLastNDaysRange } from './src/utils/date-helpers.js';
+import { calculateTeamGrade } from './src/utils/team-grades.js';
+import { calculateTeamsOverviewOptimized } from './src/utils/team-grades-optimized.js';
 
 const prisma = new PrismaClient();
+const TIMEZONE = 'Asia/Manila';
 
-const MIN_CHECKIN_DAYS_THRESHOLD = 3;
+async function main() {
+  console.log('='.repeat(80));
+  console.log('TEST: 3 CHECK-IN THRESHOLD FOR TEAM GRADES');
+  console.log('Verifying threshold uses TOTAL check-ins EVER, not filtered period');
+  console.log('='.repeat(80));
 
-interface TestMember {
-  id: string;
-  name: string;
-  checkins: number;
-  expectedIncluded: boolean;
-}
-
-async function runTest() {
-  console.log('='.repeat(60));
-  console.log('TEST: 3 Check-in Threshold Logic');
-  console.log('='.repeat(60));
-  console.log('');
-
-  try {
-    // Get a team with members for testing
-    const team = await prisma.team.findFirst({
-      where: { isActive: true },
-      include: {
-        members: {
-          where: { isActive: true, role: { in: ['WORKER', 'MEMBER'] } },
-          select: { id: true, firstName: true, lastName: true },
-        },
-      },
-    });
-
-    if (!team) {
-      console.log('❌ No active team found for testing');
-      return;
-    }
-
-    console.log(`📋 Testing with Team: ${team.name}`);
-    console.log(`👥 Total Members: ${team.members.length}`);
-    console.log('');
-
-    // Get the date range for testing (last 30 days)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
-
-    console.log(`📅 Period: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
-    console.log('');
-
-    // Get check-in counts for each member
-    const memberIds = team.members.map(m => m.id);
-
-    const checkinCounts = await prisma.checkin.groupBy({
-      by: ['userId'],
-      where: {
-        userId: { in: memberIds },
-        createdAt: { gte: startDate, lte: endDate },
-      },
-      _count: { id: true },
-      _avg: { readinessScore: true },
-    });
-
-    // Build a map of check-in counts
-    const checkinMap = new Map<string, { count: number; avgScore: number | null }>();
-    for (const c of checkinCounts) {
-      checkinMap.set(c.userId, { count: c._count.id, avgScore: c._avg.readinessScore });
-    }
-
-    // Analyze each member
-    console.log('='.repeat(60));
-    console.log('MEMBER ANALYSIS');
-    console.log('='.repeat(60));
-    console.log('');
-
-    let onboardingCount = 0;
-    let includedCount = 0;
-    const includedScores: number[] = [];
-
-    for (const member of team.members) {
-      const data = checkinMap.get(member.id) || { count: 0, avgScore: null };
-      const isIncluded = data.count >= MIN_CHECKIN_DAYS_THRESHOLD;
-
-      const status = isIncluded ? '✅ INCLUDED' : '🔄 ONBOARDING';
-      const scoreDisplay = data.avgScore !== null ? `${Math.round(data.avgScore)}%` : 'N/A';
-
-      console.log(`${status} | ${member.firstName} ${member.lastName}`);
-      console.log(`         Check-ins: ${data.count} | Avg Score: ${scoreDisplay}`);
-      console.log(`         Threshold: ${data.count} ${data.count >= MIN_CHECKIN_DAYS_THRESHOLD ? '>=' : '<'} ${MIN_CHECKIN_DAYS_THRESHOLD}`);
-      console.log('');
-
-      if (isIncluded) {
-        includedCount++;
-        if (data.avgScore !== null) {
-          includedScores.push(data.avgScore);
-        }
-      } else {
-        onboardingCount++;
-      }
-    }
-
-    // Summary
-    console.log('='.repeat(60));
-    console.log('SUMMARY');
-    console.log('='.repeat(60));
-    console.log('');
-    console.log(`Total Members:     ${team.members.length}`);
-    console.log(`Included in Grade: ${includedCount} (>= ${MIN_CHECKIN_DAYS_THRESHOLD} check-ins)`);
-    console.log(`Onboarding:        ${onboardingCount} (< ${MIN_CHECKIN_DAYS_THRESHOLD} check-ins)`);
-    console.log('');
-
-    if (includedScores.length > 0) {
-      const teamAvg = includedScores.reduce((a, b) => a + b, 0) / includedScores.length;
-      console.log(`Team Avg Readiness (included members only): ${Math.round(teamAvg)}%`);
-    } else {
-      console.log('Team Avg Readiness: N/A (no members with enough check-ins)');
-    }
-
-    // Verify the logic matches what the API would return
-    console.log('');
-    console.log('='.repeat(60));
-    console.log('API SIMULATION');
-    console.log('='.repeat(60));
-    console.log('');
-
-    // Simulate the actual API logic
-    const allMemberAverages = checkinCounts
-      .filter(m => m._avg.readinessScore !== null)
-      .map(m => ({
-        userId: m.userId,
-        avgScore: m._avg.readinessScore!,
-        checkinCount: m._count.id,
-      }));
-
-    const memberAverages = allMemberAverages.filter(m => m.checkinCount >= MIN_CHECKIN_DAYS_THRESHOLD);
-    const apiOnboardingCount = allMemberAverages.length - memberAverages.length;
-    const apiIncludedCount = memberAverages.length;
-
-    // Also count members with 0 check-ins as onboarding
-    const membersWithNoCheckins = team.members.filter(m => !checkinMap.has(m.id));
-    const totalOnboarding = apiOnboardingCount + membersWithNoCheckins.length;
-
-    console.log(`API would report:`);
-    console.log(`  onboardingCount:    ${totalOnboarding}`);
-    console.log(`  includedMemberCount: ${apiIncludedCount}`);
-    console.log('');
-
-    if (apiIncludedCount > 0) {
-      const teamAvgReadiness = memberAverages.reduce((sum, m) => sum + m.avgScore, 0) / memberAverages.length;
-      console.log(`  Team Avg Readiness: ${Math.round(teamAvgReadiness)}%`);
-      console.log('');
-      console.log(`  UI would show: "Grade based on ${apiIncludedCount} of ${team.members.length} members"`);
-      if (totalOnboarding > 0) {
-        console.log(`  Badge would show: "${totalOnboarding} new"`);
-      }
-    } else {
-      console.log(`  Team Grade: null (not enough data)`);
-      console.log(`  UI would show: "No grade yet - members need ${MIN_CHECKIN_DAYS_THRESHOLD}+ check-ins"`);
-    }
-
-    console.log('');
-    console.log('='.repeat(60));
-    console.log('✅ TEST COMPLETED SUCCESSFULLY');
-    console.log('='.repeat(60));
-
-  } catch (error) {
-    console.error('❌ Test failed:', error);
-  } finally {
-    await prisma.$disconnect();
+  const company = await prisma.company.findFirst();
+  if (!company) {
+    console.log('No company found!');
+    return;
   }
+
+  const team = await prisma.team.findFirst({
+    where: { companyId: company.id, isActive: true },
+    include: {
+      leader: true,
+      members: { where: { isActive: true, role: { in: ['WORKER', 'MEMBER'] } } }
+    }
+  });
+  if (!team) {
+    console.log('No team found!');
+    return;
+  }
+
+  console.log('\nCompany:', company.name);
+  console.log('Team:', team.name, '- Members:', team.members.length);
+
+  // ============================================================
+  // SCENARIO 1: Worker with 2 check-ins (below threshold)
+  // ============================================================
+  console.log('\n' + '='.repeat(80));
+  console.log('SCENARIO 1: Worker with 2 check-ins (below 3 threshold)');
+  console.log('='.repeat(80));
+
+  const twoDaysAgo = DateTime.now().setZone(TIMEZONE).minus({ days: 2 }).startOf('day');
+  const yesterday = DateTime.now().setZone(TIMEZONE).minus({ days: 1 }).startOf('day');
+  const today = DateTime.now().setZone(TIMEZONE).startOf('day');
+
+  // Create test worker
+  const testWorker = await prisma.user.create({
+    data: {
+      email: 'test.onboarding.' + Date.now() + '@aegira.com',
+      firstName: 'Test',
+      lastName: 'OnboardingWorker',
+      role: 'WORKER',
+      companyId: company.id,
+      teamId: team.id,
+      teamJoinedAt: twoDaysAgo.minus({ days: 5 }).toJSDate(),
+      isActive: true,
+    }
+  });
+
+  console.log('\nCreated test worker:', testWorker.firstName, testWorker.lastName);
+
+  // Create only 2 check-ins (below 3 threshold)
+  for (const date of [twoDaysAgo, yesterday]) {
+    await prisma.checkin.create({
+      data: {
+        userId: testWorker.id,
+        readinessStatus: 'GREEN',
+        readinessScore: 95.0,
+        mood: 4,
+        stress: 2,
+        sleep: 4,
+        physicalHealth: 4,
+        companyId: company.id,
+        createdAt: date.set({ hour: 8, minute: 30 }).toJSDate(),
+      }
+    });
+  }
+  // Update totalCheckins to match
+  await prisma.user.update({
+    where: { id: testWorker.id },
+    data: { totalCheckins: 2 }
+  });
+  console.log('Created 2 check-ins (below 3 threshold)');
+
+  // Test with both functions
+  console.log('\n--- Testing calculateTeamGrade (non-optimized) ---');
+  const gradeNonOpt = await calculateTeamGrade(team.id, { companyId: company.id, timezone: TIMEZONE, days: 7 });
+  console.log('Onboarding Count:', gradeNonOpt?.onboardingCount);
+  console.log('Included Members:', gradeNonOpt?.includedMemberCount);
+
+  console.log('\n--- Testing calculateTeamsOverviewOptimized ---');
+  const resultOpt = await calculateTeamsOverviewOptimized({
+    companyId: company.id,
+    timezone: TIMEZONE,
+    days: 7,
+    teamIds: [team.id],
+  });
+  const gradeOpt = resultOpt.teams[0];
+  console.log('Onboarding Count:', gradeOpt?.onboardingCount);
+  console.log('Included Members:', gradeOpt?.includedMemberCount);
+
+  // Verify worker is in onboarding (has < 3 check-ins)
+  const totalCheckins2 = await prisma.checkin.count({ where: { userId: testWorker.id } });
+  console.log('\nWorker total check-ins:', totalCheckins2);
+  console.log('Expected: Worker should be in ONBOARDING (< 3 check-ins)');
+
+  // ============================================================
+  // SCENARIO 2: Add 3rd check-in, worker should now be included
+  // ============================================================
+  console.log('\n' + '='.repeat(80));
+  console.log('SCENARIO 2: After 3rd check-in, worker should be INCLUDED');
+  console.log('='.repeat(80));
+
+  await prisma.checkin.create({
+    data: {
+      userId: testWorker.id,
+      readinessStatus: 'GREEN',
+      readinessScore: 95.0,
+      mood: 4,
+      stress: 2,
+      sleep: 4,
+      physicalHealth: 4,
+      companyId: company.id,
+      createdAt: today.set({ hour: 8, minute: 30 }).toJSDate(),
+    }
+  });
+  // Update totalCheckins to match
+  await prisma.user.update({
+    where: { id: testWorker.id },
+    data: { totalCheckins: 3 }
+  });
+  console.log('Added 3rd check-in');
+
+  const totalCheckins3 = await prisma.checkin.count({ where: { userId: testWorker.id } });
+  console.log('Worker total check-ins:', totalCheckins3);
+
+  console.log('\n--- Testing calculateTeamsOverviewOptimized (7-day filter) ---');
+  const result3Opt = await calculateTeamsOverviewOptimized({
+    companyId: company.id,
+    timezone: TIMEZONE,
+    days: 7,
+    teamIds: [team.id],
+  });
+  const grade3Opt = result3Opt.teams[0];
+  console.log('Onboarding Count:', grade3Opt?.onboardingCount);
+  console.log('Included Members:', grade3Opt?.includedMemberCount);
+
+  // ============================================================
+  // SCENARIO 3: Worker with 5+ old check-ins, but only 1 in current filter
+  // This is the KEY test - filter should NOT affect threshold!
+  // ============================================================
+  console.log('\n' + '='.repeat(80));
+  console.log('SCENARIO 3: Worker with 5 TOTAL check-ins, but only 1 in 3-day filter');
+  console.log('Expected: Worker should still be INCLUDED (5 >= 3 threshold)');
+  console.log('='.repeat(80));
+
+  // Create 2 more old check-ins (total = 5)
+  const tenDaysAgo = DateTime.now().setZone(TIMEZONE).minus({ days: 10 }).startOf('day');
+  const elevenDaysAgo = DateTime.now().setZone(TIMEZONE).minus({ days: 11 }).startOf('day');
+
+  for (const date of [tenDaysAgo, elevenDaysAgo]) {
+    await prisma.checkin.create({
+      data: {
+        userId: testWorker.id,
+        readinessStatus: 'GREEN',
+        readinessScore: 95.0,
+        mood: 4,
+        stress: 2,
+        sleep: 4,
+        physicalHealth: 4,
+        companyId: company.id,
+        createdAt: date.set({ hour: 8, minute: 30 }).toJSDate(),
+      }
+    });
+  }
+  // Update totalCheckins to match (3 + 2 = 5)
+  await prisma.user.update({
+    where: { id: testWorker.id },
+    data: { totalCheckins: 5 }
+  });
+
+  const totalCheckins5 = await prisma.checkin.count({ where: { userId: testWorker.id } });
+  console.log('Worker TOTAL check-ins EVER:', totalCheckins5);
+
+  // Check how many check-ins in 3-day window
+  const threeDaysAgo = DateTime.now().setZone(TIMEZONE).minus({ days: 3 }).startOf('day');
+  const checkinsIn3Days = await prisma.checkin.count({
+    where: {
+      userId: testWorker.id,
+      createdAt: { gte: threeDaysAgo.toJSDate() },
+    }
+  });
+  console.log('Check-ins in last 3 days:', checkinsIn3Days);
+
+  // Now test with VERY short filter (3 days) - should still include worker
+  console.log('\n--- Testing with 3-day filter (worker has only 1-2 in this range) ---');
+  const result3Days = await calculateTeamsOverviewOptimized({
+    companyId: company.id,
+    timezone: TIMEZONE,
+    days: 3,  // Very short filter
+    teamIds: [team.id],
+  });
+  const grade3Days = result3Days.teams[0];
+  console.log('3-day filter - Onboarding Count:', grade3Days?.onboardingCount);
+  console.log('3-day filter - Included Members:', grade3Days?.includedMemberCount);
+
+  console.log('\n--- Testing with 30-day filter (worker has 5 in this range) ---');
+  const result30Days = await calculateTeamsOverviewOptimized({
+    companyId: company.id,
+    timezone: TIMEZONE,
+    days: 30,
+    teamIds: [team.id],
+  });
+  const grade30Days = result30Days.teams[0];
+  console.log('30-day filter - Onboarding Count:', grade30Days?.onboardingCount);
+  console.log('30-day filter - Included Members:', grade30Days?.includedMemberCount);
+
+  // ============================================================
+  // VERIFICATION
+  // ============================================================
+  console.log('\n' + '='.repeat(80));
+  console.log('VERIFICATION');
+  console.log('='.repeat(80));
+
+  const onboarding3Day = grade3Days?.onboardingCount ?? -1;
+  const onboarding30Day = grade30Days?.onboardingCount ?? -1;
+
+  if (onboarding3Day === onboarding30Day) {
+    console.log('✓ PASS: Onboarding count is SAME for both 3-day and 30-day filters!');
+    console.log('  This proves threshold uses TOTAL check-ins EVER, not filtered period.');
+  } else {
+    console.log('✗ FAIL: Onboarding count DIFFERS between filters!');
+    console.log(`  3-day filter: ${onboarding3Day} onboarding`);
+    console.log(`  30-day filter: ${onboarding30Day} onboarding`);
+    console.log('  This means threshold is still using filtered period check-ins!');
+  }
+
+  // ============================================================
+  // CLEANUP
+  // ============================================================
+  console.log('\n' + '='.repeat(80));
+  console.log('CLEANUP');
+  console.log('='.repeat(80));
+
+  await prisma.checkin.deleteMany({ where: { userId: testWorker.id } });
+  await prisma.user.delete({ where: { id: testWorker.id } });
+  console.log('Test worker and check-ins deleted');
+
+  await prisma.$disconnect();
+  console.log('\nDone!');
 }
 
-runTest();
+main().catch(console.error);

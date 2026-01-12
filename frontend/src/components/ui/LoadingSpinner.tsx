@@ -1,16 +1,15 @@
 /**
  * Reusable Loading Spinner Component
- * Consistent loading states across the app
+ * Fancy ring loader with colorful animations
  */
 
-import { Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 // ============================================
 // TYPES
 // ============================================
 
-export type SpinnerSize = 'sm' | 'md' | 'lg' | 'xl';
+export type SpinnerSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
 
 export interface LoadingSpinnerProps {
   size?: SpinnerSize;
@@ -31,28 +30,96 @@ export interface LoadingPageProps {
 }
 
 // ============================================
-// SIZE STYLES
+// SIZE CONFIG
 // ============================================
 
-const sizeClasses: Record<SpinnerSize, string> = {
-  sm: 'h-4 w-4',
-  md: 'h-6 w-6',
-  lg: 'h-8 w-8',
-  xl: 'h-12 w-12',
+const sizeConfig: Record<SpinnerSize, { width: number; className: string }> = {
+  xs: { width: 16, className: 'w-4 h-4' },
+  sm: { width: 24, className: 'w-6 h-6' },
+  md: { width: 40, className: 'w-10 h-10' },
+  lg: { width: 64, className: 'w-16 h-16' },
+  xl: { width: 96, className: 'w-24 h-24' },
 };
+
+// ============================================
+// RING LOADER SVG COMPONENT
+// ============================================
+
+interface RingLoaderProps {
+  size?: SpinnerSize;
+  className?: string;
+}
+
+export function RingLoader({ size = 'md', className }: RingLoaderProps) {
+  const config = sizeConfig[size];
+
+  return (
+    <svg
+      className={cn(config.className, className)}
+      viewBox="0 0 240 240"
+    >
+      <circle
+        className="ring-loader-a"
+        cx="120"
+        cy="120"
+        r="105"
+        fill="none"
+        stroke="#f42f25"
+        strokeWidth="20"
+        strokeDasharray="0 660"
+        strokeDashoffset="-330"
+        strokeLinecap="round"
+      />
+      <circle
+        className="ring-loader-b"
+        cx="120"
+        cy="120"
+        r="35"
+        fill="none"
+        stroke="#f49725"
+        strokeWidth="20"
+        strokeDasharray="0 220"
+        strokeDashoffset="-110"
+        strokeLinecap="round"
+      />
+      <circle
+        className="ring-loader-c"
+        cx="85"
+        cy="120"
+        r="70"
+        fill="none"
+        stroke="#255ff4"
+        strokeWidth="20"
+        strokeDasharray="0 440"
+        strokeLinecap="round"
+      />
+      <circle
+        className="ring-loader-d"
+        cx="155"
+        cy="120"
+        r="70"
+        fill="none"
+        stroke="#f42582"
+        strokeWidth="20"
+        strokeDasharray="0 440"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 // ============================================
 // COMPONENTS
 // ============================================
 
 /**
- * Basic loading spinner
+ * Basic loading spinner - uses fancy ring loader
  */
 export function LoadingSpinner({ size = 'md', className, label }: LoadingSpinnerProps) {
   return (
-    <div className={cn('flex items-center justify-center gap-2', className)}>
-      <Loader2 className={cn('animate-spin text-primary-500', sizeClasses[size])} />
-      {label && <span className="text-sm text-gray-500">{label}</span>}
+    <div className={cn('flex flex-col items-center justify-center gap-3', className)}>
+      <RingLoader size={size} />
+      {label && <span className="text-sm text-gray-500 font-medium">{label}</span>}
     </div>
   );
 }
@@ -83,7 +150,7 @@ export function LoadingPage({ label = 'Loading...', minHeight = '400px' }: Loadi
       style={{ minHeight }}
     >
       <LoadingSpinner size="xl" />
-      <p className="text-gray-500 mt-4">{label}</p>
+      <p className="text-gray-500 mt-4 font-medium">{label}</p>
     </div>
   );
 }

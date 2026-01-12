@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { analyticsService, type TeamGradeSummary, type TeamsOverviewParams } from '../../services/analytics.service';
 import { Avatar } from '../../components/ui/Avatar';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 
 // ===========================================
 // CONSTANTS
@@ -168,7 +169,7 @@ function TeamCard({ team, onClick }: { team: TeamGradeSummary; onClick: () => vo
       </div>
 
       {/* Status Breakdown */}
-      <div className="flex items-center gap-3 mb-4 text-xs">
+      <div className="flex items-center gap-3 mb-4 text-xs flex-wrap">
         <div className="flex items-center gap-1">
           <div className="w-2 h-2 rounded-full bg-green-500" />
           <span className="text-gray-600">{team.breakdown.green} On-time</span>
@@ -181,6 +182,12 @@ function TeamCard({ team, onClick }: { team: TeamGradeSummary; onClick: () => vo
           <div className="w-2 h-2 rounded-full bg-red-500" />
           <span className="text-gray-600">{team.breakdown.absent} Absent</span>
         </div>
+        {team.breakdown.excused > 0 && (
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-blue-500" />
+            <span className="text-gray-600">{team.breakdown.excused} Excused</span>
+          </div>
+        )}
       </div>
 
       {/* Stats Row */}
@@ -355,7 +362,7 @@ export function TeamsOverviewPage() {
       {isLoading && (
         <div className="flex items-center justify-center py-20">
           <div className="text-center">
-            <div className="animate-spin h-10 w-10 border-3 border-primary-500 border-t-transparent rounded-full mx-auto" />
+            <LoadingSpinner size="lg" className="mx-auto" />
             <p className="text-gray-500 mt-4">Loading teams...</p>
           </div>
         </div>

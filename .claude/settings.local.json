@@ -78,7 +78,13 @@
       "Bash(ls:*)",
       "Bash(curl:*)",
       "Bash(if not exist \"D:\\\\Aegira\\\\.github\" mkdir \"D:\\\\Aegira\\\\.github\")",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(xargs:*)",
+      "WebSearch",
+      "WebFetch(domain:unsplash.com)",
+      "Bash(npx eslint:*)",
+      "Bash(git stash:*)",
+      "Bash(npm run db:push:*)"
     ]
   }
 }

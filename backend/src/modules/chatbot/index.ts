@@ -18,9 +18,11 @@ import {
 import {
   type ChatRequest,
   type ChatResponse,
+  type ChatIntent,
   TEAM_LEAD_COMMANDS,
   TEAM_LEAD_SUGGESTIONS,
 } from './types.js';
+import OpenAI from 'openai';
 
 const chatbotRoutes = new Hono<AppContext>();
 
@@ -38,7 +40,7 @@ function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-// Helper: Detect command from user message
+// Helper: Detect command from user message (keyword-based)
 function detectCommand(message: string): keyof typeof TEAM_LEAD_COMMANDS | null {
   const lowerMessage = message.toLowerCase().trim();
 
@@ -51,6 +53,57 @@ function detectCommand(message: string): keyof typeof TEAM_LEAD_COMMANDS | null 
   }
 
   return null;
+}
+
+// Helper: AI-based intent detection (fallback when keywords don't match)
+async function detectIntentWithAI(message: string): Promise<ChatIntent> {
+  if (!env.OPENAI_API_KEY) {
+    return 'UNKNOWN';
+  }
+
+  try {
+    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+
+    const systemPrompt = `You are an intent classifier for a team management chatbot. The chatbot helps team leaders with:
+- Generating team performance reports/summaries
+- Viewing past reports
+- Checking team status today
+- Finding at-risk workers (attendance issues)
+- Getting help with commands
+
+Classify the user's message into ONE of these intents:
+- GENERATE_SUMMARY: User wants to create/generate a new report or summary
+- VIEW_REPORTS: User wants to see past/previous reports or history
+- TEAM_STATUS: User asks about current team status, how team is doing today
+- AT_RISK: User asks about workers with problems, absent, low attendance
+- HELP: User asks how to use the chatbot or what commands are available
+- GREETING: User is just saying hello/hi/kamusta (no specific request)
+- OUT_OF_SCOPE: Request is unrelated to team management features
+
+Respond with ONLY the intent name, nothing else.`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: message },
+      ],
+      max_tokens: 20,
+      temperature: 0,
+    });
+
+    const intent = response.choices[0]?.message?.content?.trim().toUpperCase() as ChatIntent;
+
+    // Validate intent
+    const validIntents: ChatIntent[] = ['GENERATE_SUMMARY', 'VIEW_REPORTS', 'TEAM_STATUS', 'AT_RISK', 'HELP', 'GREETING', 'OUT_OF_SCOPE'];
+    if (validIntents.includes(intent)) {
+      return intent;
+    }
+    return 'UNKNOWN';
+  } catch (error) {
+    console.error('AI intent detection failed:', error);
+    return 'UNKNOWN';
+  }
 }
 
 // GET /chatbot/suggestions - Get available commands/suggestions for user's role
@@ -150,8 +203,21 @@ chatbotRoutes.post('/message', async (c) => {
   const filteredMembers = team.members.filter((m: any) => m.id !== team.leaderId);
   const teamWithFilteredMembers = { ...team, members: filteredMembers };
 
-  // Detect command
-  const command = detectCommand(message);
+  // First try keyword-based detection
+  let command = detectCommand(message);
+
+  // If no keyword match, try AI-based intent detection
+  if (!command) {
+    const aiIntent = await detectIntentWithAI(message);
+
+    // Map AI intent to command (only for recognized commands)
+    if (aiIntent === 'GENERATE_SUMMARY') command = 'GENERATE_SUMMARY';
+    else if (aiIntent === 'VIEW_REPORTS') command = 'VIEW_REPORTS';
+    else if (aiIntent === 'TEAM_STATUS') command = 'TEAM_STATUS';
+    else if (aiIntent === 'AT_RISK') command = 'AT_RISK';
+    else if (aiIntent === 'HELP') command = 'HELP';
+    // For GREETING, OUT_OF_SCOPE, UNKNOWN - fall through to helpful response
+  }
 
   // Process based on command (use filtered members for analytics)
   switch (command) {
@@ -241,6 +307,28 @@ async function handleGenerateSummary(
     },
   });
 
+  // Fetch EXCUSED absences for all team members (TL approved = no penalty)
+  const excusedAbsences = await prisma.absence.findMany({
+    where: {
+      userId: { in: memberIds },
+      status: 'EXCUSED',
+      absenceDate: { gte: startDate, lte: endDate },
+    },
+    select: {
+      userId: true,
+      absenceDate: true,
+    },
+  });
+
+  // Build excused absences map by user
+  const excusedAbsencesByUser = new Map<string, Set<string>>();
+  for (const absence of excusedAbsences) {
+    const dateStr = formatLocalDate(absence.absenceDate, timezone);
+    const userAbsences = excusedAbsencesByUser.get(absence.userId) || new Set();
+    userAbsences.add(dateStr);
+    excusedAbsencesByUser.set(absence.userId, userAbsences);
+  }
+
   // Build exemption map by user
   const exemptionsByUser = new Map<string, typeof memberExemptions>();
   for (const exemption of memberExemptions) {
@@ -307,7 +395,15 @@ async function handleGenerateSummary(
       }
     }
 
-    // Calculate expected work days (excluding holidays and exemptions)
+    // Also add EXCUSED absences (TL approved = no penalty)
+    const userExcusedAbsences = excusedAbsencesByUser.get(member.id);
+    if (userExcusedAbsences) {
+      for (const dateStr of userExcusedAbsences) {
+        exemptedDatesSet.add(dateStr);
+      }
+    }
+
+    // Calculate expected work days (excluding holidays, exemptions, and EXCUSED absences)
     const workDaysBeforeExemptions = countWorkDaysInRange(effectiveStartDate, endDate, teamWorkDays, timezone, holidayDates);
     const expectedWorkDays = Math.max(0, workDaysBeforeExemptions - exemptedDatesSet.size);
 
@@ -740,6 +836,28 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
     },
   });
 
+  // Fetch EXCUSED absences for all team members (TL approved = no penalty)
+  const excusedAbsences = await prisma.absence.findMany({
+    where: {
+      userId: { in: memberIds },
+      status: 'EXCUSED',
+      absenceDate: { gte: startDate, lte: endDate },
+    },
+    select: {
+      userId: true,
+      absenceDate: true,
+    },
+  });
+
+  // Build excused absences map by user
+  const excusedAbsencesByUser = new Map<string, Set<string>>();
+  for (const absence of excusedAbsences) {
+    const dateStr = formatLocalDate(absence.absenceDate, timezone);
+    const userAbsences = excusedAbsencesByUser.get(absence.userId) || new Set();
+    userAbsences.add(dateStr);
+    excusedAbsencesByUser.set(absence.userId, userAbsences);
+  }
+
   // Build exemption map
   const exemptionsByUser = new Map<string, typeof memberExemptions>();
   for (const exemption of memberExemptions) {
@@ -771,8 +889,9 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
     checkinsByUser.set(checkin.userId, userCheckins);
   }
 
-  // Helper to check if date is exempted for user
+  // Helper to check if date is exempted for user (includes exemptions + EXCUSED absences)
   const isDateExemptedForUser = (userId: string, dateStr: string): boolean => {
+    // Check exemptions (Exception model - leave requests)
     const userExemptions = exemptionsByUser.get(userId) || [];
     for (const exemption of userExemptions) {
       if (!exemption.startDate || !exemption.endDate) continue;
@@ -781,6 +900,11 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
       if (dateStr >= exStartStr && dateStr <= exEndStr) {
         return true;
       }
+    }
+    // Check EXCUSED absences (Absence model - TL approved absences)
+    const userExcusedAbsences = excusedAbsencesByUser.get(userId);
+    if (userExcusedAbsences?.has(dateStr)) {
+      return true;
     }
     return false;
   };
@@ -820,6 +944,14 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
           exemptedDatesSet.add(dateStr);
         }
         current.setDate(current.getDate() + 1);
+      }
+    }
+
+    // Also add EXCUSED absences (TL approved = no penalty)
+    const userExcusedAbsences = excusedAbsencesByUser.get(member.id);
+    if (userExcusedAbsences) {
+      for (const dateStr of userExcusedAbsences) {
+        exemptedDatesSet.add(dateStr);
       }
     }
 
@@ -1001,20 +1133,40 @@ function handleHelp(c: any) {
   return c.json(response);
 }
 
-// Handler: Unknown Command
-function handleUnknownCommand(c: any, originalMessage: string) {
-  // Sanitize user input to prevent XSS - only show first 50 chars
-  const sanitizedMessage = originalMessage
-    .slice(0, 50)
-    .replace(/[<>]/g, '') // Remove potential HTML tags
-    .trim();
-
+// Handler: Fallback - proactively suggest actions with clickable buttons
+function handleUnknownCommand(c: any, _originalMessage: string) {
   const response: ChatResponse = {
     message: {
       id: generateId(),
       role: 'assistant',
-      content: `I didn't understand "${sanitizedMessage}"${originalMessage.length > 50 ? '...' : ''}.\n\nTry these commands:\n- "Generate Summary" - Create an AI analysis of your team\n- "View Reports" - View your past AI insights\n- "Team Status" - See your team's status today\n- "Help" - Show all available commands`,
+      content: `I can help you with the following. Just click one of the options below:`,
       timestamp: new Date(),
+      quickActions: [
+        {
+          id: 'generate-report',
+          label: 'Generate Report',
+          command: 'Generate Summary',
+          icon: 'bar-chart',
+        },
+        {
+          id: 'team-status',
+          label: 'Team Status',
+          command: 'Team Status',
+          icon: 'users',
+        },
+        {
+          id: 'at-risk',
+          label: 'At Risk Workers',
+          command: 'At Risk',
+          icon: 'alert-triangle',
+        },
+        {
+          id: 'view-reports',
+          label: 'Past Reports',
+          command: 'View Reports',
+          icon: 'file-text',
+        },
+      ],
     },
     action: { type: 'none', status: 'success' },
   };

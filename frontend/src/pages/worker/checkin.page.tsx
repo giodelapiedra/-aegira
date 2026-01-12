@@ -47,6 +47,7 @@ import {
   Target,
 } from 'lucide-react';
 import { useToast } from '../../components/ui/Toast';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 
 import type { AxiosError } from 'axios';
 
@@ -646,7 +647,7 @@ export function CheckinPage() {
   if (isLoadingUser || isLoadingTeam || isLoadingLeave || (isLoadingToday && currentUser?.teamId)) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full" />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }

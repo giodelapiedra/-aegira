@@ -82,37 +82,50 @@ usersRoutes.post('/', async (c) => {
   }
 
   // Create user in Prisma with same company as Executive
-  const user = await prisma.user.create({
-    data: {
-      id: authData.user.id,
-      email,
-      firstName,
-      lastName,
-      role,
-      companyId, // Automatically inherits Executive's company
-      teamId: teamId || null,
-      teamJoinedAt: teamId ? new Date() : null, // Set when assigned to team
-      birthDate: birthDate ? new Date(birthDate) : null,
-      gender: gender || null,
-    },
-    select: {
-      id: true,
-      email: true,
-      firstName: true,
-      lastName: true,
-      role: true,
-      teamId: true,
-      birthDate: true,
-      gender: true,
-      isActive: true,
-      createdAt: true,
-      team: {
-        select: {
-          id: true,
-          name: true,
+  // Use transaction to also update team memberCount if assigned to team
+  const user = await prisma.$transaction(async (tx) => {
+    const newUser = await tx.user.create({
+      data: {
+        id: authData.user.id,
+        email,
+        firstName,
+        lastName,
+        role,
+        companyId, // Automatically inherits Executive's company
+        teamId: teamId || null,
+        teamJoinedAt: teamId ? new Date() : null, // Set when assigned to team
+        birthDate: birthDate ? new Date(birthDate) : null,
+        gender: gender || null,
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        teamId: true,
+        birthDate: true,
+        gender: true,
+        isActive: true,
+        createdAt: true,
+        team: {
+          select: {
+            id: true,
+            name: true,
+          },
         },
       },
-    },
+    });
+
+    // Increment team memberCount if user is WORKER/MEMBER and assigned to team
+    if (teamId && ['WORKER', 'MEMBER'].includes(role)) {
+      await tx.team.update({
+        where: { id: teamId },
+        data: { memberCount: { increment: 1 } },
+      });
+    }
+
+    return newUser;
   });
 
   // Log user creation
@@ -587,20 +600,43 @@ usersRoutes.put('/:id', async (c) => {
     updateData.teamJoinedAt = body.teamId ? new Date() : null;
   }
 
-  const user = await prisma.user.update({
-    where: { id },
-    data: updateData,
-    select: {
-      id: true,
-      email: true,
-      firstName: true,
-      lastName: true,
-      role: true,
-      avatar: true,
-      phone: true,
-      teamId: true,
-      isActive: true,
-    },
+  // Use transaction to update user and team memberCount atomically
+  const user = await prisma.$transaction(async (tx) => {
+    const updatedUser = await tx.user.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        avatar: true,
+        phone: true,
+        teamId: true,
+        isActive: true,
+      },
+    });
+
+    // Update team memberCounts if team is changing and user is WORKER/MEMBER
+    if (isTeamChanging && ['WORKER', 'MEMBER'].includes(existing.role)) {
+      // Decrement old team's memberCount
+      if (existing.teamId) {
+        await tx.team.update({
+          where: { id: existing.teamId },
+          data: { memberCount: { decrement: 1 } },
+        });
+      }
+      // Increment new team's memberCount
+      if (body.teamId) {
+        await tx.team.update({
+          where: { id: body.teamId },
+          data: { memberCount: { increment: 1 } },
+        });
+      }
+    }
+
+    return updatedUser;
   });
 
   // Log user update - use existing user's companyId for logging

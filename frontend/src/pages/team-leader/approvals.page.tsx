@@ -11,6 +11,7 @@ import { formatDisplayDate } from '../../lib/date-utils';
 import { invalidateRelatedQueries } from '../../lib/query-utils';
 import { useAuthStore } from '../../store/auth.store';
 import { cn } from '../../lib/utils';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import {
   FileText,
   CheckCircle,
@@ -262,7 +263,7 @@ export function ApprovalsPage() {
         {/* List */}
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
-            <div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full" />
+            <LoadingSpinner size="lg" />
           </div>
         ) : filteredExceptions?.length === 0 ? (
           <div className="py-16 text-center">

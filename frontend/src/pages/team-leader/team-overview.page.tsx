@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/Button';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { useToast } from '../../components/ui/Toast';
 import { Avatar } from '../../components/ui/Avatar';
@@ -51,12 +52,16 @@ interface TeamStats {
   checkedIn: number;
   notCheckedIn: number;
   isWorkDay?: boolean;
+  isHoliday?: boolean;
+  holidayName?: string | null;
   greenCount: number;
   yellowCount: number;
   redCount: number;
   pendingExceptions: number;
   openIncidents: number;
   checkinRate: number;
+  avgReadinessScore?: number | null;
+  onLeaveCount?: number;
 }
 
 interface TodayCheckin {
@@ -212,7 +217,7 @@ export function TeamOverviewPage() {
   if (teamLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin h-8 w-8 border-2 border-primary-500 border-t-transparent rounded-full" />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
@@ -254,7 +259,7 @@ export function TeamOverviewPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard
           label="Total Members"
           value={stats?.totalMembers || members.length}
@@ -280,9 +285,17 @@ export function TeamOverviewPage() {
           isLoading={statsLoading}
         />
         <StatCard
-          label="Check-in Rate"
-          value={`${stats?.checkinRate || 0}%`}
-          icon={TrendingUp}
+          label="On Leave"
+          value={stats?.onLeaveCount || 0}
+          icon={UserMinus}
+          iconBg="bg-purple-100"
+          iconColor="text-purple-600"
+          isLoading={statsLoading}
+        />
+        <StatCard
+          label="Avg Score"
+          value={stats?.avgReadinessScore ? Math.round(stats.avgReadinessScore) : '—'}
+          icon={Activity}
           iconBg="bg-blue-100"
           iconColor="text-blue-600"
           isLoading={statsLoading}
@@ -291,7 +304,19 @@ export function TeamOverviewPage() {
 
       {/* Today's Readiness Summary */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        <h2 className="text-sm font-medium text-gray-500 mb-4">Today's Readiness</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-medium text-gray-500">Today's Readiness</h2>
+          {stats?.isHoliday && (
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+              🎉 {stats.holidayName || 'Holiday'}
+            </span>
+          )}
+          {stats?.isWorkDay === false && !stats?.isHoliday && (
+            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+              Rest Day
+            </span>
+          )}
+        </div>
         <div className="grid grid-cols-3 gap-4">
           <div className="flex items-center gap-3 p-3 bg-green-50 rounded-xl">
             <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center">

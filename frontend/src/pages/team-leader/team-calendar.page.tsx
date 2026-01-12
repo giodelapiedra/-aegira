@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Calendar as CalendarIcon, Users, CheckCircle, XCircle, Gift, CalendarOff, X, Clock } from 'lucide-react';
 import { Calendar, type DayStatus } from '../../components/calendar';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { getTeamCalendar } from '../../services/calendar.service';
 import { useAuthStore } from '../../store/auth.store';
 import type { TeamDayInfo, MemberStatus } from '../../types/calendar';
@@ -155,7 +156,7 @@ export default function TeamCalendarPage() {
 
       {isLoading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+          <LoadingSpinner size="lg" />
         </div>
       ) : (
         <div className="relative">

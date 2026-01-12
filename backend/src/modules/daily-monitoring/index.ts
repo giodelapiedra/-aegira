@@ -17,6 +17,7 @@ import {
   getLastNDaysRange,
   DEFAULT_TIMEZONE,
 } from '../../utils/date-helpers.js';
+import { parsePagination } from '../../utils/validator.js';
 
 const dailyMonitoringRoutes = new Hono<AppContext>();
 
@@ -490,24 +491,12 @@ dailyMonitoringRoutes.get('/teams', async (c) => {
     select: {
       id: true,
       name: true,
-      _count: {
-        select: {
-          members: {
-            where: { isActive: true },
-          },
-        },
-      },
+      memberCount: true, // Use pre-computed field
     },
     orderBy: { name: 'asc' },
   });
 
-  return c.json(
-    teams.map((t) => ({
-      id: t.id,
-      name: t.name,
-      memberCount: t._count.members,
-    }))
-  );
+  return c.json(teams);
 });
 
 /**

@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { teamService, type TeamAnalytics } from '../../services/team.service';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Avatar } from '../../components/ui/Avatar';
 
 type PeriodOption = 'today' | '7days' | '14days' | 'alltime' | 'custom';
@@ -73,7 +74,7 @@ export function TeamAnalyticsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <div className="animate-spin h-8 w-8 border-2 border-primary-500 border-t-transparent rounded-full" />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
@@ -703,6 +704,7 @@ function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics[
     readiness: d.score !== null ? Math.round(d.score) : null,
     compliance: d.compliance !== null ? Math.round(d.compliance) : null, // null when all on exemption
     checkedIn: d.checkedIn,
+    expected: d.expected || 0,
     onExemption: d.onExemption || 0,
     hasData: d.hasData,
   }));
@@ -758,13 +760,13 @@ function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics[
           <div className="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Checked In</span>
-              <span className="text-xs font-medium text-gray-700">{data.checkedIn} members</span>
+              <span className="text-xs font-medium text-gray-700">{data.checkedIn}/{data.expected} members</span>
             </div>
             {data.onExemption > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500 flex items-center gap-1.5">
                   <Shield className="h-3 w-3 text-blue-500" />
-                  On Exemption
+                  Exempted
                 </span>
                 <span className="text-xs font-medium text-blue-600">{data.onExemption} members</span>
               </div>

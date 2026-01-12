@@ -9,6 +9,7 @@ import api from '../../services/api';
 import { Pagination } from '../../components/ui/Pagination';
 import { Avatar } from '../../components/ui/Avatar';
 import { MetricsRow } from '../../components/monitoring/MetricsBadge';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { formatDisplayDate, formatTime } from '../../lib/date-utils';
 import {
   History,
@@ -268,7 +269,7 @@ export function TeamMemberHistoryPage() {
   if (teamLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }
@@ -390,7 +391,7 @@ export function TeamMemberHistoryPage() {
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         {checkinsLoading ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            <LoadingSpinner size="md" />
           </div>
         ) : checkins.length === 0 ? (
           <div className="text-center py-16">
@@ -483,5 +484,10 @@ export function TeamMemberHistoryPage() {
     </div>
   );
 }
+
+
+
+
+
 
 

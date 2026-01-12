@@ -11,7 +11,6 @@ import {
   Building2,
   ChevronRight,
   Shield,
-  Loader2,
 } from 'lucide-react';
 import { useUser } from '../../hooks/useUser';
 import { cn } from '../../lib/utils';

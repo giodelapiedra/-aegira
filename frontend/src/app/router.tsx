@@ -1,71 +1,114 @@
+import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { ProtectedRoute } from './protected-route';
 import { RoleGuard } from './role-guard';
+import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 
-// Auth Pages
+// ============================================
+// LAZY PAGE WRAPPER
+// ============================================
+function LazyPage({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-[400px]">
+          <LoadingSpinner size="lg" />
+        </div>
+      }
+    >
+      {children}
+    </Suspense>
+  );
+}
+
+// ============================================
+// EAGER IMPORTS (Frequently accessed - load immediately)
+// ============================================
 import { LoginPage } from '../pages/login/login.page';
 import { RegisterPage } from '../pages/register/register.page';
-
-// Worker Pages
 import { HomePage } from '../pages/worker/home.page';
 import { CheckinPage } from '../pages/worker/checkin.page';
-import { ReportIncidentPage } from '../pages/worker/report-incident.page';
-import { RequestExceptionPage } from '../pages/worker/request-exception.page';
-import { MyHistoryPage } from '../pages/worker/my-history.page';
-import { MyIncidentsPage } from '../pages/worker/my-incidents.page';
-import WorkerCalendarPage from '../pages/worker/calendar.page';
 
-// Shared Pages
-import { NotificationsPage } from '../pages/notifications/notifications.page';
-import { ProfilePage } from '../pages/settings/profile.page';
+// ============================================
+// LAZY IMPORTS - Worker Pages
+// ============================================
+const ReportIncidentPage = lazy(() => import('../pages/worker/report-incident.page').then(m => ({ default: m.ReportIncidentPage })));
+const RequestExceptionPage = lazy(() => import('../pages/worker/request-exception.page').then(m => ({ default: m.RequestExceptionPage })));
+const MyHistoryPage = lazy(() => import('../pages/worker/my-history.page').then(m => ({ default: m.MyHistoryPage })));
+const MyIncidentsPage = lazy(() => import('../pages/worker/my-incidents.page').then(m => ({ default: m.MyIncidentsPage })));
+const WorkerCalendarPage = lazy(() => import('../pages/worker/calendar.page'));
 
-// Team Lead Pages
-import { ApprovalsPage } from '../pages/team-leader/approvals.page';
-import { TeamOverviewPage } from '../pages/team-leader/team-overview.page';
-import { TeamIncidentsPage } from '../pages/team-leader/team-incidents.page';
-import { TeamMemberHistoryPage } from '../pages/team-leader/team-member-history.page';
-import { AIInsightsHistoryPage } from '../pages/team-leader/ai-insights-history.page';
-import { AIInsightsDetailPage } from '../pages/team-leader/ai-insights-detail.page';
-import { AIChatPage } from '../pages/team-leader/ai-chat.page';
-import { DailyMonitoringPage } from '../pages/team-leader/daily-monitoring.page';
-import { TeamMembersPage } from '../pages/team-leader/team-members.page';
-import { MemberProfilePage } from '../pages/team-leader/member-profile.page';
-import { TeamAnalyticsPage } from '../pages/team-leader/team-analytics.page';
-import TeamCalendarPage from '../pages/team-leader/team-calendar.page';
+// ============================================
+// LAZY IMPORTS - Shared Pages
+// ============================================
+const NotificationsPage = lazy(() => import('../pages/notifications/notifications.page').then(m => ({ default: m.NotificationsPage })));
+const ProfilePage = lazy(() => import('../pages/settings/profile.page').then(m => ({ default: m.ProfilePage })));
 
-// Incident Pages
-import { IncidentDetailPage } from '../pages/incidents/incident-detail.page';
+// ============================================
+// LAZY IMPORTS - Team Lead Pages
+// ============================================
+const ApprovalsPage = lazy(() => import('../pages/team-leader/approvals.page').then(m => ({ default: m.ApprovalsPage })));
+const TeamOverviewPage = lazy(() => import('../pages/team-leader/team-overview.page').then(m => ({ default: m.TeamOverviewPage })));
+const TeamIncidentsPage = lazy(() => import('../pages/team-leader/team-incidents.page').then(m => ({ default: m.TeamIncidentsPage })));
+const TeamMemberHistoryPage = lazy(() => import('../pages/team-leader/team-member-history.page').then(m => ({ default: m.TeamMemberHistoryPage })));
+const AIInsightsHistoryPage = lazy(() => import('../pages/team-leader/ai-insights-history.page').then(m => ({ default: m.AIInsightsHistoryPage })));
+const AIInsightsDetailPage = lazy(() => import('../pages/team-leader/ai-insights-detail.page').then(m => ({ default: m.AIInsightsDetailPage })));
+const AIChatPage = lazy(() => import('../pages/team-leader/ai-chat.page').then(m => ({ default: m.AIChatPage })));
+const DailyMonitoringPage = lazy(() => import('../pages/team-leader/daily-monitoring.page').then(m => ({ default: m.DailyMonitoringPage })));
+const TeamMembersPage = lazy(() => import('../pages/team-leader/team-members.page').then(m => ({ default: m.TeamMembersPage })));
+const MemberProfilePage = lazy(() => import('../pages/team-leader/member-profile.page').then(m => ({ default: m.MemberProfilePage })));
+const TeamAnalyticsPage = lazy(() => import('../pages/team-leader/team-analytics.page').then(m => ({ default: m.TeamAnalyticsPage })));
+const TeamCalendarPage = lazy(() => import('../pages/team-leader/team-calendar.page'));
+const TeamSummaryPage = lazy(() => import('../pages/team-leader/team-summary.page').then(m => ({ default: m.TeamSummaryPage })));
 
-// Supervisor Pages
-import { SupervisorDashboard } from '../pages/supervisor/dashboard.page';
-import { PersonnelPage } from '../pages/supervisor/personnel.page';
-import { AnalyticsPage } from '../pages/supervisor/analytics.page';
+// ============================================
+// LAZY IMPORTS - Incident Pages
+// ============================================
+const IncidentDetailPage = lazy(() => import('../pages/incidents/incident-detail.page').then(m => ({ default: m.IncidentDetailPage })));
 
-// Executive Pages
-import { ExecutiveDashboard } from '../pages/executive/dashboard.page';
-import { UsersPage } from '../pages/executive/users.page';
-import { CreateAccountPage } from '../pages/executive/create-account.page';
-import { TeamsPage } from '../pages/executive/teams.page';
-import { CompanySettingsPage } from '../pages/executive/company-settings.page';
-import CompanyCalendarPage from '../pages/executive/company-calendar.page';
-import { TeamsOverviewPage } from '../pages/executive/teams-overview.page';
+// ============================================
+// LAZY IMPORTS - Supervisor Pages
+// ============================================
+const SupervisorDashboard = lazy(() => import('../pages/supervisor/dashboard.page').then(m => ({ default: m.SupervisorDashboard })));
+const PersonnelPage = lazy(() => import('../pages/supervisor/personnel.page').then(m => ({ default: m.PersonnelPage })));
+const AnalyticsPage = lazy(() => import('../pages/supervisor/analytics.page').then(m => ({ default: m.AnalyticsPage })));
 
-// Admin Pages
-import { AdminDashboard } from '../pages/admin/dashboard.page';
-import { TemplatesPage } from '../pages/admin/templates.page';
+// ============================================
+// LAZY IMPORTS - Executive Pages
+// ============================================
+const ExecutiveDashboard = lazy(() => import('../pages/executive/dashboard.page').then(m => ({ default: m.ExecutiveDashboard })));
+const UsersPage = lazy(() => import('../pages/executive/users.page').then(m => ({ default: m.UsersPage })));
+const CreateAccountPage = lazy(() => import('../pages/executive/create-account.page').then(m => ({ default: m.CreateAccountPage })));
+const TeamsPage = lazy(() => import('../pages/executive/teams.page').then(m => ({ default: m.TeamsPage })));
+const CompanySettingsPage = lazy(() => import('../pages/executive/company-settings.page').then(m => ({ default: m.CompanySettingsPage })));
+const CompanyCalendarPage = lazy(() => import('../pages/executive/company-calendar.page'));
+const TeamsOverviewPage = lazy(() => import('../pages/executive/teams-overview.page').then(m => ({ default: m.TeamsOverviewPage })));
 
-// Shared Pages (accessible by multiple roles)
-import { SystemLogsPage } from '../pages/shared/system-logs.page';
-import { TemplateBuilderPage } from '../pages/admin/template-builder.page';
+// ============================================
+// LAZY IMPORTS - Admin Pages
+// ============================================
+const AdminDashboard = lazy(() => import('../pages/admin/dashboard.page').then(m => ({ default: m.AdminDashboard })));
+const TemplatesPage = lazy(() => import('../pages/admin/templates.page').then(m => ({ default: m.TemplatesPage })));
+const TemplateBuilderPage = lazy(() => import('../pages/admin/template-builder.page').then(m => ({ default: m.TemplateBuilderPage })));
 
-// WHS Pages
-import { WHSDashboard } from '../pages/whs/dashboard.page';
-import { FillFormsPage } from '../pages/whs/fill-forms.page';
-import { VisualPDFFillPage } from '../pages/whs/visual-pdf-fill.page';
+// ============================================
+// LAZY IMPORTS - Shared Pages
+// ============================================
+const SystemLogsPage = lazy(() => import('../pages/shared/system-logs.page').then(m => ({ default: m.SystemLogsPage })));
 
+// ============================================
+// LAZY IMPORTS - WHS Pages
+// ============================================
+const WHSDashboard = lazy(() => import('../pages/whs/dashboard.page').then(m => ({ default: m.WHSDashboard })));
+const FillFormsPage = lazy(() => import('../pages/whs/fill-forms.page').then(m => ({ default: m.FillFormsPage })));
+const VisualPDFFillPage = lazy(() => import('../pages/whs/visual-pdf-fill.page').then(m => ({ default: m.VisualPDFFillPage })));
+
+// ============================================
+// ROUTER CONFIGURATION
+// ============================================
 export const router = createBrowserRouter([
-  // Public Routes
+  // Public Routes (No lazy loading - need fast access)
   {
     path: '/login',
     element: <LoginPage />,
@@ -84,7 +127,7 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      // Home/Dashboard
+      // Home/Dashboard (No lazy - most accessed page)
       {
         index: true,
         element: <HomePage />,
@@ -93,19 +136,19 @@ export const router = createBrowserRouter([
       // Notifications (all users)
       {
         path: 'notifications',
-        element: <NotificationsPage />,
+        element: <LazyPage><NotificationsPage /></LazyPage>,
       },
 
       // Profile Settings (all users)
       {
         path: 'settings/profile',
-        element: <ProfilePage />,
+        element: <LazyPage><ProfilePage /></LazyPage>,
       },
 
       // Incident Detail (all users)
       {
         path: 'incidents/:id',
-        element: <IncidentDetailPage />,
+        element: <LazyPage><IncidentDetailPage /></LazyPage>,
       },
 
       // ==========================================
@@ -123,7 +166,7 @@ export const router = createBrowserRouter([
         path: 'report-incident',
         element: (
           <RoleGuard allowedRoles={['WORKER', 'MEMBER']}>
-            <ReportIncidentPage />
+            <LazyPage><ReportIncidentPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -131,7 +174,7 @@ export const router = createBrowserRouter([
         path: 'request-exception',
         element: (
           <RoleGuard allowedRoles={['WORKER', 'MEMBER']}>
-            <RequestExceptionPage />
+            <LazyPage><RequestExceptionPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -139,7 +182,7 @@ export const router = createBrowserRouter([
         path: 'my-history',
         element: (
           <RoleGuard allowedRoles={['WORKER', 'MEMBER']}>
-            <MyHistoryPage />
+            <LazyPage><MyHistoryPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -147,7 +190,7 @@ export const router = createBrowserRouter([
         path: 'my-incidents',
         element: (
           <RoleGuard allowedRoles={['WORKER', 'MEMBER']}>
-            <MyIncidentsPage />
+            <LazyPage><MyIncidentsPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -163,19 +206,19 @@ export const router = createBrowserRouter([
         path: 'calendar',
         element: (
           <RoleGuard allowedRoles={['WORKER', 'MEMBER']}>
-            <WorkerCalendarPage />
+            <LazyPage><WorkerCalendarPage /></LazyPage>
           </RoleGuard>
         ),
       },
 
       // ==========================================
-      // TEAM LEAD ROUTES
+      // TEAM LEAD ROUTES (All lazy loaded)
       // ==========================================
       {
         path: 'team/overview',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <TeamOverviewPage />
+            <LazyPage><TeamOverviewPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -183,7 +226,7 @@ export const router = createBrowserRouter([
         path: 'team/daily-monitoring',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <DailyMonitoringPage />
+            <LazyPage><DailyMonitoringPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -191,7 +234,7 @@ export const router = createBrowserRouter([
         path: 'team/approvals',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <ApprovalsPage />
+            <LazyPage><ApprovalsPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -199,7 +242,7 @@ export const router = createBrowserRouter([
         path: 'team/incidents',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <TeamIncidentsPage />
+            <LazyPage><TeamIncidentsPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -207,7 +250,7 @@ export const router = createBrowserRouter([
         path: 'team/ai-chat',
         element: (
           <RoleGuard allowedRoles={['TEAM_LEAD']}>
-            <AIChatPage />
+            <LazyPage><AIChatPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -215,7 +258,7 @@ export const router = createBrowserRouter([
         path: 'team/ai-insights',
         element: (
           <RoleGuard allowedRoles={['TEAM_LEAD']}>
-            <AIInsightsHistoryPage />
+            <LazyPage><AIInsightsHistoryPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -223,7 +266,7 @@ export const router = createBrowserRouter([
         path: 'team/ai-insights/:id',
         element: (
           <RoleGuard allowedRoles={['TEAM_LEAD']}>
-            <AIInsightsDetailPage />
+            <LazyPage><AIInsightsDetailPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -231,7 +274,7 @@ export const router = createBrowserRouter([
         path: 'team/member-history',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <TeamMemberHistoryPage />
+            <LazyPage><TeamMemberHistoryPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -239,7 +282,7 @@ export const router = createBrowserRouter([
         path: 'team/members',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <TeamMembersPage />
+            <LazyPage><TeamMembersPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -247,7 +290,7 @@ export const router = createBrowserRouter([
         path: 'team/members/:userId',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <MemberProfilePage />
+            <LazyPage><MemberProfilePage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -255,7 +298,15 @@ export const router = createBrowserRouter([
         path: 'team/analytics',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <TeamAnalyticsPage />
+            <LazyPage><TeamAnalyticsPage /></LazyPage>
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'team/summary',
+        element: (
+          <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
+            <LazyPage><TeamSummaryPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -263,19 +314,19 @@ export const router = createBrowserRouter([
         path: 'team/calendar',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <TeamCalendarPage />
+            <LazyPage><TeamCalendarPage /></LazyPage>
           </RoleGuard>
         ),
       },
 
       // ==========================================
-      // SUPERVISOR ROUTES
+      // SUPERVISOR ROUTES (All lazy loaded)
       // ==========================================
       {
         path: 'dashboard',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR']}>
-            <SupervisorDashboard />
+            <LazyPage><SupervisorDashboard /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -283,7 +334,7 @@ export const router = createBrowserRouter([
         path: 'personnel',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR']}>
-            <PersonnelPage />
+            <LazyPage><PersonnelPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -299,30 +350,27 @@ export const router = createBrowserRouter([
         path: 'analytics',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR']}>
-            <AnalyticsPage />
+            <LazyPage><AnalyticsPage /></LazyPage>
           </RoleGuard>
         ),
       },
 
       // ==========================================
-      // ADMIN ROUTES
+      // ADMIN ROUTES (All lazy loaded)
       // ==========================================
       {
         path: 'admin',
         element: (
           <RoleGuard allowedRoles={['ADMIN']}>
-            <AdminDashboard />
+            <LazyPage><AdminDashboard /></LazyPage>
           </RoleGuard>
         ),
       },
-      // ==========================================
-      // SHARED ROUTES (accessible by multiple roles)
-      // ==========================================
       {
         path: 'system-logs',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN']}>
-            <SystemLogsPage />
+            <LazyPage><SystemLogsPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -330,7 +378,7 @@ export const router = createBrowserRouter([
         path: 'admin/templates',
         element: (
           <RoleGuard allowedRoles={['ADMIN']}>
-            <TemplatesPage />
+            <LazyPage><TemplatesPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -338,19 +386,19 @@ export const router = createBrowserRouter([
         path: 'admin/template-builder',
         element: (
           <RoleGuard allowedRoles={['ADMIN']}>
-            <TemplateBuilderPage />
+            <LazyPage><TemplateBuilderPage /></LazyPage>
           </RoleGuard>
         ),
       },
 
       // ==========================================
-      // EXECUTIVE ROUTES
+      // EXECUTIVE ROUTES (All lazy loaded)
       // ==========================================
       {
         path: 'executive',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE']}>
-            <ExecutiveDashboard />
+            <LazyPage><ExecutiveDashboard /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -358,7 +406,7 @@ export const router = createBrowserRouter([
         path: 'executive/users',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN']}>
-            <UsersPage />
+            <LazyPage><UsersPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -366,7 +414,7 @@ export const router = createBrowserRouter([
         path: 'executive/create-account',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE']}>
-            <CreateAccountPage />
+            <LazyPage><CreateAccountPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -374,7 +422,7 @@ export const router = createBrowserRouter([
         path: 'executive/teams',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN']}>
-            <TeamsPage />
+            <LazyPage><TeamsPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -382,7 +430,7 @@ export const router = createBrowserRouter([
         path: 'executive/settings',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE']}>
-            <CompanySettingsPage />
+            <LazyPage><CompanySettingsPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -390,7 +438,7 @@ export const router = createBrowserRouter([
         path: 'executive/calendar',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE']}>
-            <CompanyCalendarPage />
+            <LazyPage><CompanyCalendarPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -398,19 +446,19 @@ export const router = createBrowserRouter([
         path: 'executive/teams-overview',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'SUPERVISOR']}>
-            <TeamsOverviewPage />
+            <LazyPage><TeamsOverviewPage /></LazyPage>
           </RoleGuard>
         ),
       },
 
       // ==========================================
-      // WHS CONTROL ROUTES
+      // WHS CONTROL ROUTES (All lazy loaded)
       // ==========================================
       {
         path: 'whs',
         element: (
           <RoleGuard allowedRoles={['ADMIN', 'EXECUTIVE', 'WHS_CONTROL']}>
-            <WHSDashboard />
+            <LazyPage><WHSDashboard /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -418,7 +466,7 @@ export const router = createBrowserRouter([
         path: 'whs/fill-forms',
         element: (
           <RoleGuard allowedRoles={['ADMIN', 'EXECUTIVE', 'WHS_CONTROL', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <FillFormsPage />
+            <LazyPage><FillFormsPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -426,7 +474,7 @@ export const router = createBrowserRouter([
         path: 'whs/fill-forms/:id',
         element: (
           <RoleGuard allowedRoles={['ADMIN', 'EXECUTIVE', 'WHS_CONTROL', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <VisualPDFFillPage />
+            <LazyPage><VisualPDFFillPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -468,7 +516,9 @@ export const router = createBrowserRouter([
   },
 ]);
 
-// Coming Soon Component
+// ============================================
+// COMING SOON COMPONENT
+// ============================================
 function ComingSoon({ title, description }: { title: string; description?: string }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[500px] text-center px-4">

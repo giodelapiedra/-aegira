@@ -129,6 +129,9 @@ export interface AISummaryDetail extends AISummaryHistoryItem {
       riskLevel: 'low' | 'medium' | 'high';
       avgScore: number;
       checkinRate: number;
+      checkinCount: number;
+      expectedWorkDays: number;
+      exemptionDaysCount?: number;
       greenCount: number;
       yellowCount: number;
       redCount: number;

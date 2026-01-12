@@ -1,6 +1,7 @@
 import api from './api';
 import type { Team, User } from '../types/user';
 import type { ExceptionType, ExceptionStatus } from './exemption.service';
+import type { WeeklySummaryResponse, TeamDailyStats } from '../types/summary';
 
 export interface TeamWithStats extends Team {
   memberCount: number;
@@ -113,7 +114,10 @@ export interface TeamAnalytics {
     score: number | null;
     compliance: number | null; // null when all members on exemption (no one expected)
     checkedIn: number;
+    expected: number;
     onExemption: number;
+    isHoliday?: boolean;
+    holidayName?: string;
     hasData: boolean;
   }[];
   topReasons: {
@@ -170,6 +174,10 @@ export interface MemberProfile {
     type: ExceptionType;
     endDate: string;
   };
+  // Pre-computed stats (from User model)
+  totalCheckins?: number;
+  avgReadinessScore?: number;
+  lastReadinessStatus?: 'GREEN' | 'YELLOW' | 'RED' | null;
   stats: {
     totalCheckins: number;
     attendanceScore: number;
@@ -188,6 +196,10 @@ export interface TeamMemberWithStats extends Pick<User, 'id' | 'firstName' | 'la
   isOnLeave: boolean;
   leaveType: string | null;
   leaveEndDate: string | null;
+  // Pre-computed stats (from User model)
+  totalCheckins?: number;
+  avgReadinessScore?: number;
+  lastReadinessStatus?: 'GREEN' | 'YELLOW' | 'RED' | null;
 }
 
 export interface TeamDetails extends Omit<Team, 'members'> {
@@ -310,6 +322,20 @@ export const teamService = {
     const response = await api.get<TeamAnalytics>('/teams/my/analytics', {
       params: { period, startDate, endDate },
     });
+    return response.data;
+  },
+
+  // DailyTeamSummary endpoints
+  async getTeamSummary(
+    teamId: string,
+    params?: { days?: number; startDate?: string; endDate?: string }
+  ): Promise<WeeklySummaryResponse> {
+    const response = await api.get<WeeklySummaryResponse>(`/teams/${teamId}/summary`, { params });
+    return response.data;
+  },
+
+  async getTeamDailyStats(teamId: string): Promise<TeamDailyStats> {
+    const response = await api.get<TeamDailyStats>(`/teams/${teamId}/stats`);
     return response.data;
   },
 };

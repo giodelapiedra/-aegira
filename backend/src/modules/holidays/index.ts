@@ -19,6 +19,7 @@ import {
   formatLocalDate,
   DEFAULT_TIMEZONE,
 } from '../../utils/date-helpers.js';
+import { recalculateAllTeamSummariesForDate } from '../../utils/daily-summary.js';
 
 const holidaysRoutes = new Hono<AppContext>();
 
@@ -217,6 +218,12 @@ holidaysRoutes.post('/', async (c) => {
     },
   });
 
+  // Recalculate daily team summaries for all teams on this date (affects expectedToCheckIn)
+  // Fire and forget - don't block response
+  recalculateAllTeamSummariesForDate(companyId, holidayDate, timezone).catch(err => {
+    console.error('Failed to recalculate summaries after holiday creation:', err);
+  });
+
   return c.json({
     id: holiday.id,
     date: formatLocalDate(holiday.date, timezone),
@@ -252,6 +259,9 @@ holidaysRoutes.delete('/:id', async (c) => {
     return c.json({ error: 'Holiday not found' }, 404);
   }
 
+  // Store the date before deleting for recalculation
+  const holidayDate = holiday.date;
+
   // Delete the holiday
   await prisma.holiday.delete({
     where: { id: holidayId },
@@ -264,11 +274,17 @@ holidaysRoutes.delete('/:id', async (c) => {
     action: 'SETTINGS_UPDATED',
     entityType: 'holiday',
     entityId: holidayId,
-    description: `${user.firstName} ${user.lastName} removed company holiday: ${holiday.name} from ${formatLocalDate(holiday.date, timezone)}`,
+    description: `${user.firstName} ${user.lastName} removed company holiday: ${holiday.name} from ${formatLocalDate(holidayDate, timezone)}`,
     metadata: {
       holidayName: holiday.name,
-      holidayDate: formatLocalDate(holiday.date, timezone),
+      holidayDate: formatLocalDate(holidayDate, timezone),
     },
+  });
+
+  // Recalculate daily team summaries for all teams on this date (no longer a holiday)
+  // Fire and forget - don't block response
+  recalculateAllTeamSummariesForDate(companyId, holidayDate, timezone).catch(err => {
+    console.error('Failed to recalculate summaries after holiday deletion:', err);
   });
 
   return c.json({ success: true });
@@ -325,6 +341,12 @@ holidaysRoutes.delete('/date/:date', async (c) => {
       holidayName: holiday.name,
       holidayDate: formatLocalDate(holiday.date, timezone),
     },
+  });
+
+  // Recalculate daily team summaries for all teams on this date (no longer a holiday)
+  // Fire and forget - don't block response
+  recalculateAllTeamSummariesForDate(companyId, holidayDate, timezone).catch(err => {
+    console.error('Failed to recalculate summaries after holiday deletion:', err);
   });
 
   return c.json({ success: true });

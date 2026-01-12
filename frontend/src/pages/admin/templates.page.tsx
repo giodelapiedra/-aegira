@@ -6,7 +6,6 @@ import { useToast } from '../../components/ui/Toast';
 import {
   FileText,
   Trash2,
-  Loader2,
   AlertTriangle,
   Eye,
   Pencil,
@@ -17,6 +16,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { pdfTemplateService, type PDFTemplate, type DetectedField } from '../../services/pdf-template.service';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { cn } from '../../lib/utils';
 
 const fieldTypeIcons: Record<string, any> = {
@@ -88,7 +88,7 @@ export function TemplatesPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }

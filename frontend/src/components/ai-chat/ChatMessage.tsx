@@ -9,12 +9,15 @@ import {
   CheckCircle2,
   AlertTriangle,
   AlertCircle,
+  Users,
+  type LucideIcon,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { ChatMessage as ChatMessageType } from '../../types/chatbot';
 
 interface ChatMessageProps {
   message: ChatMessageType;
+  onQuickAction?: (command: string) => void;
 }
 
 function formatTime(timestamp: Date | string): string {
@@ -25,13 +28,17 @@ function formatTime(timestamp: Date | string): string {
   });
 }
 
-// Icon mapping for links
-function getLinkIcon(iconName?: string) {
+// Icon mapping for links and quick actions
+function getIcon(iconName?: string): LucideIcon {
   switch (iconName) {
     case 'file-text':
       return FileText;
     case 'bar-chart':
       return BarChart3;
+    case 'users':
+      return Users;
+    case 'alert-triangle':
+      return AlertTriangle;
     default:
       return ExternalLink;
   }
@@ -92,7 +99,7 @@ function formatTextWithBold(text: string): React.ReactNode[] {
   return parts.length > 0 ? parts : [text];
 }
 
-export const ChatMessage = memo(function ChatMessage({ message }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, onQuickAction }: ChatMessageProps) {
   const isUser = message.role === 'user';
 
   return (
@@ -153,11 +160,30 @@ export const ChatMessage = memo(function ChatMessage({ message }: ChatMessagePro
             </div>
           )}
 
+          {/* Quick Actions - Clickable buttons */}
+          {message.quickActions && message.quickActions.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {message.quickActions.map((action) => {
+                const Icon = getIcon(action.icon);
+                return (
+                  <button
+                    key={action.id}
+                    onClick={() => onQuickAction?.(action.command)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-white border border-gray-200 text-gray-700 hover:bg-purple-50 hover:border-purple-300 hover:text-purple-700 shadow-sm hover:shadow"
+                  >
+                    <Icon className="h-4 w-4" />
+                    {action.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Links */}
           {message.links && message.links.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               {message.links.map((link, index) => {
-                const Icon = getLinkIcon(link.icon);
+                const Icon = getIcon(link.icon);
                 return (
                   <Link
                     key={index}

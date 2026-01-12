@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Input } from '../../components/ui/Input';
 import { Avatar } from '../../components/ui/Avatar';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { cn } from '../../lib/utils';
 import api from '../../services/api';
 import type { User } from '../../types/user';
@@ -183,7 +184,7 @@ export function PersonnelPage() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {usersLoading ? (
           <div className="p-8 text-center">
-            <div className="animate-spin h-8 w-8 border-2 border-primary-500 border-t-transparent rounded-full mx-auto" />
+            <LoadingSpinner size="lg" className="mx-auto" />
             <p className="text-gray-500 mt-4">Loading personnel...</p>
           </div>
         ) : filteredUsers.length === 0 ? (

@@ -1,5 +1,12 @@
 // Chatbot types for AI Chat feature
 
+export interface QuickAction {
+  id: string;
+  label: string;
+  command: string;
+  icon?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -7,6 +14,7 @@ export interface ChatMessage {
   timestamp: Date | string;
   links?: ChatLink[];
   summaryPreview?: SummaryPreview;
+  quickActions?: QuickAction[];
 }
 
 export interface ChatLink {

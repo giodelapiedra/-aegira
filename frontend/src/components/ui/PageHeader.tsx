@@ -6,6 +6,7 @@
 import { ChevronRight, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { cn } from '../../lib/utils';
+import { Button } from './Button';
 
 // ============================================
 // TYPES
@@ -113,39 +114,29 @@ export function PageHeader({
         {actions && actions.length > 0 && (
           <div className="flex items-center gap-2">
             {actions.map((action, index) => {
-              const buttonClasses = cn(
-                'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-                action.variant === 'primary' && 'bg-primary-600 text-white hover:bg-primary-700',
-                action.variant === 'danger' && 'bg-danger-600 text-white hover:bg-danger-700',
-                (!action.variant || action.variant === 'secondary') &&
-                  'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50',
-                action.disabled && 'opacity-50 cursor-not-allowed'
-              );
-
-              const content = (
-                <>
-                  {action.icon && <action.icon className="h-4 w-4" />}
-                  {action.label}
-                </>
-              );
+              const icon = action.icon ? <action.icon className="h-4 w-4" /> : undefined;
+              const variant = action.variant || 'secondary';
 
               if (action.href && !action.disabled) {
                 return (
-                  <Link key={index} to={action.href} className={buttonClasses}>
-                    {content}
+                  <Link key={index} to={action.href}>
+                    <Button variant={variant} leftIcon={icon}>
+                      {action.label}
+                    </Button>
                   </Link>
                 );
               }
 
               return (
-                <button
+                <Button
                   key={index}
+                  variant={variant}
                   onClick={action.onClick}
                   disabled={action.disabled}
-                  className={buttonClasses}
+                  leftIcon={icon}
                 >
-                  {content}
-                </button>
+                  {action.label}
+                </Button>
               );
             })}
           </div>

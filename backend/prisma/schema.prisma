@@ -158,6 +158,7 @@ model Company {
   dailyAttendance   DailyAttendance[]
   holidays          Holiday[]
   absences          Absence[]
+  dailyTeamSummaries DailyTeamSummary[]
 
   @@map("companies")
 }
@@ -181,10 +182,15 @@ model User {
   teamId    String?
   teamJoinedAt DateTime? // When user was assigned to current team (for attendance tracking)
 
-  // Streak tracking
+  // Streak & check-in tracking
   currentStreak   Int       @default(0)
   longestStreak   Int       @default(0)
   lastCheckinDate DateTime?
+  totalCheckins   Int       @default(0)  // Total valid check-ins EVER (for onboarding threshold)
+
+  // Pre-computed readiness stats (updated on each check-in)
+  avgReadinessScore   Float   @default(0)   // Running average of all check-ins (0-100)
+  lastReadinessStatus String?               // Last check-in status: "GREEN", "YELLOW", or "RED"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -220,6 +226,7 @@ model User {
 
   @@index([companyId])
   @@index([teamId])
+  @@index([companyId, isActive, role]) // Composite index for active worker queries
   @@map("users")
 }
 
@@ -234,6 +241,9 @@ model Team {
   companyId   String
   leaderId    String? // Team lead user ID
   isActive    Boolean @default(true)
+
+  // Pre-computed stats (updated when members added/removed)
+  memberCount Int @default(0) // Count of active WORKER/MEMBER members
 
   // Schedule fields
   workDays   String @default("MON,TUE,WED,THU,FRI") // Comma-separated days
@@ -256,6 +266,7 @@ model Team {
   aiSummaries     AISummary[]
   dailyAttendance DailyAttendance[]
   absences        Absence[]
+  dailyTeamSummaries DailyTeamSummary[]
 
   @@index([companyId])
   @@index([leaderId])
@@ -951,6 +962,51 @@ model Holiday {
   @@index([companyId])
   @@index([date])
   @@map("holidays")
+}
+
+// ===========================================
+// DAILY TEAM SUMMARY (Pre-computed daily team stats)
+// ===========================================
+
+model DailyTeamSummary {
+  id        String   @id @default(uuid())
+  teamId    String
+  companyId String
+  date      DateTime @db.Date
+
+  // === FLAGS ===
+  isWorkDay Boolean // Based on team.workDays (MON,TUE,WED,THU,FRI)
+  isHoliday Boolean // Based on company Holiday table
+
+  // === MEMBER COUNTS ===
+  totalMembers      Int // Active WORKER/MEMBER in team (snapshot)
+  onLeaveCount      Int // Members with APPROVED exemption covering this date
+  expectedToCheckIn Int // totalMembers - onLeaveCount (0 if !isWorkDay or isHoliday)
+
+  // === CHECK-IN STATS ===
+  checkedInCount    Int @default(0)
+  notCheckedInCount Int @default(0) // expectedToCheckIn - checkedInCount
+  greenCount        Int @default(0)
+  yellowCount       Int @default(0)
+  redCount          Int @default(0)
+
+  // === SCORES ===
+  avgReadinessScore Float? // Average of all check-in scores (null if no check-ins)
+  complianceRate    Float? // checkedIn / expected * 100 (null if expected = 0)
+
+  // === METADATA ===
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // === RELATIONS ===
+  team    Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // === INDEXES ===
+  @@unique([teamId, date])
+  @@index([companyId, date])
+  @@index([date])
+  @@map("daily_team_summaries")
 }
 
 // ===========================================

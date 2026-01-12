@@ -6,6 +6,7 @@
 import { FolderOpen, Search, AlertCircle, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { cn } from '../../lib/utils';
+import { Button } from './Button';
 
 // ============================================
 // TYPES
@@ -124,32 +125,23 @@ function EmptyStateButton({
   action: EmptyStateAction;
   isPrimary?: boolean;
 }) {
-  const buttonClasses = cn(
-    'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors',
-    isPrimary || action.variant === 'primary'
-      ? 'bg-primary-600 text-white hover:bg-primary-700'
-      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-  );
-
-  const content = (
-    <>
-      {action.icon && <action.icon className="h-4 w-4" />}
-      {action.label}
-    </>
-  );
+  const variant = isPrimary || action.variant === 'primary' ? 'primary' : 'secondary';
+  const icon = action.icon ? <action.icon className="h-4 w-4" /> : undefined;
 
   if (action.href) {
     return (
-      <Link to={action.href} className={buttonClasses}>
-        {content}
+      <Link to={action.href}>
+        <Button variant={variant} leftIcon={icon}>
+          {action.label}
+        </Button>
       </Link>
     );
   }
 
   return (
-    <button onClick={action.onClick} className={buttonClasses}>
-      {content}
-    </button>
+    <Button variant={variant} onClick={action.onClick} leftIcon={icon}>
+      {action.label}
+    </Button>
   );
 }
 

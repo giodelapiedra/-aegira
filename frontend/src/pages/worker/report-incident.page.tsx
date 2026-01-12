@@ -10,6 +10,7 @@ import { Input } from '../../components/ui/Input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { useToast } from '../../components/ui/Toast';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { formatDisplayDateTime } from '../../lib/date-utils';
 import {
   AlertTriangle,
@@ -115,7 +116,7 @@ export function ReportIncidentPage() {
   if (isMemberOrWorker && isLoadingTeam) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
+        <LoadingSpinner size="lg" />
       </div>
     );
   }

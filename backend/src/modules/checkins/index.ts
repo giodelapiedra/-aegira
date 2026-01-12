@@ -24,6 +24,7 @@ import {
   getLastNDaysRange,
   DEFAULT_TIMEZONE,
 } from '../../utils/date-helpers.js';
+import { recalculateTodaySummary } from '../../utils/daily-summary.js';
 
 // ===========================================
 // CONSTANTS
@@ -249,7 +250,7 @@ checkinsRoutes.post('/', async (c) => {
   const companyId = c.get('companyId');
   const body = createCheckinSchema.parse(await c.req.json());
 
-  // Get user with team and company info
+  // Get user with team and company info (including pre-computed stats for running average)
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: {
@@ -468,13 +469,29 @@ checkinsRoutes.post('/', async (c) => {
 
   const newLongestStreak = Math.max(user.longestStreak || 0, newStreak);
 
+  // Calculate new running average for readiness score
+  // Formula: newAvg = ((oldAvg * oldCount) + newScore) / newCount
+  const oldAvg = user.avgReadinessScore || 0;
+  const oldCount = user.totalCheckins || 0;
+  const newCount = oldCount + 1;
+  const newAvgReadinessScore = ((oldAvg * oldCount) + score) / newCount;
+
   await prisma.user.update({
     where: { id: userId },
     data: {
       lastCheckinDate: now,
       currentStreak: newStreak,
       longestStreak: newLongestStreak,
+      totalCheckins: newCount,
+      avgReadinessScore: Math.round(newAvgReadinessScore * 100) / 100, // Round to 2 decimal places
+      lastReadinessStatus: status, // GREEN, YELLOW, or RED
     },
+  });
+
+  // Recalculate daily team summary (for analytics dashboard)
+  // Fire and forget - don't block response for non-critical analytics update
+  recalculateTodaySummary(team.id, timezone).catch(err => {
+    console.error('Failed to recalculate daily team summary:', err);
   });
 
   // Log check-in submission

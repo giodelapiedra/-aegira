@@ -1,53 +1,51 @@
 /**
  * Daily Monitoring Page
  * Comprehensive daily monitoring dashboard for Team Leaders
- *
- * Features:
- * - Today's check-ins with metrics
- * - Sudden change detection
- * - Pending exemption requests
- * - Active exemptions
+ * Navigation handled via SubMenuPanel (icon rail sidebar pattern)
  */
 
-import { useState } from 'react';
+import { useMemo, useState, useCallback, useEffect, memo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
-  Users,
   CheckCircle2,
   AlertTriangle,
-  Clock,
-  Activity,
-  TrendingDown,
-  UserX,
-  Calendar,
+  Shield,
+  CalendarX,
   RefreshCw,
+  Users,
+  TrendingDown,
+  Clock,
+  Timer,
   ChevronRight,
   X,
-  Timer,
   Flame,
-  ChevronDown,
-  MessageCircle,
   UserMinus,
+  Eye,
+  MessageSquare,
+  Search,
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { getNowInTimezone, formatLocalDate } from '../../lib/date-utils';
+
+// UI Components
 import { Button } from '../../components/ui/Button';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
-import { StatsCard, StatsCardGrid } from '../../components/ui/StatsCard';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useToast } from '../../components/ui/Toast';
 import { Avatar } from '../../components/ui/Avatar';
+
+// Monitoring Components
 import {
   MetricsRow,
   SuddenChangeCard,
   PendingExemptionCard,
   ActiveExemptionCard,
 } from '../../components/monitoring';
+
+// Services
 import {
   getDailyMonitoring,
   getStatusColor,
-  getLowScoreReasonLabel,
   type DailyMonitoringData,
   type TodayCheckin,
 } from '../../services/daily-monitoring.service';
@@ -61,17 +59,29 @@ import {
   type ExceptionType,
 } from '../../services/exemption.service';
 import { absenceService } from '../../services/absence.service';
+
+// Absence Components
 import { AbsenceReviewCard } from '../../components/absences/AbsenceReviewCard';
-import type { AbsenceWithUser } from '../../types/absence';
+
+// Utils
+import { cn } from '../../lib/utils';
+import { getNowInTimezone } from '../../lib/date-utils';
 
 // ============================================
 // TYPES
 // ============================================
 
-type TabType = 'checkins' | 'changes' | 'exemptions' | 'absences';
+type MonitoringTab = 'checkins' | 'changes' | 'exemptions' | 'absences';
 
 // ============================================
-// APPROVE MODAL COMPONENT
+// CONSTANTS
+// ============================================
+
+const QUERY_KEY = 'daily-monitoring';
+const REFETCH_INTERVAL = 60000; // 1 minute
+
+// ============================================
+// MODAL COMPONENTS
 // ============================================
 
 interface ApproveModalProps {
@@ -86,68 +96,52 @@ function ApproveModal({ exemption, onClose, onConfirm, isLoading, timezone }: Ap
   const [endDate, setEndDate] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Default date suggestions using company timezone
   const nowInTz = getNowInTimezone(timezone);
   const today = nowInTz.date;
 
-  // Get today's date components in company timezone
   const dateFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
+
   const todayParts = dateFormatter.formatToParts(today);
   const todayYear = parseInt(todayParts.find(p => p.type === 'year')!.value);
   const todayMonth = parseInt(todayParts.find(p => p.type === 'month')!.value) - 1;
   const todayDay = parseInt(todayParts.find(p => p.type === 'day')!.value);
 
-  // Create date objects using UTC to avoid browser timezone issues
   const tomorrow = new Date(Date.UTC(todayYear, todayMonth, todayDay + 1, 12, 0, 0));
   const in3Days = new Date(Date.UTC(todayYear, todayMonth, todayDay + 3, 12, 0, 0));
   const in7Days = new Date(Date.UTC(todayYear, todayMonth, todayDay + 7, 12, 0, 0));
 
-  // Format date for input in company timezone (YYYY-MM-DD)
   const formatDateForInput = (date: Date) => {
     const parts = dateFormatter.formatToParts(date);
-    const year = parts.find(p => p.type === 'year')!.value;
-    const month = parts.find(p => p.type === 'month')!.value;
-    const day = parts.find(p => p.type === 'day')!.value;
-    return `${year}-${month}-${day}`;
+    return `${parts.find(p => p.type === 'year')!.value}-${parts.find(p => p.type === 'month')!.value}-${parts.find(p => p.type === 'day')!.value}`;
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-md w-full p-6">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-gray-900">Approve Exemption</h3>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <X className="h-5 w-5 text-gray-500" />
           </button>
         </div>
 
-        {/* Worker Info */}
         <div className="bg-gray-50 rounded-lg p-4 mb-6">
-          <div className="flex items-center gap-3 mb-2">
-            <Avatar
-              firstName={exemption.user.firstName}
-              lastName={exemption.user.lastName}
-              size="md"
-            />
+          <div className="flex items-center gap-3">
+            <Avatar firstName={exemption.user.firstName} lastName={exemption.user.lastName} size="md" />
             <div>
-              <p className="font-medium text-gray-900">
-                {exemption.user.firstName} {exemption.user.lastName}
-              </p>
+              <p className="font-medium text-gray-900">{exemption.user.firstName} {exemption.user.lastName}</p>
               <p className="text-sm text-gray-500">{exemption.reason}</p>
             </div>
           </div>
         </div>
 
-        {/* End Date */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Last day of exemption
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Last day of exemption</label>
           <input
             type="date"
             value={endDate}
@@ -157,56 +151,37 @@ function ApproveModal({ exemption, onClose, onConfirm, isLoading, timezone }: Ap
           />
         </div>
 
-        {/* Quick Date Options */}
         <div className="flex gap-2 mb-6">
-          <button
-            type="button"
-            onClick={() => setEndDate(formatDateForInput(tomorrow))}
-            className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            Tomorrow
-          </button>
-          <button
-            type="button"
-            onClick={() => setEndDate(formatDateForInput(in3Days))}
-            className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            In 3 days
-          </button>
-          <button
-            type="button"
-            onClick={() => setEndDate(formatDateForInput(in7Days))}
-            className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            In 1 week
-          </button>
+          {[
+            { label: 'Tomorrow', date: tomorrow },
+            { label: '3 days', date: in3Days },
+            { label: '1 week', date: in7Days },
+          ].map((opt) => (
+            <button
+              key={opt.label}
+              type="button"
+              onClick={() => setEndDate(formatDateForInput(opt.date))}
+              className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
 
-        {/* Notes */}
         <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Notes (optional)
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Notes (optional)</label>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add a note for the worker..."
+            placeholder="Add a note..."
             rows={2}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
           />
         </div>
 
-        {/* Actions */}
         <div className="flex gap-3">
-          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={isLoading}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            className="flex-1"
-            onClick={() => onConfirm(endDate, notes || undefined)}
-            disabled={!endDate || isLoading}
-          >
+          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={isLoading}>Cancel</Button>
+          <Button variant="primary" className="flex-1" onClick={() => onConfirm(endDate, notes || undefined)} disabled={!endDate || isLoading}>
             {isLoading ? 'Approving...' : 'Approve'}
           </Button>
         </div>
@@ -215,19 +190,10 @@ function ApproveModal({ exemption, onClose, onConfirm, isLoading, timezone }: Ap
   );
 }
 
-// ============================================
-// CREATE EXEMPTION MODAL COMPONENT
-// ============================================
-
 interface CreateExemptionModalProps {
   checkin: TodayCheckin;
   onClose: () => void;
-  onConfirm: (data: {
-    type: ExceptionType;
-    reason: string;
-    endDate: string;
-    notes?: string;
-  }) => void;
+  onConfirm: (data: { type: ExceptionType; reason: string; endDate: string; notes?: string }) => void;
   isLoading: boolean;
   timezone: string;
 }
@@ -238,171 +204,113 @@ function CreateExemptionModal({ checkin, onClose, onConfirm, isLoading, timezone
   const [endDate, setEndDate] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Default date suggestions using company timezone
   const nowInTz = getNowInTimezone(timezone);
-  const today = nowInTz.date;
-
-  // Get today's date components in company timezone
-  const dateFormatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const todayParts = dateFormatter.formatToParts(today);
+  const dateFormatter = new Intl.DateTimeFormat('en-US', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const todayParts = dateFormatter.formatToParts(nowInTz.date);
   const todayYear = parseInt(todayParts.find(p => p.type === 'year')!.value);
   const todayMonth = parseInt(todayParts.find(p => p.type === 'month')!.value) - 1;
   const todayDay = parseInt(todayParts.find(p => p.type === 'day')!.value);
 
-  // Create date objects using UTC to avoid browser timezone issues
   const tomorrow = new Date(Date.UTC(todayYear, todayMonth, todayDay + 1, 12, 0, 0));
   const in3Days = new Date(Date.UTC(todayYear, todayMonth, todayDay + 3, 12, 0, 0));
   const in7Days = new Date(Date.UTC(todayYear, todayMonth, todayDay + 7, 12, 0, 0));
 
-  // Format date for input in company timezone (YYYY-MM-DD)
   const formatDateForInput = (date: Date) => {
     const parts = dateFormatter.formatToParts(date);
-    const year = parts.find(p => p.type === 'year')!.value;
-    const month = parts.find(p => p.type === 'month')!.value;
-    const day = parts.find(p => p.type === 'day')!.value;
-    return `${year}-${month}-${day}`;
-  };
-
-  const handleSubmit = () => {
-    if (!reason.trim()) return;
-    if (!endDate) return;
-    onConfirm({ type, reason, endDate, notes: notes || undefined });
+    return `${parts.find(p => p.type === 'year')!.value}-${parts.find(p => p.type === 'month')!.value}-${parts.find(p => p.type === 'day')!.value}`;
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-gray-900">Create Exemption</h3>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
             <X className="h-5 w-5 text-gray-500" />
           </button>
         </div>
 
-        {/* Worker Info */}
         <div className="bg-danger-50 rounded-lg p-4 mb-6 border border-danger-100">
           <div className="flex items-center gap-3">
-            <Avatar
-              firstName={checkin.user.firstName}
-              lastName={checkin.user.lastName}
-              size="md"
-            />
+            <Avatar firstName={checkin.user.firstName} lastName={checkin.user.lastName} size="md" />
             <div>
-              <p className="font-medium text-gray-900">
-                {checkin.user.firstName} {checkin.user.lastName}
-              </p>
-              <p className="text-sm text-danger-600">
-                Score: {checkin.readinessScore}%
-                {checkin.lowScoreReason && ` - ${getLowScoreReasonLabel(checkin.lowScoreReason)}`}
-              </p>
+              <p className="font-medium text-gray-900">{checkin.user.firstName} {checkin.user.lastName}</p>
+              <p className="text-sm text-danger-600">Score: {checkin.readinessScore}%</p>
             </div>
           </div>
         </div>
 
-        {/* Exception Type */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Exemption Type
-          </label>
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as ExceptionType)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-          >
-            {EXCEPTION_TYPE_OPTIONS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Exemption Type</label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as ExceptionType)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+            >
+              {EXCEPTION_TYPE_OPTIONS.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Reason *</label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder="Reason for exemption..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Last day of exemption *</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              min={formatDateForInput(tomorrow)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            {[
+              { label: 'Tomorrow', date: tomorrow },
+              { label: '3 days', date: in3Days },
+              { label: '1 week', date: in7Days },
+            ].map((opt) => (
+              <button
+                key={opt.label}
+                type="button"
+                onClick={() => setEndDate(formatDateForInput(opt.date))}
+                className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                {opt.label}
+              </button>
             ))}
-          </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Notes (optional)</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder="Additional notes..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm"
+            />
+          </div>
         </div>
 
-        {/* Reason */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Reason <span className="text-danger-500">*</span>
-          </label>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={2}
-            placeholder="Reason for creating this exemption..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm"
-          />
-        </div>
-
-        {/* End Date */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Last day of exemption <span className="text-danger-500">*</span>
-          </label>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            min={formatDateForInput(tomorrow)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-          />
-        </div>
-
-        {/* Quick Date Options */}
-        <div className="flex gap-2 mb-4">
-          <button
-            type="button"
-            onClick={() => setEndDate(formatDateForInput(tomorrow))}
-            className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            Tomorrow
-          </button>
-          <button
-            type="button"
-            onClick={() => setEndDate(formatDateForInput(in3Days))}
-            className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            3 days
-          </button>
-          <button
-            type="button"
-            onClick={() => setEndDate(formatDateForInput(in7Days))}
-            className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            1 week
-          </button>
-        </div>
-
-        {/* Notes */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Notes (optional)
-          </label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={2}
-            placeholder="Additional notes..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm"
-          />
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-3">
-          <Button
-            variant="secondary"
-            className="flex-1"
-            onClick={onClose}
-            disabled={isLoading}
-          >
-            Cancel
-          </Button>
+        <div className="flex gap-3 mt-6">
+          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={isLoading}>Cancel</Button>
           <Button
             variant="primary"
             className="flex-1"
-            onClick={handleSubmit}
+            onClick={() => onConfirm({ type, reason, endDate, notes: notes || undefined })}
             disabled={!reason.trim() || !endDate || isLoading}
           >
             {isLoading ? 'Creating...' : 'Create Exemption'}
@@ -414,115 +322,344 @@ function CreateExemptionModal({ checkin, onClose, onConfirm, isLoading, timezone
 }
 
 // ============================================
+// CHECK-IN COMPONENTS (Mobile Card + Desktop Row)
+// ============================================
+
+interface CheckinItemProps {
+  checkin: TodayCheckin;
+  onCreateExemption?: (checkin: TodayCheckin) => void;
+}
+
+// Mobile Card Component
+const CheckinCard = memo(({ checkin, onCreateExemption }: CheckinItemProps) => {
+  const statusColors = getStatusColor(checkin.readinessStatus);
+  const hasChange = checkin.changeFromAverage !== null && checkin.changeFromAverage < -10;
+  const canCreateExemption = checkin.readinessStatus === 'RED' && !checkin.hasExemptionRequest;
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="p-4">
+        {/* Header */}
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <Avatar firstName={checkin.user.firstName} lastName={checkin.user.lastName} size="md" />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-gray-900">{checkin.user.firstName} {checkin.user.lastName}</span>
+                {checkin.user.currentStreak && checkin.user.currentStreak > 0 && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                    <Flame className="h-3 w-3" />{checkin.user.currentStreak}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {new Date(checkin.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+              </p>
+            </div>
+          </div>
+          <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium', statusColors.bg, statusColors.text)}>
+            <span className={cn('w-1.5 h-1.5 rounded-full', statusColors.dot)} />
+            {checkin.readinessStatus === 'GREEN' ? 'Ready' : checkin.readinessStatus === 'YELLOW' ? 'Limited' : 'Not Ready'}
+          </span>
+        </div>
+
+        {/* Score */}
+        <div className="flex items-center justify-between mb-3 p-3 bg-gray-50 rounded-xl">
+          <span className="text-sm text-gray-600">Readiness Score</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-bold text-gray-900">{checkin.readinessScore}%</span>
+            {hasChange && (
+              <span className="text-xs text-red-600 font-medium">{checkin.changeFromAverage}%</span>
+            )}
+          </div>
+        </div>
+
+        {/* Metrics */}
+        <div className="mb-3">
+          <MetricsRow mood={checkin.mood} stress={checkin.stress} sleep={checkin.sleep} physicalHealth={checkin.physicalHealth} size="sm" />
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+          {canCreateExemption && onCreateExemption && (
+            <button
+              onClick={() => onCreateExemption(checkin)}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+            >
+              <UserMinus className="w-4 h-4" />
+              Put on Leave
+            </button>
+          )}
+          <button className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors">
+            <Eye className="w-4 h-4" />
+            Details
+          </button>
+          <button className="p-2.5 rounded-xl text-gray-500 hover:text-primary-600 hover:bg-primary-50 transition-colors">
+            <MessageSquare className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+CheckinCard.displayName = 'CheckinCard';
+
+// Desktop Table Row Component
+const CheckinRow = memo(({ checkin, onCreateExemption }: CheckinItemProps) => {
+  const statusColors = getStatusColor(checkin.readinessStatus);
+  const hasChange = checkin.changeFromAverage !== null && checkin.changeFromAverage < -10;
+  const canCreateExemption = checkin.readinessStatus === 'RED' && !checkin.hasExemptionRequest;
+
+  return (
+    <tr className="hover:bg-gray-50/80 transition-all border-l-2 border-l-transparent hover:border-l-primary-500">
+      <td className="px-6 py-4">
+        <div className="flex items-center gap-3">
+          <Avatar firstName={checkin.user.firstName} lastName={checkin.user.lastName} size="sm" />
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-900">{checkin.user.firstName} {checkin.user.lastName}</span>
+              {checkin.user.currentStreak && checkin.user.currentStreak > 0 && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                  <Flame className="h-3 w-3" />{checkin.user.currentStreak}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">{checkin.user.email}</p>
+          </div>
+        </div>
+      </td>
+      <td className="px-6 py-4">
+        <MetricsRow mood={checkin.mood} stress={checkin.stress} sleep={checkin.sleep} physicalHealth={checkin.physicalHealth} size="sm" />
+      </td>
+      <td className="px-6 py-4">
+        <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium', statusColors.bg, statusColors.text)}>
+          <span className={cn('w-1.5 h-1.5 rounded-full', statusColors.dot)} />
+          {checkin.readinessStatus === 'GREEN' ? 'Ready' : checkin.readinessStatus === 'YELLOW' ? 'Limited' : 'Not Ready'}
+        </span>
+      </td>
+      <td className="px-6 py-4 text-center">
+        <span className="inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded-lg bg-gray-100 text-sm font-semibold text-gray-700">
+          {checkin.readinessScore}%
+        </span>
+        {hasChange && (
+          <span className="ml-2 text-xs text-red-600">{checkin.changeFromAverage}%</span>
+        )}
+      </td>
+      <td className="px-6 py-4">
+        <span className="text-sm text-gray-500">
+          {new Date(checkin.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+        </span>
+      </td>
+      <td className="px-6 py-4">
+        <div className="flex items-center justify-end gap-1">
+          {canCreateExemption && onCreateExemption && (
+            <button
+              onClick={() => onCreateExemption(checkin)}
+              className="p-2 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+              title="Put on Leave"
+            >
+              <UserMinus className="w-4 h-4" />
+            </button>
+          )}
+          <button className="p-2 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors" title="View Details">
+            <Eye className="w-4 h-4" />
+          </button>
+          <button className="p-2 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors" title="Message">
+            <MessageSquare className="w-4 h-4" />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+});
+CheckinRow.displayName = 'CheckinRow';
+
+// ============================================
+// STATS BAR COMPONENT
+// ============================================
+
+interface StatsBarProps {
+  stats: {
+    greenCount: number;
+    yellowCount: number;
+    redCount: number;
+    totalCheckedIn: number;
+    teamSize: number;
+  };
+}
+
+// Desktop Stats Bar
+const StatsBar = memo(({ stats }: StatsBarProps) => (
+  <div className="hidden md:flex items-center gap-6">
+    <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
+        <span className="text-sm text-gray-600">Ready: <strong className="text-gray-900">{stats.greenCount}</strong></span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+        <span className="text-sm text-gray-600">Limited: <strong className="text-gray-900">{stats.yellowCount}</strong></span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+        <span className="text-sm text-gray-600">At Risk: <strong className="text-gray-900">{stats.redCount}</strong></span>
+      </div>
+    </div>
+    <div className="h-4 w-px bg-gray-300" />
+    <span className="text-sm text-gray-500">
+      {stats.totalCheckedIn}/{stats.teamSize} checked in
+    </span>
+  </div>
+));
+StatsBar.displayName = 'StatsBar';
+
+// Mobile Stats Cards
+const MobileStatsCards = memo(({ stats }: StatsBarProps) => (
+  <div className="grid grid-cols-4 gap-2 md:hidden">
+    <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+      <div className="w-3 h-3 rounded-full bg-green-500 mx-auto mb-1" />
+      <p className="text-lg font-bold text-gray-900">{stats.greenCount}</p>
+      <p className="text-[10px] text-gray-500">Ready</p>
+    </div>
+    <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+      <div className="w-3 h-3 rounded-full bg-amber-500 mx-auto mb-1" />
+      <p className="text-lg font-bold text-gray-900">{stats.yellowCount}</p>
+      <p className="text-[10px] text-gray-500">Limited</p>
+    </div>
+    <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+      <div className="w-3 h-3 rounded-full bg-red-500 mx-auto mb-1" />
+      <p className="text-lg font-bold text-gray-900">{stats.redCount}</p>
+      <p className="text-[10px] text-gray-500">At Risk</p>
+    </div>
+    <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
+      <div className="w-3 h-3 rounded-full bg-primary-500 mx-auto mb-1" />
+      <p className="text-lg font-bold text-gray-900">{stats.totalCheckedIn}/{stats.teamSize}</p>
+      <p className="text-[10px] text-gray-500">Checked In</p>
+    </div>
+  </div>
+));
+MobileStatsCards.displayName = 'MobileStatsCards';
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 
 export function DailyMonitoringPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('checkins');
+  // URL search params for tab state
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabFromUrl = searchParams.get('tab') as MonitoringTab | null;
+
+  // Tab state - sync with URL
+  const [activeTab, setActiveTab] = useState<MonitoringTab>(tabFromUrl || 'checkins');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Sync tab state with URL
+  useEffect(() => {
+    if (tabFromUrl && tabFromUrl !== activeTab) {
+      setActiveTab(tabFromUrl);
+    }
+  }, [tabFromUrl]);
+
+  // Update URL when tab changes
+  const handleTabChange = useCallback((tab: MonitoringTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  }, [setSearchParams]);
+
+  // Modal state
   const [selectedExemption, setSelectedExemption] = useState<Exemption | null>(null);
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [selectedCheckinForExemption, setSelectedCheckinForExemption] = useState<TodayCheckin | null>(null);
+
   const queryClient = useQueryClient();
   const toast = useToast();
 
-  // Fetch daily monitoring data
+  // Data fetching
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['daily-monitoring'],
-    queryFn: () => getDailyMonitoring(),
-    refetchInterval: 60000, // Refresh every minute
+    queryKey: [QUERY_KEY],
+    queryFn: getDailyMonitoring,
+    refetchInterval: REFETCH_INTERVAL,
+    staleTime: 30000,
   });
 
-  // Fetch pending absence reviews for TL
-  const { data: pendingAbsences, refetch: refetchAbsences } = useQuery({
+  const { data: pendingAbsences } = useQuery({
     queryKey: ['absences', 'team-pending'],
     queryFn: () => absenceService.getTeamPending(),
-    refetchInterval: 60000,
+    refetchInterval: REFETCH_INTERVAL,
   });
 
-  // Approve mutation
+  // Mutations
   const approveMutation = useMutation({
     mutationFn: ({ id, endDate, notes }: { id: string; endDate: string; notes?: string }) =>
       approveExemption(id, { endDate, notes }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['daily-monitoring'] });
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
       setShowApproveModal(false);
       setSelectedExemption(null);
-      toast.success('Exemption Approved', 'The worker has been notified.');
+      toast.success('Exemption approved');
     },
-    onError: () => {
-      toast.error('Error', 'Failed to approve exemption. Please try again.');
-    },
+    onError: () => toast.error('Failed to approve exemption'),
   });
 
-  // Reject mutation
   const rejectMutation = useMutation({
-    mutationFn: ({ id, notes }: { id: string; notes?: string }) =>
-      rejectExemption(id, { notes }),
+    mutationFn: ({ id, notes }: { id: string; notes?: string }) => rejectExemption(id, { notes }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['daily-monitoring'] });
-      toast.success('Exemption Rejected', 'The worker has been notified.');
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+      toast.success('Exemption rejected');
     },
-    onError: () => {
-      toast.error('Error', 'Failed to reject exemption. Please try again.');
-    },
+    onError: () => toast.error('Failed to reject exemption'),
   });
 
-  // End early mutation
   const endEarlyMutation = useMutation({
-    mutationFn: ({ id, notes }: { id: string; notes?: string }) =>
-      endExemptionEarly(id, { notes }),
+    mutationFn: ({ id, notes }: { id: string; notes?: string }) => endExemptionEarly(id, { notes }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['daily-monitoring'] });
-      toast.success('Exemption Ended', 'The worker will need to check in on their next work day.');
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
+      toast.success('Exemption ended');
     },
-    onError: () => {
-      toast.error('Error', 'Failed to end exemption. Please try again.');
-    },
+    onError: () => toast.error('Failed to end exemption'),
   });
 
   const createExemptionMutation = useMutation({
-    mutationFn: (data: {
-      userId: string;
-      type: ExceptionType;
-      reason: string;
-      endDate: string;
-      checkinId?: string;
-      notes?: string;
-    }) => createExemptionForWorker(data),
+    mutationFn: (params: { userId: string; type: ExceptionType; reason: string; endDate: string; checkinId?: string; notes?: string }) =>
+      createExemptionForWorker(params),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['daily-monitoring'] });
+      queryClient.invalidateQueries({ queryKey: [QUERY_KEY] });
       setSelectedCheckinForExemption(null);
-      toast.success('Exemption Created', 'The worker has been put on leave and notified.');
+      toast.success('Exemption created');
     },
-    onError: () => {
-      toast.error('Error', 'Failed to create exemption. Please try again.');
-    },
+    onError: () => toast.error('Failed to create exemption'),
   });
 
   // Handlers
-  const handleApprove = (exemption: Exemption) => {
+  const handleApprove = useCallback((exemption: Exemption) => {
     setSelectedExemption(exemption);
     setShowApproveModal(true);
-  };
+  }, []);
 
-  const handleConfirmApprove = (endDate: string, notes?: string) => {
-    if (selectedExemption) {
-      approveMutation.mutate({ id: selectedExemption.id, endDate, notes });
-    }
-  };
-
-  const handleReject = (exemption: Exemption) => {
-    if (confirm(`Are you sure you want to reject the exemption request from ${exemption.user.firstName}?`)) {
+  const handleReject = useCallback((exemption: Exemption) => {
+    if (confirm(`Reject exemption request from ${exemption.user.firstName}?`)) {
       rejectMutation.mutate({ id: exemption.id });
     }
-  };
+  }, [rejectMutation]);
 
-  const handleEndEarly = (exemption: Exemption) => {
-    if (confirm(`Are you sure you want to end ${exemption.user.firstName}'s exemption early?`)) {
+  const handleEndEarly = useCallback((exemption: Exemption) => {
+    if (confirm(`End ${exemption.user.firstName}'s exemption early?`)) {
       endEarlyMutation.mutate({ id: exemption.id });
     }
-  };
+  }, [endEarlyMutation]);
 
+  // Filter data by search
+  const filteredCheckins = useMemo(() => {
+    if (!data || !searchQuery) return data?.todayCheckins || [];
+    const query = searchQuery.toLowerCase();
+    return data.todayCheckins.filter(c =>
+      c.user.firstName.toLowerCase().includes(query) ||
+      c.user.lastName.toLowerCase().includes(query) ||
+      c.user.email.toLowerCase().includes(query)
+    );
+  }, [data, searchQuery]);
+
+  // Loading state
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -531,37 +668,21 @@ export function DailyMonitoringPage() {
     );
   }
 
+  // Error state
   if (error || !data) {
-    // Check for specific error messages
     const errorMessage = (error as any)?.response?.data?.error || 'Failed to load data';
-    const isNoTeamError = errorMessage.includes('not assigned to a team') || errorMessage.includes('No teams found');
+    const isNoTeamError = errorMessage.includes('not assigned to a team');
 
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
-        <div className={cn(
-          'h-16 w-16 rounded-full flex items-center justify-center mb-4',
-          isNoTeamError ? 'bg-warning-100' : 'bg-danger-100'
-        )}>
-          {isNoTeamError ? (
-            <Users className="h-8 w-8 text-warning-600" />
-          ) : (
-            <AlertTriangle className="h-8 w-8 text-danger-600" />
-          )}
+        <div className={cn('h-16 w-16 rounded-full flex items-center justify-center mb-4', isNoTeamError ? 'bg-warning-100' : 'bg-danger-100')}>
+          {isNoTeamError ? <Users className="h-8 w-8 text-warning-600" /> : <AlertTriangle className="h-8 w-8 text-danger-600" />}
         </div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">
-          {isNoTeamError ? 'No Team Available' : 'Failed to Load Data'}
-        </h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">{isNoTeamError ? 'No Team Available' : 'Failed to Load Data'}</h2>
         <p className="text-gray-500 mb-4 text-center max-w-md">
-          {isNoTeamError
-            ? 'You need to be assigned to a team or have teams in your company to view monitoring data.'
-            : 'There was an error loading the monitoring data. Please try again.'}
+          {isNoTeamError ? 'You need to be assigned to a team to view monitoring data.' : 'There was an error loading the data.'}
         </p>
-        {!isNoTeamError && (
-          <Button onClick={() => refetch()}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Retry
-          </Button>
-        )}
+        {!isNoTeamError && <Button onClick={() => refetch()}><RefreshCw className="h-4 w-4 mr-2" />Retry</Button>}
       </div>
     );
   }
@@ -569,295 +690,179 @@ export function DailyMonitoringPage() {
   const { team, stats, todayCheckins, notCheckedInMembers, suddenChanges, pendingExemptions, activeExemptions } = data;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Daily Monitoring</h1>
-          <p className="text-gray-500 mt-1">
-            {team.name} &bull; {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: team.timezone })}
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="h-4 w-4 mr-1" />
-          Refresh
-        </Button>
-      </div>
-
-      {/* Stats Grid */}
-      <StatsCardGrid columns={4}>
-        <StatsCard
-          label="Checked In"
-          value={`${stats.checkedIn}/${stats.activeMembers}`}
-          icon={Users}
-          variant="primary"
-          description={stats.onLeave > 0 ? `${stats.onLeave} on leave` : undefined}
-        />
-        <StatsCard
-          label="Ready (Green)"
-          value={stats.greenCount}
-          icon={CheckCircle2}
-          variant="success"
-        />
-        <StatsCard
-          label="At Risk (Red)"
-          value={stats.redCount}
-          icon={AlertTriangle}
-          variant="danger"
-        />
-        <StatsCard
-          label="Sudden Changes"
-          value={stats.suddenChanges}
-          icon={TrendingDown}
-          variant={stats.criticalChanges > 0 ? 'danger' : 'warning'}
-          description={stats.criticalChanges > 0 ? `${stats.criticalChanges} critical` : undefined}
-        />
-      </StatsCardGrid>
-
-      {/* Alert Banners */}
-      {pendingExemptions.length > 0 && (
-        <div className="bg-warning-50 border border-warning-200 rounded-xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-warning-100 flex items-center justify-center">
-              <Clock className="h-5 w-5 text-warning-600" />
-            </div>
+    <>
+      <div className="space-y-4 md:space-y-6">
+        {/* Page Header */}
+        <div className="flex flex-col gap-4">
+          <div className="flex items-start justify-between">
             <div>
-              <p className="font-semibold text-warning-800">
-                {pendingExemptions.length} Pending Exemption Request{pendingExemptions.length > 1 ? 's' : ''}
-              </p>
-              <p className="text-sm text-warning-600">Waiting for your approval</p>
+              <h1 className="text-xl md:text-2xl font-bold text-gray-900">Daily Monitoring</h1>
+              <p className="text-sm text-gray-500 mt-1">{team.name} &bull; {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
             </div>
+            <Button variant="secondary" size="sm" onClick={() => refetch()} className="flex-shrink-0">
+              <RefreshCw className="h-4 w-4 md:mr-1" />
+              <span className="hidden md:inline">Refresh</span>
+            </Button>
           </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setActiveTab('exemptions')}
-          >
-            Review Now
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
+          <StatsBar stats={stats} />
         </div>
-      )}
 
-      {stats.criticalChanges > 0 && (
-        <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-danger-100 flex items-center justify-center">
-              <TrendingDown className="h-5 w-5 text-danger-600" />
-            </div>
-            <div>
-              <p className="font-semibold text-danger-800">
-                {stats.criticalChanges} Critical Score Drop{stats.criticalChanges > 1 ? 's' : ''}
-              </p>
-              <p className="text-sm text-danger-600">Workers showing significant wellness decline</p>
-            </div>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setActiveTab('changes')}
-          >
-            View Details
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        </div>
-      )}
+        {/* Mobile Stats Cards */}
+        <MobileStatsCards stats={stats} />
 
-      {/* Pending Absences Alert */}
-      {pendingAbsences && pendingAbsences.count > 0 && (
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-orange-100 flex items-center justify-center">
-              <Calendar className="h-5 w-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="font-semibold text-orange-800">
-                {pendingAbsences.count} Absence Justification{pendingAbsences.count > 1 ? 's' : ''} to Review
-              </p>
-              <p className="text-sm text-orange-600">Workers have submitted explanations for missed days</p>
-            </div>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setActiveTab('absences')}
-          >
-            Review Now
-            <ChevronRight className="h-4 w-4 ml-1" />
-          </Button>
-        </div>
-      )}
-
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="flex gap-4">
-          {[
-            { key: 'checkins', label: "Today's Check-ins", count: todayCheckins.length },
-            { key: 'changes', label: 'Sudden Changes', count: suddenChanges.length, alert: stats.criticalChanges > 0 },
-            { key: 'exemptions', label: 'Exemptions', count: pendingExemptions.length + activeExemptions.length, alert: pendingExemptions.length > 0 },
-            { key: 'absences', label: 'Absence Reviews', count: pendingAbsences?.count || 0, alert: (pendingAbsences?.count || 0) > 0 },
-          ].map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key as TabType)}
-              className={cn(
-                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-                activeTab === tab.key
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              )}
-            >
-              {tab.label}
-              {tab.count > 0 && (
-                <span
-                  className={cn(
-                    'px-2 py-0.5 rounded-full text-xs font-medium',
-                    tab.alert
-                      ? 'bg-danger-100 text-danger-700'
-                      : 'bg-gray-100 text-gray-600'
-                  )}
-                >
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === 'checkins' && (
-        <div className="space-y-6">
-          {/* Readiness Breakdown */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-success-50 rounded-xl p-4 text-center border border-success-200">
-              <div className="h-12 w-12 rounded-full bg-success-500 flex items-center justify-center mx-auto mb-2">
-                <CheckCircle2 className="h-6 w-6 text-white" />
+        {/* Critical Alert */}
+        {stats.criticalChanges > 0 && (
+          <div className="bg-danger-50 border border-danger-200 rounded-xl p-3 md:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-danger-100 flex items-center justify-center flex-shrink-0">
+                <TrendingDown className="h-5 w-5 text-danger-600" />
               </div>
-              <p className="text-2xl font-bold text-success-700">{stats.greenCount}</p>
-              <p className="text-sm text-success-600">Ready (Green)</p>
-            </div>
-            <div className="bg-warning-50 rounded-xl p-4 text-center border border-warning-200">
-              <div className="h-12 w-12 rounded-full bg-warning-500 flex items-center justify-center mx-auto mb-2">
-                <AlertTriangle className="h-6 w-6 text-white" />
+              <div>
+                <p className="font-semibold text-danger-800 text-sm md:text-base">{stats.criticalChanges} Critical Score Drop{stats.criticalChanges > 1 ? 's' : ''}</p>
+                <p className="text-xs md:text-sm text-danger-600">Workers showing significant wellness decline</p>
               </div>
-              <p className="text-2xl font-bold text-warning-700">{stats.yellowCount}</p>
-              <p className="text-sm text-warning-600">Caution (Yellow)</p>
             </div>
-            <div className="bg-danger-50 rounded-xl p-4 text-center border border-danger-200">
-              <div className="h-12 w-12 rounded-full bg-danger-500 flex items-center justify-center mx-auto mb-2">
-                <Activity className="h-6 w-6 text-white" />
-              </div>
-              <p className="text-2xl font-bold text-danger-700">{stats.redCount}</p>
-              <p className="text-sm text-danger-600">At Risk (Red)</p>
-            </div>
+            <Button variant="secondary" size="sm" onClick={() => handleTabChange('changes')} className="w-full md:w-auto">
+              View <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
           </div>
+        )}
 
-          {/* Check-ins List */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Today's Check-ins</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {todayCheckins.length === 0 ? (
-                <EmptyState
-                  icon={Users}
-                  title="No check-ins yet"
-                  description="Team members haven't checked in today."
-                />
+        {/* Search Bar (only for check-ins) */}
+        {activeTab === 'checkins' && (
+          <div className="relative w-full md:max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search members..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-3 md:py-2 bg-white border border-gray-200 rounded-xl text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-colors"
+            />
+          </div>
+        )}
+
+        {/* Content Panels */}
+        <div className="min-h-[300px] md:min-h-[400px]">
+          {/* CHECK-INS PANEL */}
+          {activeTab === 'checkins' && (
+            <div className="space-y-4 md:space-y-6">
+              {filteredCheckins.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-gray-200 py-12">
+                  <EmptyState icon={Users} title="No check-ins yet" description="Team members haven't checked in today." />
+                </div>
               ) : (
-                <div className="divide-y divide-gray-100">
-                  {todayCheckins.map((checkin) => (
-                    <CheckinRow
-                      key={checkin.id}
-                      checkin={checkin}
-                      onCreateExemption={setSelectedCheckinForExemption}
-                    />
+                <>
+                  {/* Mobile Card View */}
+                  <div className="grid grid-cols-1 gap-3 md:hidden">
+                    {filteredCheckins.map((checkin) => (
+                      <CheckinCard key={checkin.id} checkin={checkin} onCreateExemption={setSelectedCheckinForExemption} />
+                    ))}
+                  </div>
+
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-gray-50/80 border-b border-gray-200">
+                          <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Member</th>
+                          <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Metrics</th>
+                          <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                          <th className="text-center px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Score</th>
+                          <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Time</th>
+                          <th className="w-32 px-6 py-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {filteredCheckins.map((checkin) => (
+                          <CheckinRow key={checkin.id} checkin={checkin} onCreateExemption={setSelectedCheckinForExemption} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {/* Not Checked In */}
+              {notCheckedInMembers.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-gray-600 text-base">
+                      <Clock className="h-5 w-5" />Not Checked In ({notCheckedInMembers.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                      {notCheckedInMembers.map((member) => (
+                        <div key={member.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                          <Avatar firstName={member.firstName} lastName={member.lastName} size="sm" />
+                          <p className="text-sm font-medium text-gray-900 truncate">{member.firstName} {member.lastName}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+
+          {/* SUDDEN CHANGES PANEL */}
+          {activeTab === 'changes' && (
+            <div className="space-y-4">
+              {suddenChanges.length === 0 ? (
+                <Card><CardContent className="py-12"><EmptyState icon={TrendingDown} title="No sudden changes" description="All workers are within normal range." /></CardContent></Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {suddenChanges.map((change) => (
+                    <SuddenChangeCard key={change.userId} {...change} />
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Not Checked In */}
-          {notCheckedInMembers.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <UserX className="h-5 w-5 text-gray-400" />
-                  Not Checked In ({notCheckedInMembers.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {notCheckedInMembers.map((member) => (
-                    <div
-                      key={member.id}
-                      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
-                    >
-                      <Avatar
-                        firstName={member.firstName}
-                        lastName={member.lastName}
-                        size="sm"
-                      />
-                      <div className="min-w-0">
-                        <p className="font-medium text-gray-900 truncate text-sm">
-                          {member.firstName} {member.lastName}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'changes' && (
-        <div className="space-y-6">
-          {suddenChanges.length === 0 ? (
-            <Card>
-              <CardContent className="py-12">
-                <EmptyState
-                  icon={TrendingDown}
-                  title="No sudden changes detected"
-                  description="All workers are within their normal wellness range."
-                />
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {suddenChanges.map((change) => (
-                <SuddenChangeCard
-                  key={change.userId}
-                  {...change}
-                  onViewDetails={(id) => console.log('View details:', id)}
-                  onScheduleOneOnOne={(id) => console.log('Schedule 1-on-1:', id)}
-                />
-              ))}
             </div>
           )}
-        </div>
-      )}
 
-      {activeTab === 'absences' && (
-        <div className="space-y-6">
-          {/* Pending Absence Reviews */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-orange-500" />
-                Pending Absence Reviews ({pendingAbsences?.count || 0})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+          {/* EXEMPTIONS PANEL */}
+          {activeTab === 'exemptions' && (
+            <div className="space-y-6">
+              {/* Pending */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-warning-500" />Pending ({pendingExemptions.length})
+                </h3>
+                {pendingExemptions.length === 0 ? (
+                  <Card><CardContent className="py-8"><EmptyState icon={Clock} title="No pending requests" /></CardContent></Card>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {pendingExemptions.map((exemption) => (
+                      <PendingExemptionCard key={exemption.id} exemption={exemption} onApprove={handleApprove} onReject={handleReject} isLoading={approveMutation.isPending || rejectMutation.isPending} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Active */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-success-500" />Active ({activeExemptions.length})
+                </h3>
+                {activeExemptions.length === 0 ? (
+                  <Card><CardContent className="py-8"><EmptyState icon={Timer} title="No active exemptions" /></CardContent></Card>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {activeExemptions.map((exemption) => (
+                      <ActiveExemptionCard key={exemption.id} exemption={exemption} onEndEarly={handleEndEarly} timezone={team.timezone} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ABSENCES PANEL */}
+          {activeTab === 'absences' && (
+            <div className="space-y-6">
               {!pendingAbsences || pendingAbsences.count === 0 ? (
-                <EmptyState
-                  icon={Calendar}
-                  title="No pending absence reviews"
-                  description="All absence justifications have been reviewed."
-                />
+                <Card><CardContent className="py-12"><EmptyState icon={CalendarX} title="No pending absence reviews" description="All justifications have been reviewed." /></CardContent></Card>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {pendingAbsences.data.map((absence) => (
@@ -865,224 +870,49 @@ export function DailyMonitoringPage() {
                   ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
 
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-medium text-blue-800">How Absence Reviews Work</p>
-                <ul className="text-sm text-blue-600 mt-1 space-y-1">
-                  <li><strong>Excused:</strong> No penalty - absence will not affect the worker's grade</li>
-                  <li><strong>Unexcused:</strong> 0 points - counts against the worker's attendance grade</li>
-                </ul>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-800">How Absence Reviews Work</p>
+                    <ul className="text-sm text-blue-600 mt-1 space-y-1">
+                      <li><strong>Excused:</strong> No penalty - won't affect attendance grade</li>
+                      <li><strong>Unexcused:</strong> 0 points - counts against attendance</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {activeTab === 'exemptions' && (
-        <div className="space-y-6">
-          {/* Pending Exemptions */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Clock className="h-5 w-5 text-warning-500" />
-              Pending Requests ({pendingExemptions.length})
-            </h3>
-            {pendingExemptions.length === 0 ? (
-              <Card>
-                <CardContent className="py-8">
-                  <EmptyState
-                    icon={Clock}
-                    title="No pending requests"
-                    description="All exemption requests have been reviewed."
-                  />
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {pendingExemptions.map((exemption) => (
-                  <PendingExemptionCard
-                    key={exemption.id}
-                    exemption={exemption}
-                    onApprove={handleApprove}
-                    onReject={handleReject}
-                    isLoading={approveMutation.isPending || rejectMutation.isPending}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Active Exemptions */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-success-500" />
-              Active Exemptions ({activeExemptions.length})
-            </h3>
-            {activeExemptions.length === 0 ? (
-              <Card>
-                <CardContent className="py-8">
-                  <EmptyState
-                    icon={Timer}
-                    title="No active exemptions"
-                    description="No workers are currently on approved exemptions."
-                  />
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {activeExemptions.map((exemption) => (
-                  <ActiveExemptionCard
-                    key={exemption.id}
-                    exemption={exemption}
-                    onEndEarly={handleEndEarly}
-                    timezone={team.timezone}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Approve Modal */}
+      {/* Modals */}
       {showApproveModal && selectedExemption && (
         <ApproveModal
           exemption={selectedExemption}
-          onClose={() => {
-            setShowApproveModal(false);
-            setSelectedExemption(null);
-          }}
-          onConfirm={handleConfirmApprove}
+          onClose={() => { setShowApproveModal(false); setSelectedExemption(null); }}
+          onConfirm={(endDate, notes) => approveMutation.mutate({ id: selectedExemption.id, endDate, notes })}
           isLoading={approveMutation.isPending}
           timezone={team.timezone}
         />
       )}
 
-      {/* Create Exemption Modal */}
       {selectedCheckinForExemption && (
         <CreateExemptionModal
           checkin={selectedCheckinForExemption}
           onClose={() => setSelectedCheckinForExemption(null)}
-          onConfirm={(data) => {
-            createExemptionMutation.mutate({
-              userId: selectedCheckinForExemption.userId,
-              type: data.type,
-              reason: data.reason,
-              endDate: data.endDate,
-              checkinId: selectedCheckinForExemption.id,
-              notes: data.notes,
-            });
-          }}
+          onConfirm={(formData) => createExemptionMutation.mutate({
+            userId: selectedCheckinForExemption.userId,
+            checkinId: selectedCheckinForExemption.id,
+            ...formData,
+          })}
           isLoading={createExemptionMutation.isPending}
           timezone={team.timezone}
         />
       )}
-    </div>
-  );
-}
-
-// ============================================
-// CHECK-IN ROW COMPONENT
-// ============================================
-
-interface CheckinRowProps {
-  checkin: TodayCheckin;
-  onCreateExemption?: (checkin: TodayCheckin) => void;
-}
-
-function CheckinRow({ checkin, onCreateExemption }: CheckinRowProps) {
-  const statusColors = getStatusColor(checkin.readinessStatus);
-  const hasChange = checkin.changeFromAverage !== null && checkin.changeFromAverage < -10;
-  const canCreateExemption = checkin.readinessStatus === 'RED' && !checkin.hasExemptionRequest;
-
-  return (
-    <div className="py-4 hover:bg-gray-50 -mx-4 px-4 transition-colors">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          {/* Avatar */}
-          <Avatar
-            firstName={checkin.user.firstName}
-            lastName={checkin.user.lastName}
-            size="md"
-          />
-
-          {/* Info */}
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-medium text-gray-900">
-                {checkin.user.firstName} {checkin.user.lastName}
-              </span>
-              {checkin.user.currentStreak && checkin.user.currentStreak > 0 && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
-                  <Flame className="h-3 w-3" />
-                  {checkin.user.currentStreak}
-                </span>
-              )}
-              {hasChange && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-danger-100 text-danger-700">
-                  <TrendingDown className="h-3 w-3" />
-                  {checkin.changeFromAverage}%
-                </span>
-              )}
-            </div>
-            <MetricsRow
-              mood={checkin.mood}
-              stress={checkin.stress}
-              sleep={checkin.sleep}
-              physicalHealth={checkin.physicalHealth}
-              size="sm"
-            />
-          </div>
-        </div>
-
-        {/* Score and Actions */}
-        <div className="flex items-center gap-3">
-          {/* Create Exemption Button for RED status */}
-          {canCreateExemption && onCreateExemption && (
-            <button
-              onClick={() => onCreateExemption(checkin)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-danger-700 bg-danger-50 hover:bg-danger-100 rounded-lg transition-colors border border-danger-200"
-              title="Create exemption for this worker"
-            >
-              <UserMinus className="h-3.5 w-3.5" />
-              Put on Leave
-            </button>
-          )}
-          {checkin.hasExemptionRequest && (
-            <span className="text-xs text-warning-600 bg-warning-50 px-2 py-1 rounded">
-              {checkin.exemptionStatus === 'PENDING' ? 'Pending' : checkin.exemptionStatus}
-            </span>
-          )}
-          <div
-            className={cn(
-              'px-3 py-1.5 rounded-full flex items-center gap-2',
-              statusColors.bg
-            )}
-          >
-            <span className={cn('h-2 w-2 rounded-full', statusColors.dot)} />
-            <span className={cn('font-semibold', statusColors.text)}>
-              {checkin.readinessScore}%
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Low Score Reason - for RED status */}
-      {checkin.readinessStatus === 'RED' && checkin.lowScoreReason && (
-        <div className="mt-2 ml-14 flex items-center gap-2">
-          <MessageCircle className="h-3.5 w-3.5 text-danger-500 flex-shrink-0" />
-          <span className="text-xs text-danger-600">
-            Reason: {getLowScoreReasonLabel(checkin.lowScoreReason)}
-            {checkin.lowScoreDetails && ` - ${checkin.lowScoreDetails}`}
-          </span>
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
