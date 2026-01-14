@@ -2170,59 +2170,17 @@ teamsRoutes.get('/my/analytics', async (c) => {
     }
   }
 
-  // Format members on leave for response
-  // For 'today' period: show members currently on leave
-  // For other periods: show members who were on leave at any point during the period
-  let membersOnLeaveFormatted: {
-    id: string;
-    name: string;
-    avatar: string | null;
-    leaveType: string;
-    startDate: string | undefined;
-    endDate: string | undefined;
-  }[] = [];
-
-  if (period === 'today') {
-    membersOnLeaveFormatted = membersOnLeave.map((e) => ({
-      id: e.userId,
-      name: `${e.user.firstName} ${e.user.lastName}`,
-      avatar: e.user.avatar,
-      leaveType: e.type,
-      startDate: e.startDate?.toISOString().split('T')[0],
-      endDate: e.endDate?.toISOString().split('T')[0],
-    }));
-  } else {
-    // For period views, query exemptions that overlap with the selected period
-    const periodExemptions = await prisma.exception.findMany({
-      where: {
-        userId: { in: memberIds },
-        status: 'APPROVED',
-        startDate: { lte: endDate },
-        endDate: { gte: startDate },
-      },
-      include: {
-        user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-      },
-      orderBy: { startDate: 'desc' },
-    });
-
-    // Deduplicate by user (show most recent exemption per user)
-    const seenUsers = new Set<string>();
-    membersOnLeaveFormatted = periodExemptions
-      .filter((e) => {
-        if (seenUsers.has(e.userId)) return false;
-        seenUsers.add(e.userId);
-        return true;
-      })
-      .map((e) => ({
-        id: e.userId,
-        name: `${e.user.firstName} ${e.user.lastName}`,
-        avatar: e.user.avatar,
-        leaveType: e.type,
-        startDate: e.startDate?.toISOString().split('T')[0],
-        endDate: e.endDate?.toISOString().split('T')[0],
-      }));
-  }
+  // Format members CURRENTLY on leave for response
+  // Always show TODAY's active exemptions, regardless of selected period
+  // "Currently On Leave" means TODAY, not during the historical period
+  const membersOnLeaveFormatted = membersOnLeave.map((e) => ({
+    id: e.userId,
+    name: `${e.user.firstName} ${e.user.lastName}`,
+    avatar: e.user.avatar,
+    leaveType: e.type,
+    startDate: e.startDate?.toISOString().split('T')[0],
+    endDate: e.endDate?.toISOString().split('T')[0],
+  }));
 
   return c.json({
     team: {
@@ -2263,7 +2221,7 @@ teamsRoutes.get('/my/analytics', async (c) => {
           // For period views, show unique members who checked in during the period
           checkedIn: new Set(checkins.map((c) => c.userId)).size,
           activeMembers: totalMembers,
-          onLeave: membersOnLeaveFormatted.length, // Members on leave during the period
+          onLeave: membersOnLeaveFormatted.length, // Members CURRENTLY on leave (today)
           notCheckedIn: Math.max(0, totalMembers - new Set(checkins.map((c) => c.userId)).size),
         },
     statusDistribution,

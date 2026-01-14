@@ -292,16 +292,6 @@ TEAM GRADE:
     topReasonsSection += '\nThese are the most common reasons members reported when they had low readiness scores. Use this to identify patterns and provide targeted recommendations.\n';
   }
 
-  // Calculate Team Health Score (0-100)
-  // Formula: (Readiness 40%) + (Compliance 30%) + (Consistency 30%)
-  const avgStreak = data.memberAnalytics.length > 0
-    ? data.memberAnalytics.reduce((sum, m) => sum + m.currentStreak, 0) / data.memberAnalytics.length
-    : 0;
-  const consistencyScore = Math.min(100, avgStreak * 10); // 10 day streak = 100%
-  const teamHealthScore = Math.round(
-    (teamAvgScore * 0.4) + (teamAvgCheckinRate * 0.3) + (consistencyScore * 0.3)
-  );
-
   // Build top performers section for response
   const topPerformersData = topPerformers.map(m => ({
     name: m.name,
@@ -314,7 +304,6 @@ TEAM GRADE:
 
 === TEAM METRICS ===
 Total Members: ${data.totalMembers}
-Team Health Score: ${teamHealthScore}/100
 Average Readiness: ${teamAvgScore}%
 Check-in Compliance: ${teamAvgCheckinRate}%
 Today's Status: ${checkedInToday.length}/${data.totalMembers} checked in
@@ -331,16 +320,16 @@ ${topReasonsSection}
 ${memberDetails}
 
 Generate a professional report suitable for management review. Be specific with names and metrics. Avoid excessive use of emojis - this is a formal business report.
-${data.teamGrade ? `\nThe team grade is ${data.teamGrade.letter} (${data.teamGrade.label}). Explain the factors affecting this grade and provide actionable steps for improvement.` : ''}
+${data.teamGrade ? `\nThe team grade is ${data.teamGrade.letter} (${data.teamGrade.label}) with score ${data.teamGrade.score}/100. Explain the factors affecting this grade and provide actionable steps for improvement.` : ''}
 ${data.topReasons && data.topReasons.length > 0 ? `\nAddress the root causes identified in TOP REASONS FOR LOW SCORES with targeted interventions.` : ''}
 
 Provide a JSON response with:
-- summary: 2-3 sentence executive summary. Professional tone, include Team Health Score (${teamHealthScore}/100), team grade${data.teamGrade ? ` (${data.teamGrade.letter})` : ''}, and key metrics. Mention specific members requiring attention.
+- summary: 2-3 sentence executive summary. Professional tone. Include team grade${data.teamGrade ? ` (${data.teamGrade.letter})` : ''}, average readiness (${teamAvgScore}%), and compliance rate (${teamAvgCheckinRate}%). Mention specific members requiring attention if any are high risk.
 - highlights: Array of 2-3 positive observations. Include top performers by name and their achievements. Professional language.
 - concerns: Array of 2-3 specific concerns. MUST cite member names with their metrics (e.g., "John Doe: 45% avg score, 3 missed days - recommend intervention").
 - recommendations: Array of 2-3 actionable steps. Be specific with names and actions (e.g., "Schedule 1-on-1 with Maria Santos to address elevated stress levels of 8/10").
 - memberHighlights: Array of 3-5 member-specific notes formatted as "[Name]: [specific observation and recommendation]"
-- overallStatus: "healthy" if team health score >=75 and <20% at risk, "attention" if 50-74 or 20-40% at risk, "critical" if <50 or >40% at risk`;
+- overallStatus: "healthy" if avg readiness >=75% and compliance >=80% and <20% at risk, "attention" if moderate issues or 20-40% at risk, "critical" if readiness <60% or compliance <60% or >40% at risk`;
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
@@ -357,7 +346,7 @@ REPORT GUIDELINES:
 5. BALANCED - Include both achievements (recognition) and areas for improvement.
 
 ANALYSIS FRAMEWORK:
-- Team Health Score: Composite metric combining readiness, compliance, and consistency
+- Team Grade: Letter grade (A+ to F) based on (Avg Readiness × 60%) + (Compliance × 40%)
 - Risk Assessment: Categorize members as High/Medium/Low risk based on attendance and wellness patterns
 - Root Cause Analysis: Identify underlying factors (stress, sleep, workload) driving performance issues
 - Trend Analysis: Compare current metrics against baseline/previous periods

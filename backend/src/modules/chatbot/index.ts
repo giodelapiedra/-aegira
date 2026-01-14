@@ -437,6 +437,10 @@ async function handleGenerateSummary(
       ? Math.round(checkins.reduce((sum: number, c: any) => sum + c.sleep, 0) / checkins.length * 10) / 10
       : 0;
 
+    const avgPhysicalHealth = checkins.length > 0
+      ? Math.round(checkins.reduce((sum: number, c: any) => sum + (c.physicalHealth || 0), 0) / checkins.length * 10) / 10
+      : 0;
+
     const checkinRate = expectedWorkDays > 0
       ? Math.round((checkins.length / expectedWorkDays) * 100)
       : 0;
@@ -483,6 +487,7 @@ async function handleGenerateSummary(
       avgMood,
       avgStress,
       avgSleep,
+      avgPhysicalHealth,
       riskLevel,
     };
   });
@@ -518,22 +523,51 @@ async function handleGenerateSummary(
     select: {
       checkedInCount: true,
       expectedToCheckIn: true,
+      avgReadinessScore: true,
     },
   });
 
-  // Sum up totals from DailyTeamSummary
+  // Sum up totals from DailyTeamSummary (same calculation as Team Analytics)
   let summaryTotalCheckins = 0;
   let summaryTotalExpected = 0;
+  let summaryWeightedReadiness = 0;
   for (const summary of dailySummaries) {
     summaryTotalCheckins += summary.checkedInCount;
     summaryTotalExpected += summary.expectedToCheckIn;
+    // Weighted average: avgReadinessScore * checkedInCount (same as Team Analytics)
+    if (summary.avgReadinessScore !== null && summary.checkedInCount > 0) {
+      summaryWeightedReadiness += summary.avgReadinessScore * summary.checkedInCount;
+    }
   }
 
-  // Calculate Team Grade
+  // Calculate Team-Level Average Metrics (mood, stress, sleep)
   const membersWithCheckins = memberAnalytics.filter((m: any) => m.checkinCount > 0);
-  const teamAvgReadiness = membersWithCheckins.length > 0
+
+  const teamAvgMood = membersWithCheckins.length > 0
+    ? Math.round(membersWithCheckins.reduce((sum: number, m: any) => sum + m.avgMood, 0) / membersWithCheckins.length * 10) / 10
+    : 0;
+
+  const teamAvgStress = membersWithCheckins.length > 0
+    ? Math.round(membersWithCheckins.reduce((sum: number, m: any) => sum + m.avgStress, 0) / membersWithCheckins.length * 10) / 10
+    : 0;
+
+  const teamAvgSleep = membersWithCheckins.length > 0
+    ? Math.round(membersWithCheckins.reduce((sum: number, m: any) => sum + m.avgSleep, 0) / membersWithCheckins.length * 10) / 10
+    : 0;
+
+  const teamAvgPhysicalHealth = membersWithCheckins.length > 0
+    ? Math.round(membersWithCheckins.reduce((sum: number, m: any) => sum + m.avgPhysicalHealth, 0) / membersWithCheckins.length * 10) / 10
+    : 0;
+
+  // Calculate Team Grade
+  // Use DailyTeamSummary weighted average (same as Team Analytics page)
+  // Fallback to simple average of member avgScores if no daily summaries
+  const rawTeamAvgReadiness = membersWithCheckins.length > 0
     ? membersWithCheckins.reduce((sum: number, m: any) => sum + m.avgScore, 0) / membersWithCheckins.length
     : 0;
+  const teamAvgReadiness = summaryTotalCheckins > 0
+    ? Math.round(summaryWeightedReadiness / summaryTotalCheckins)
+    : rawTeamAvgReadiness;
 
   // Use DailyTeamSummary for compliance (consistent with Team Analytics)
   // Fallback to raw calculation if no summary data available
@@ -604,16 +638,6 @@ async function handleGenerateSummary(
     .sort((a, b) => b.count - a.count)
     .slice(0, 5); // Top 5 reasons
 
-  // Calculate Team Health Score (0-100)
-  // Formula: (Readiness 40%) + (Compliance 30%) + (Consistency 30%)
-  const avgStreak = memberAnalytics.length > 0
-    ? memberAnalytics.reduce((sum: number, m: any) => sum + m.currentStreak, 0) / memberAnalytics.length
-    : 0;
-  const consistencyScore = Math.min(100, avgStreak * 10); // 10 day streak = 100%
-  const teamHealthScore = Math.round(
-    (teamAvgReadiness * 0.4) + (teamCompliance * 0.3) + (consistencyScore * 0.3)
-  );
-
   // Get Top Performers (highest avg score with good check-in rate)
   const topPerformers = [...memberAnalytics]
     .filter((m: any) => m.checkinCount > 0 && m.checkinRate >= 80)
@@ -664,7 +688,10 @@ async function handleGenerateSummary(
           pendingExceptions,
           memberAnalytics,
           teamGrade,
-          teamHealthScore,
+          teamAvgMood,
+          teamAvgStress,
+          teamAvgSleep,
+          teamAvgPhysicalHealth,
           topPerformers,
           topReasons,
         },
@@ -708,7 +735,7 @@ async function handleGenerateSummary(
       message: {
         id: generateId(),
         role: 'assistant',
-        content: `**Team Performance Report Generated**\n\n**${team.name}**\n\n| Metric | Value |\n|--------|-------|\n| Team Health Score | ${teamHealthScore}/100 |\n| Team Grade | ${teamGrade.letter} (${teamGrade.label}) |\n| Status | ${statusLabel[summary.overallStatus]} |\n| Readiness | ${teamGrade.avgReadiness}% |\n| Compliance | ${teamGrade.compliance}% |\n\n**Executive Summary:**\n${summary.summary}\n\n**Report Contents:** ${summary.highlights.length} highlights, ${summary.concerns.length} concerns, ${summary.recommendations.length} recommendations`,
+        content: `**Team Performance Report Generated**\n\n**${team.name}**\n\n| Metric | Value |\n|--------|-------|\n| Team Grade | ${teamGrade.letter} (${teamGrade.label}) |\n| Status | ${statusLabel[summary.overallStatus]} |\n| Readiness | ${teamGrade.avgReadiness}% |\n| Compliance | ${teamGrade.compliance}% |\n| Avg Mood | ${teamAvgMood}/10 |\n| Avg Stress | ${teamAvgStress}/10 |\n| Avg Sleep | ${teamAvgSleep}/10 |\n| Avg Physical Health | ${teamAvgPhysicalHealth}/10 |\n\n**Executive Summary:**\n${summary.summary}\n\n**Report Contents:** ${summary.highlights.length} highlights, ${summary.concerns.length} concerns, ${summary.recommendations.length} recommendations`,
         timestamp: new Date(),
         links: [
           {
