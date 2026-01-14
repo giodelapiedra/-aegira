@@ -8,9 +8,23 @@ import { logger } from './utils/logger.js';
 
 const app = new Hono();
 
+// Allowed origins for CORS
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.FRONTEND_URL,
+  'https://aegira.health',
+  'https://www.aegira.health',
+].filter(Boolean) as string[];
+
 // Global middlewares
 app.use('*', cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: (origin) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return origin || allowedOrigins[0];
+    }
+    return null;
+  },
   credentials: true,
 }));
 app.use('*', secureHeaders());
