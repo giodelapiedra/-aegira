@@ -1383,6 +1383,8 @@ dailyMonitoringRoutes.get('/exemptions', async (c) => {
   const activeCount = exemptions.filter(
     (e) =>
       e.status === 'APPROVED' &&
+      e.startDate &&
+      e.endDate &&
       new Date(e.startDate) <= todayStart &&
       new Date(e.endDate) >= todayStart
   ).length;
@@ -1400,15 +1402,17 @@ dailyMonitoringRoutes.get('/exemptions', async (c) => {
     startDate: e.startDate,
     endDate: e.endDate,
     notes: e.notes,
-    reviewNotes: e.reviewNotes,
+    reviewNote: e.reviewNote,
     createdAt: e.createdAt,
-    reviewedAt: e.reviewedAt,
+    approvedAt: e.approvedAt,
     user: e.user,
     reviewedBy: e.reviewedBy,
     triggeredByCheckin: e.triggeredByCheckin,
     // Flag if currently active today
     isActiveToday:
       e.status === 'APPROVED' &&
+      e.startDate &&
+      e.endDate &&
       new Date(e.startDate) <= todayStart &&
       new Date(e.endDate) >= todayStart,
   }));
