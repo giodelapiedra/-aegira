@@ -194,7 +194,7 @@ export function SuddenChangeRow({
   firstName,
   lastName,
   todayScore,
-  todayStatus,
+  todayStatus: _todayStatus,
   averageScore,
   change,
   severity,

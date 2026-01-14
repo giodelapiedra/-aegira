@@ -19,12 +19,9 @@ import {
   Minus,
   AlertTriangle,
   MoreHorizontal,
-  Calendar,
   UserCheck,
   Clock,
   ChevronDown,
-  Search,
-  SlidersHorizontal,
   UserPlus,
 } from 'lucide-react';
 import { analyticsService, type TeamGradeSummary, type TeamsOverviewParams } from '../../services/analytics.service';
@@ -296,7 +293,7 @@ export function TeamsOverviewPage() {
     sort: 'grade',
     order: 'asc',
   });
-  const [showFilters, setShowFilters] = useState(false);
+  const [_showFilters, _setShowFilters] = useState(false);
 
   // Fetch teams overview
   const { data, isLoading, error } = useQuery({

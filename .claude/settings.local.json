@@ -84,7 +84,12 @@
       "WebFetch(domain:unsplash.com)",
       "Bash(npx eslint:*)",
       "Bash(git stash:*)",
-      "Bash(npm run db:push:*)"
+      "Bash(npm run db:push:*)",
+      "Bash(npx:*)",
+      "WebFetch(domain:localhost)",
+      "Bash(tree:*)",
+      "Bash(wc:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

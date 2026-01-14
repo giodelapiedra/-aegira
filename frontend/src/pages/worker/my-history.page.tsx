@@ -87,7 +87,7 @@ export function MyHistoryPage() {
       limit: PAGE_SIZE,
       startDate,
     }),
-    staleTime: 30000,
+    staleTime: 5 * 60 * 1000, // 5 minutes - history data doesn't change frequently
     placeholderData: (prev) => prev,
   });
 

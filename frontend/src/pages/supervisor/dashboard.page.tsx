@@ -15,7 +15,7 @@ import {
   ArrowDownRight,
   Activity,
   FileText,
-  Loader2,
+  
 } from 'lucide-react';
 import { analyticsService } from '../../services/analytics.service';
 
@@ -23,15 +23,13 @@ export function SupervisorDashboard() {
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['dashboard', 'stats'],
     queryFn: () => analyticsService.getDashboardStats(),
-    staleTime: 60 * 1000, // 1 minute
-    refetchInterval: 60 * 1000, // Auto-refresh every minute
+    staleTime: 5 * 60 * 1000, // 5 minutes - dashboard stats don't need real-time updates
   });
 
-  const { data: recentCheckins, isLoading: checkinsLoading } = useQuery({
+  const { data: recentCheckins, isLoading: _checkinsLoading } = useQuery({
     queryKey: ['dashboard', 'recentCheckins'],
     queryFn: () => analyticsService.getRecentCheckins(10),
-    staleTime: 30 * 1000, // 30 seconds
-    refetchInterval: 60 * 1000, // Auto-refresh every minute
+    staleTime: 2 * 60 * 1000, // 2 minutes - recent checkins can be slightly stale
   });
 
   if (statsLoading) {

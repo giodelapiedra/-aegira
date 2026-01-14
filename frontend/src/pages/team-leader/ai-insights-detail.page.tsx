@@ -14,12 +14,12 @@ import {
   Minus,
   Users,
   FileWarning,
-  Loader2,
+  
   Activity,
   CheckCircle2,
   AlertTriangle,
-  AlertCircle,
-  BarChart3,
+  
+  
   Sparkles,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -29,7 +29,6 @@ import { useUser } from '../../hooks/useUser';
 import { Button } from '../../components/ui/Button';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import {
-  formatDate,
   formatDateTimeFull,
   formatPeriod,
   STATUS_CONFIG,

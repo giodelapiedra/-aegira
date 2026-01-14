@@ -50,6 +50,26 @@ export interface MemberIncident {
   createdAt: string;
 }
 
+export type AbsenceStatus = 'PENDING_JUSTIFICATION' | 'PENDING_REVIEW' | 'EXCUSED' | 'UNEXCUSED';
+export type AbsenceReason = 'SICK' | 'FAMILY_EMERGENCY' | 'PERSONAL' | 'TRANSPORTATION' | 'WEATHER' | 'OTHER';
+
+export interface MemberAbsence {
+  id: string;
+  absenceDate: string;
+  reasonCategory: AbsenceReason | null;
+  explanation: string | null;
+  justifiedAt: string | null;
+  status: AbsenceStatus;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
+  createdAt: string;
+  reviewer?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  } | null;
+}
+
 export interface MemberAnalytics {
   trendData: {
     date: string;
@@ -182,6 +202,7 @@ export interface MemberProfile {
     totalCheckins: number;
     attendanceScore: number;
     exemptionsCount: number;
+    absencesCount: number;
     incidentsCount: number;
   };
   recentCheckins: MemberCheckin[];
@@ -308,6 +329,17 @@ export const teamService = {
 
   async getMemberIncidents(userId: string): Promise<{ data: MemberIncident[] }> {
     const response = await api.get(`/teams/members/${userId}/incidents`);
+    return response.data;
+  },
+
+  async getMemberAbsences(
+    userId: string,
+    params?: { page?: number; limit?: number; status?: AbsenceStatus }
+  ): Promise<{
+    data: MemberAbsence[];
+    pagination: { page: number; limit: number; total: number; totalPages: number };
+  }> {
+    const response = await api.get(`/teams/members/${userId}/absences`, { params });
     return response.data;
   },
 

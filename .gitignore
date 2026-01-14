@@ -52,3 +52,7 @@ coverage/
 *.tsbuildinfo
 .eslintcache
 .cache/
+
+# Claude Code temp files
+tmpclaude-*
+**/tmpclaude-*

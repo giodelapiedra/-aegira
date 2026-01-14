@@ -6,7 +6,7 @@ import { QueryClient } from '@tanstack/react-query';
  */
 export function invalidateRelatedQueries(
   queryClient: QueryClient,
-  type: 'incidents' | 'exceptions' | 'checkins' | 'teams' | 'users' | 'analytics' | 'notifications'
+  type: 'incidents' | 'exceptions' | 'checkins' | 'teams' | 'users' | 'analytics' | 'notifications' | 'leave-status' | 'approved-leave-today'
 ) {
   const queryKeysMap: Record<string, string[][]> = {
     incidents: [
@@ -56,6 +56,12 @@ export function invalidateRelatedQueries(
     notifications: [
       ['notifications'],
       ['unread-notifications'],
+    ],
+    'leave-status': [
+      ['leave-status'],
+    ],
+    'approved-leave-today': [
+      ['approved-leave-today'],
     ],
   };
 

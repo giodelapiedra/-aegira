@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button } from '../../components/ui/Button';
@@ -37,8 +37,7 @@ interface FieldData {
 }
 
 export function VisualPDFFillPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -273,30 +272,7 @@ export function VisualPDFFillPage() {
   const currentPageFields = fieldData?.fields.filter(f => f.page === currentPage) || [];
   const currentPageSize = fieldData?.pageSizes?.[currentPage - 1];
 
-  // Calculate scale factor between PDF coordinates and rendered size
-  const getScaleFactor = useCallback(() => {
-    if (!currentPageSize || !pageWidth) return 1;
-    return (pageWidth * scale) / currentPageSize.width;
-  }, [currentPageSize, pageWidth, scale]);
 
-  // Convert PDF coordinates to screen position
-  const getFieldPosition = useCallback((field: DetectedField) => {
-    if (!field.rect || !currentPageSize) return null;
-
-    const scaleFactor = getScaleFactor();
-    const renderedHeight = currentPageSize.height * scaleFactor;
-
-    // PDF coordinates are from bottom-left, we need to convert to top-left
-    const left = field.rect.x * scaleFactor;
-    const bottom = field.rect.y * scaleFactor;
-    const width = field.rect.width * scaleFactor;
-    const height = field.rect.height * scaleFactor;
-
-    // Convert from bottom-origin to top-origin
-    const top = renderedHeight - bottom - height;
-
-    return { left, top, width, height };
-  }, [currentPageSize, getScaleFactor]);
 
   if (isLoading) {
     return (
@@ -312,7 +288,7 @@ export function VisualPDFFillPage() {
         <AlertTriangle className="h-10 w-10 text-danger-500 mx-auto mb-3" />
         <p className="text-gray-500">Template not found</p>
         <Link to="/whs/pdf-templates">
-          <Button variant="outline" className="mt-4">Back to Templates</Button>
+          <Button variant="secondary" className="mt-4">Back to Templates</Button>
         </Link>
       </div>
     );
@@ -587,7 +563,7 @@ export function VisualPDFFillPage() {
               </Button>
               {incidentId ? (
                 <Link to={`/incidents/${incidentId}`} className="block">
-                  <Button variant="outline" className="w-full">Go to Incident</Button>
+                  <Button variant="secondary" className="w-full">Go to Incident</Button>
                 </Link>
               ) : (
                 <Button variant="secondary" className="w-full" onClick={() => {

@@ -13,6 +13,7 @@ import {
   isWorkDay,
   countWorkDaysInRange,
   calculateActualStreak,
+  toDbDate,
   DEFAULT_TIMEZONE,
 } from '../../utils/date-helpers.js';
 import {
@@ -502,14 +503,46 @@ async function handleGenerateSummary(
     }),
   ]);
 
+  // Query DailyTeamSummary for period compliance (same as Team Analytics)
+  const dbStartDate = toDbDate(startDate, timezone);
+  const dbEndDate = toDbDate(endDate, timezone);
+
+  const dailySummaries = await prisma.dailyTeamSummary.findMany({
+    where: {
+      teamId: team.id,
+      date: {
+        gte: dbStartDate,
+        lte: dbEndDate,
+      },
+    },
+    select: {
+      checkedInCount: true,
+      expectedToCheckIn: true,
+    },
+  });
+
+  // Sum up totals from DailyTeamSummary
+  let summaryTotalCheckins = 0;
+  let summaryTotalExpected = 0;
+  for (const summary of dailySummaries) {
+    summaryTotalCheckins += summary.checkedInCount;
+    summaryTotalExpected += summary.expectedToCheckIn;
+  }
+
   // Calculate Team Grade
   const membersWithCheckins = memberAnalytics.filter((m: any) => m.checkinCount > 0);
   const teamAvgReadiness = membersWithCheckins.length > 0
     ? membersWithCheckins.reduce((sum: number, m: any) => sum + m.avgScore, 0) / membersWithCheckins.length
     : 0;
-  const teamCompliance = memberAnalytics.length > 0
+
+  // Use DailyTeamSummary for compliance (consistent with Team Analytics)
+  // Fallback to raw calculation if no summary data available
+  const rawTeamCompliance = memberAnalytics.length > 0
     ? memberAnalytics.reduce((sum: number, m: any) => sum + m.checkinRate, 0) / memberAnalytics.length
     : 0;
+  const teamCompliance = summaryTotalExpected > 0
+    ? Math.round((summaryTotalCheckins / summaryTotalExpected) * 100)
+    : rawTeamCompliance;
 
   // Grade formula: (Avg Readiness × 60%) + (Compliance × 40%)
   const gradeScore = Math.round((teamAvgReadiness * 0.6) + (teamCompliance * 0.4));

@@ -10,16 +10,16 @@ import {
   FileText,
   AlertTriangle,
   CheckCircle2,
-  Loader2,
+  
   Activity,
 } from 'lucide-react';
-import { whsService, type WHSDashboardData } from '../../services/whs.service';
+import { whsService } from '../../services/whs.service';
 
 export function WHSDashboard() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['whs', 'dashboard'],
     queryFn: () => whsService.getDashboard(),
-    refetchInterval: 60000, // Refresh every minute
+    staleTime: 5 * 60 * 1000, // 5 minutes - WHS dashboard is not real-time critical
   });
 
   if (isLoading) {

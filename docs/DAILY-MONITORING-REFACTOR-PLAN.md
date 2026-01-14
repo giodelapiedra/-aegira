@@ -854,7 +854,86 @@ frontend/src/pages/team-leader/
 
 ---
 
-## 15. READY TO IMPLEMENT?
+## 15. CRITICAL EXEMPTION LOGIC - DO NOT BREAK!
+
+### Exemption Status Flow
+```
+PENDING ──(TL Approve)──► APPROVED ──(affects calculations)
+    │
+    └──(TL Reject)──► REJECTED (no effect)
+```
+
+### What PENDING Exemptions Do:
+```typescript
+// ❌ NOT counted in calculations
+// ❌ NOT excluded from "not checked in"
+// ✅ Just listed for Team Lead to review/approve
+```
+
+### What APPROVED Exemptions Do:
+```typescript
+// In daily-monitoring/index.ts:
+
+// 1. Active exemptions query (Line 285-314)
+const activeExemptions = await prisma.exception.findMany({
+  where: {
+    status: 'APPROVED',                    // ← Only APPROVED!
+    startDate: { lte: todayStart },        // Started
+    endDate: { gte: todayStart },          // Not ended
+  }
+});
+
+// 2. On-leave users (Line 384)
+const onLeaveUserIds = new Set(activeExemptions.map(e => e.user.id));
+
+// 3. Active members calculation (Line 387)
+const activeMembers = memberIds.length - onLeaveUserIds.size;
+
+// 4. Not checked in excludes on-leave (Line 392)
+const notCheckedIn = memberIds.filter(
+  id => !checkedInUserIds.has(id) && !onLeaveUserIds.has(id)  // ← Excludes on-leave!
+);
+```
+
+### In Team Grades Calculation (team-grades.ts):
+```typescript
+// Only APPROVED exemptions are fetched (Line 359-362)
+const exemptions = await prisma.exception.findMany({
+  where: {
+    status: 'APPROVED',   // ← Only APPROVED!
+  }
+});
+
+// Exempted days are counted as "excused" not "absent"
+// Member Score = (GREEN×100 + YELLOW×75 + ABSENT×0) / Counted Days
+// Excused days are NOT in Counted Days denominator!
+```
+
+### Must Preserve Logic:
+| Logic | Location | Status |
+|-------|----------|--------|
+| PENDING ≠ on-leave | daily-monitoring | ✅ Preserve |
+| Only APPROVED = on-leave | daily-monitoring Line 384 | ✅ Preserve |
+| On-leave excluded from "not checked in" | daily-monitoring Line 392 | ✅ Preserve |
+| Only APPROVED in grade calc | team-grades.ts Line 362 | ✅ Preserve |
+| Excused days not counted as absent | team-grades.ts | ✅ Preserve |
+
+### Exemption vs Absence Difference:
+```
+EXEMPTION (Exception table):
+- Worker/TL requests leave
+- TL must APPROVE before effective
+- Multi-day period (startDate → endDate)
+
+ABSENCE (Absence table):
+- System auto-creates when no check-in
+- TL reviews and marks EXCUSED or UNEXCUSED
+- Single day only
+```
+
+---
+
+## 16. READY TO IMPLEMENT?
 
 Before starting, verify:
 - [ ] Plan reviewed and understood
@@ -863,5 +942,6 @@ Before starting, verify:
 - [ ] Router import path noted
 - [ ] Reusable components identified
 - [ ] Types and services documented
+- [ ] **Exemption logic understood** ← CRITICAL
 
 Start with Phase 1: Backend API!

@@ -189,7 +189,7 @@ export function TemplatesPage() {
                   <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="secondary"
                       className="flex-1"
                       onClick={() => openFieldsModal(template)}
                       leftIcon={<Eye className="h-4 w-4" />}

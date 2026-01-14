@@ -69,7 +69,7 @@ function getTodayInTimezone(timezone?: string): string {
 }
 
 // Background colors for each status - soft pastel colors like reference
-const STATUS_BG_COLORS: Record<DayStatus | 'default', string> = {
+const STATUS_BG_COLORS: Record<Exclude<DayStatus, null> | 'default', string> = {
   'green': 'bg-emerald-50 hover:bg-emerald-100/80',
   'yellow': 'bg-amber-50 hover:bg-amber-100/80',
   'red': 'bg-orange-50 hover:bg-orange-100/80',
@@ -80,11 +80,10 @@ const STATUS_BG_COLORS: Record<DayStatus | 'default', string> = {
   'off': 'bg-gray-50/50',
   'before-start': 'bg-gray-50/30',
   'default': 'bg-white hover:bg-gray-50',
-  null: 'bg-white hover:bg-gray-50',
 };
 
 // Border accent colors for selected state
-const STATUS_BORDER_COLORS: Record<DayStatus | 'default', string> = {
+const STATUS_BORDER_COLORS: Record<Exclude<DayStatus, null> | 'default', string> = {
   'green': 'ring-2 ring-emerald-400',
   'yellow': 'ring-2 ring-amber-400',
   'red': 'ring-2 ring-orange-400',
@@ -95,7 +94,6 @@ const STATUS_BORDER_COLORS: Record<DayStatus | 'default', string> = {
   'off': 'ring-2 ring-gray-300',
   'before-start': 'ring-2 ring-gray-200',
   'default': 'ring-2 ring-indigo-400',
-  null: 'ring-2 ring-indigo-400',
 };
 
 export function Calendar({

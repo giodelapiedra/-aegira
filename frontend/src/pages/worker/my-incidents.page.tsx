@@ -127,7 +127,7 @@ export function MyIncidentsPage() {
         title="My Incidents"
         description="Track your reported incidents and their status"
         icon={AlertTriangle}
-        iconClassName="bg-danger-100 text-danger-600"
+        className="bg-danger-100 text-danger-600"
         actions={[
           {
             label: 'Refresh',

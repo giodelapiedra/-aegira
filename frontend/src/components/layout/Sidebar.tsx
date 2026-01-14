@@ -31,7 +31,7 @@ export function Sidebar({ isOpen, onClose, activeSubMenuId }: SidebarProps) {
   const [expandedMobileItem, setExpandedMobileItem] = useState<string | null>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileFlyoutRef = useRef<HTMLDivElement>(null);
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // Memoize navigation based on role
@@ -152,7 +152,7 @@ export function Sidebar({ isOpen, onClose, activeSubMenuId }: SidebarProps) {
       {/* ============================================ */}
       <aside
         className={cn(
-          'fixed top-0 left-0 z-50 h-screen lg:hidden',
+          'fixed inset-y-0 left-0 z-50 lg:hidden',
           'bg-slate-900',
           'flex flex-col',
           'transition-transform duration-300 ease-out',

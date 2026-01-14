@@ -258,13 +258,16 @@ export async function generateTeamAnalyticsSummary(
   }
 
   // Calculate team averages
+  // Use teamGrade values (from DailyTeamSummary) when available for consistency with Team Analytics
   const membersWithCheckins = data.memberAnalytics.filter(m => m.checkinCount > 0);
-  const teamAvgScore = membersWithCheckins.length > 0
-    ? Math.round(membersWithCheckins.reduce((sum, m) => sum + m.avgScore, 0) / membersWithCheckins.length)
-    : 0;
-  const teamAvgCheckinRate = data.memberAnalytics.length > 0
-    ? Math.round(data.memberAnalytics.reduce((sum, m) => sum + m.checkinRate, 0) / data.memberAnalytics.length)
-    : 0;
+  const teamAvgScore = data.teamGrade?.avgReadiness
+    ?? (membersWithCheckins.length > 0
+      ? Math.round(membersWithCheckins.reduce((sum, m) => sum + m.avgScore, 0) / membersWithCheckins.length)
+      : 0);
+  const teamAvgCheckinRate = data.teamGrade?.compliance
+    ?? (data.memberAnalytics.length > 0
+      ? Math.round(data.memberAnalytics.reduce((sum, m) => sum + m.checkinRate, 0) / data.memberAnalytics.length)
+      : 0);
 
   // Build team grade section if available
   let teamGradeSection = '';

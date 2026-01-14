@@ -1,17 +1,17 @@
 import { useState } from 'react';
+import type { Role } from '../../types/user';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   teamService,
   type MemberCheckin,
   type MemberExemption,
   type MemberIncident,
-  type TeamWithStats,
+  type MemberAbsence,
 } from '../../services/team.service';
 import { ReadinessTrendChart } from '../../components/charts/ReadinessTrendChart';
 import { StatusDistributionChart } from '../../components/charts/StatusDistributionChart';
 import { MetricsAverageChart } from '../../components/charts/MetricsAverageChart';
-import { userService } from '../../services/user.service';
 import { Card, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -22,6 +22,8 @@ import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { formatDisplayDate, formatTime, formatDisplayDateTime } from '../../lib/date-utils';
 import { cn } from '../../lib/utils';
 import { getExceptionTypeLabel } from '../../services/exemption.service';
+// Use shared hooks and components from team-members module
+import { useMemberMutations, useTransferTeams, TransferMemberModal } from './team-members';
 import {
   ArrowLeft,
   Users,
@@ -31,6 +33,7 @@ import {
   Clock,
   Flame,
   Calendar,
+  CalendarX2,
   Mail,
   Phone,
   Shield,
@@ -41,10 +44,8 @@ import {
   Brain,
   Moon,
   Heart,
-  Loader2,
   TrendingUp,
   AlertTriangle,
-  ChevronDown,
   BarChart3,
 } from 'lucide-react';
 
@@ -52,9 +53,8 @@ export function MemberProfilePage() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
   const toast = useToast();
-  const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'checkins' | 'exemptions' | 'incidents'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'checkins' | 'attendance' | 'incidents'>('overview');
   const [checkinPage, setCheckinPage] = useState(1);
   const [checkinFilter, setCheckinFilter] = useState<'all' | 'GREEN' | 'YELLOW' | 'RED'>('all');
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -70,11 +70,37 @@ export function MemberProfilePage() {
     staleTime: 1000 * 60 * 5, // 5 minutes - avoid refetching on tab switches
   });
 
-  // Get all teams for transfer dropdown (forTransfer: true allows Team Leads to see all company teams)
-  const { data: allTeamsData } = useQuery({
-    queryKey: ['all-teams-for-transfer'],
-    queryFn: () => teamService.getAll({ forTransfer: true }),
+  // Get teams for transfer (using shared hook)
+  const { teams: transferTeams, isLoading: teamsLoading } = useTransferTeams({
     enabled: showTransferModal,
+    excludeTeamId: member?.teamId,
+  });
+
+  // Member mutations (using shared hook)
+  const { transferMutation, deactivateMutation, reactivateMutation } = useMemberMutations({
+    onTransferSuccess: () => {
+      toast.success('Member transferred successfully');
+      setShowTransferModal(false);
+      setSelectedTeamId('');
+      navigate('/team/members');
+    },
+    onTransferError: () => {
+      toast.error('Failed to transfer member');
+    },
+    onDeactivateSuccess: () => {
+      toast.success('Member deactivated successfully');
+      setShowDeactivateModal(false);
+    },
+    onDeactivateError: () => {
+      toast.error('Failed to deactivate member');
+    },
+    onReactivateSuccess: () => {
+      toast.success('Member reactivated successfully');
+      setShowReactivateModal(false);
+    },
+    onReactivateError: () => {
+      toast.error('Failed to reactivate member');
+    },
   });
 
   // Get member check-ins (paginated)
@@ -90,11 +116,19 @@ export function MemberProfilePage() {
     staleTime: 1000 * 60 * 2, // 2 minutes
   });
 
-  // Get member exemptions
+  // Get member exemptions (planned leaves)
   const { data: exemptionsData, isLoading: exemptionsLoading } = useQuery({
     queryKey: ['member-exemptions', userId],
     queryFn: () => teamService.getMemberExemptions(userId!),
-    enabled: !!userId && activeTab === 'exemptions',
+    enabled: !!userId && activeTab === 'attendance',
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+
+  // Get member absences (unplanned - missed check-ins)
+  const { data: absencesData, isLoading: absencesLoading } = useQuery({
+    queryKey: ['member-absences', userId],
+    queryFn: () => teamService.getMemberAbsences(userId!),
+    enabled: !!userId && activeTab === 'attendance',
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
@@ -116,51 +150,6 @@ export function MemberProfilePage() {
 
   // Use latest check-in from profile data (no separate API call needed)
   const latestCheckin = member?.recentCheckins?.[0];
-
-  // Deactivate mutation
-  const deactivateMutation = useMutation({
-    mutationFn: (id: string) => userService.deactivate(id),
-    onSuccess: () => {
-      toast.success('Member deactivated successfully');
-      queryClient.invalidateQueries({ queryKey: ['member-profile', userId] });
-      queryClient.invalidateQueries({ queryKey: ['my-team'] });
-      setShowDeactivateModal(false);
-    },
-    onError: () => {
-      toast.error('Failed to deactivate member');
-    },
-  });
-
-  // Reactivate mutation
-  const reactivateMutation = useMutation({
-    mutationFn: (id: string) => userService.reactivate(id),
-    onSuccess: () => {
-      toast.success('Member reactivated successfully');
-      queryClient.invalidateQueries({ queryKey: ['member-profile', userId] });
-      queryClient.invalidateQueries({ queryKey: ['my-team'] });
-      setShowReactivateModal(false);
-    },
-    onError: () => {
-      toast.error('Failed to reactivate member');
-    },
-  });
-
-  // Transfer mutation
-  const transferMutation = useMutation({
-    mutationFn: ({ odUserId, teamId }: { odUserId: string; teamId: string }) =>
-      userService.update(odUserId, { teamId }),
-    onSuccess: () => {
-      toast.success('Member transferred successfully');
-      queryClient.invalidateQueries({ queryKey: ['my-team'] });
-      navigate('/team/members');
-    },
-    onError: () => {
-      toast.error('Failed to transfer member');
-    },
-  });
-
-  const allTeams: TeamWithStats[] = allTeamsData?.data || [];
-  const otherTeams = allTeams.filter((t) => t.id !== member?.teamId);
 
   const getStatusConfig = (status: string) => {
     switch (status) {
@@ -424,25 +413,25 @@ export function MemberProfilePage() {
             </span>
           </button>
           <button
-            onClick={() => setActiveTab('exemptions')}
+            onClick={() => setActiveTab('attendance')}
             className={cn(
               'flex-1 min-w-0 py-3 md:py-4 text-xs md:text-sm font-medium transition-colors flex flex-col md:flex-row items-center justify-center gap-1 md:gap-2 px-2 md:px-4',
-              activeTab === 'exemptions'
+              activeTab === 'attendance'
                 ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50/50'
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             )}
           >
             <div className="relative">
               <Shield className="h-5 w-5 md:h-4 md:w-4" />
-              {member.stats.exemptionsCount > 0 && (
+              {(member.stats.exemptionsCount + member.stats.absencesCount) > 0 && (
                 <span className="absolute -top-1 -right-1 md:hidden h-4 w-4 text-[10px] rounded-full bg-warning-500 text-white flex items-center justify-center">
-                  {member.stats.exemptionsCount > 99 ? '99+' : member.stats.exemptionsCount}
+                  {(member.stats.exemptionsCount + member.stats.absencesCount) > 99 ? '99+' : (member.stats.exemptionsCount + member.stats.absencesCount)}
                 </span>
               )}
             </div>
-            <span className="truncate">Exemptions</span>
+            <span className="truncate">Leave</span>
             <span className="hidden md:inline px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
-              {member.stats.exemptionsCount}
+              {member.stats.exemptionsCount + member.stats.absencesCount}
             </span>
           </button>
           <button
@@ -714,50 +703,41 @@ export function MemberProfilePage() {
             </div>
           )}
 
-          {/* Exemptions Tab */}
-          {activeTab === 'exemptions' && (
-            <div>
-              {exemptionsLoading ? (
-                <div className="flex items-center justify-center py-16">
-                  <LoadingSpinner size="md" />
-                </div>
-              ) : exemptionsData?.data && exemptionsData.data.length > 0 ? (
-                <div className="divide-y divide-gray-100">
-                  {/* Header - Desktop */}
-                  <div className="hidden md:grid md:grid-cols-12 gap-4 px-6 py-3 bg-gray-50 text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <div className="col-span-3">Type</div>
-                    <div className="col-span-3">Date Range</div>
-                    <div className="col-span-2 text-center">Status</div>
-                    <div className="col-span-2 text-center">Category</div>
-                    <div className="col-span-2">Reviewed By</div>
+          {/* Leave & Absences Tab */}
+          {activeTab === 'attendance' && (
+            <div className="divide-y divide-gray-200">
+              {/* Planned Leaves Section */}
+              <div className="p-6">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
+                  <Shield className="h-4 w-4 text-primary-500" />
+                  Planned Leaves (Exemptions)
+                </h3>
+                {exemptionsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <LoadingSpinner size="sm" />
                   </div>
-
-                  {exemptionsData.data.map((exemption: MemberExemption) => (
-                    <div
-                      key={exemption.id}
-                      className="grid grid-cols-2 md:grid-cols-12 gap-4 px-4 md:px-6 py-4 hover:bg-gray-50/50 transition-colors"
-                    >
-                      {/* Type */}
-                      <div className="col-span-1 md:col-span-3 flex items-center">
-                        <div className="flex items-center gap-2">
-                          <Shield className="h-4 w-4 text-gray-400" />
-                          <span className="text-sm font-medium text-gray-900">
-                            {getExceptionTypeLabel(exemption.type)}
-                          </span>
+                ) : exemptionsData?.data && exemptionsData.data.length > 0 ? (
+                  <div className="space-y-2">
+                    {exemptionsData.data.map((exemption: MemberExemption) => (
+                      <div
+                        key={exemption.id}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex-shrink-0">
+                            <Shield className="h-4 w-4 text-gray-400" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {getExceptionTypeLabel(exemption.type)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {exemption.startDate && exemption.endDate
+                                ? `${formatDisplayDate(exemption.startDate)} - ${formatDisplayDate(exemption.endDate)}`
+                                : formatDisplayDate(exemption.createdAt)}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-
-                      {/* Date Range - Desktop */}
-                      <div className="hidden md:flex md:col-span-3 items-center">
-                        <span className="text-sm text-gray-500">
-                          {exemption.startDate && exemption.endDate
-                            ? `${formatDisplayDate(exemption.startDate)} - ${formatDisplayDate(exemption.endDate)}`
-                            : formatDisplayDate(exemption.createdAt)}
-                        </span>
-                      </div>
-
-                      {/* Status */}
-                      <div className="col-span-1 md:col-span-2 flex items-center justify-end md:justify-center">
                         <Badge
                           variant={
                             exemption.status === 'APPROVED'
@@ -770,38 +750,68 @@ export function MemberProfilePage() {
                           {exemption.status}
                         </Badge>
                       </div>
-
-                      {/* Category - Desktop */}
-                      <div className="hidden md:flex md:col-span-2 items-center justify-center">
-                        {exemption.isExemption ? (
-                          <Badge variant="primary" className="text-xs">Exemption</Badge>
-                        ) : (
-                          <Badge variant="default" className="text-xs">Leave</Badge>
-                        )}
-                      </div>
-
-                      {/* Reviewed By - Desktop */}
-                      <div className="hidden md:flex md:col-span-2 items-center">
-                        {exemption.reviewedBy ? (
-                          <span className="text-sm text-gray-500">
-                            {exemption.reviewedBy.firstName} {exemption.reviewedBy.lastName}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-gray-400">-</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-16">
-                  <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-                    <Shield className="h-8 w-8 text-gray-400" />
+                    ))}
                   </div>
-                  <p className="text-gray-900 font-medium">No exemptions found</p>
-                  <p className="text-sm text-gray-500 mt-1">No leave or exemption records available</p>
-                </div>
-              )}
+                ) : (
+                  <p className="text-sm text-gray-500 text-center py-4">No planned leaves recorded</p>
+                )}
+              </div>
+
+              {/* Unplanned Absences Section */}
+              <div className="p-6">
+                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
+                  <CalendarX2 className="h-4 w-4 text-warning-500" />
+                  Unplanned Absences
+                </h3>
+                {absencesLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <LoadingSpinner size="sm" />
+                  </div>
+                ) : absencesData?.data && absencesData.data.length > 0 ? (
+                  <div className="space-y-2">
+                    {absencesData.data.map((absence: MemberAbsence) => (
+                      <div
+                        key={absence.id}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex-shrink-0">
+                            <CalendarX2 className="h-4 w-4 text-gray-400" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900">
+                              {formatDisplayDate(absence.absenceDate)}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {absence.reasonCategory
+                                ? absence.reasonCategory.replace('_', ' ')
+                                : 'No reason provided'}
+                              {absence.explanation && ` - ${absence.explanation}`}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge
+                          variant={
+                            absence.status === 'EXCUSED'
+                              ? 'success'
+                              : absence.status === 'UNEXCUSED'
+                              ? 'danger'
+                              : 'warning'
+                          }
+                        >
+                          {absence.status === 'PENDING_JUSTIFICATION'
+                            ? 'PENDING'
+                            : absence.status === 'PENDING_REVIEW'
+                            ? 'REVIEW'
+                            : absence.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 text-center py-4">No unplanned absences recorded</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -901,64 +911,40 @@ export function MemberProfilePage() {
         </div>
       </div>
 
-      {/* Transfer Modal */}
-      {showTransferModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowTransferModal(false)} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 animate-slide-up">
-            <div className="p-6">
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Transfer Member</h2>
-              <p className="text-sm text-gray-500 mb-6">
-                Transfer {member.firstName} {member.lastName} to another team. This will remove them from your team.
-              </p>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Select Destination Team
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={selectedTeamId}
-                      onChange={(e) => setSelectedTeamId(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl text-sm border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none"
-                    >
-                      <option value="">Select a team...</option>
-                      {otherTeams.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} ({t.memberCount} members)
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-6">
-                <Button variant="ghost" onClick={() => setShowTransferModal(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() =>
-                    transferMutation.mutate({
-                      odUserId: userId!,
-                      teamId: selectedTeamId,
-                    })
-                  }
-                  disabled={!selectedTeamId || transferMutation.isPending}
-                >
-                  {transferMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <ArrowRightLeft className="h-4 w-4 mr-2" />
-                  )}
-                  Transfer Member
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* Transfer Modal (using shared component) */}
+      {member && (
+        <TransferMemberModal
+          member={{
+            id: member.id,
+            firstName: member.firstName,
+            lastName: member.lastName,
+            email: member.email,
+            role: member.role as Role,
+            avatar: member.avatar,
+            isActive: member.isActive,
+            isOnLeave: member.isOnLeave,
+            currentStreak: member.currentStreak,
+            longestStreak: member.longestStreak,
+            checkinCount: member.stats?.totalCheckins || 0,
+            leaveType: member.activeExemption?.type || null,
+            leaveEndDate: member.activeExemption?.endDate || null,
+          }}
+          teams={transferTeams}
+          selectedTeamId={selectedTeamId}
+          onSelectTeam={setSelectedTeamId}
+          isOpen={showTransferModal}
+          onClose={() => {
+            setShowTransferModal(false);
+            setSelectedTeamId('');
+          }}
+          onTransfer={() => {
+            if (userId && selectedTeamId) {
+              transferMutation.mutate({ userId, teamId: selectedTeamId });
+            }
+          }}
+          isLoading={transferMutation.isPending}
+          isLoadingTeams={teamsLoading}
+        />
       )}
 
       {/* Deactivate Confirmation Modal */}

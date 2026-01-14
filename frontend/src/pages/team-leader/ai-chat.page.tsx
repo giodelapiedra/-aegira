@@ -366,7 +366,7 @@ const PeriodModal = memo(function PeriodModal({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-900">{option.label}</span>
-                      {option.recommended && (
+                      {('recommended' in option) && option.recommended && (
                         <span className="px-2 py-0.5 text-xs font-medium bg-purple-100 text-purple-700 rounded-full">
                           Recommended
                         </span>
@@ -514,7 +514,9 @@ export function AIChatPage() {
 
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - selectedPeriod);
+    // Match Team Analytics date range: selectedPeriod - 1 days back + today = selectedPeriod total days
+    // e.g., for 14 days: 13 days back + today = 14 days total
+    startDate.setDate(startDate.getDate() - (selectedPeriod - 1));
 
     setShowPeriodModal(false);
     const message = pendingMessage;

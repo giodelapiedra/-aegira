@@ -1072,6 +1072,7 @@ teamsRoutes.get('/members/:userId/profile', async (c) => {
     activeExemption,
     recentCheckins,
     exemptionsCount,
+    absencesCount,
     incidentsCount,
     performance,
   ] = await Promise.all([
@@ -1112,6 +1113,10 @@ teamsRoutes.get('/members/:userId/profile', async (c) => {
     prisma.exception.count({
       where: { userId: memberId },
     }),
+    // Absences count (unplanned)
+    prisma.absence.count({
+      where: { userId: memberId },
+    }),
     // Incidents count
     prisma.incident.count({
       where: { reportedBy: memberId },
@@ -1130,6 +1135,7 @@ teamsRoutes.get('/members/:userId/profile', async (c) => {
       totalCheckins: member.totalCheckins, // Use pre-computed value from User model
       attendanceScore,
       exemptionsCount,
+      absencesCount,
       incidentsCount,
     },
     recentCheckins,
@@ -1324,6 +1330,76 @@ teamsRoutes.get('/members/:userId/incidents', async (c) => {
 
   return c.json({
     data: incidents,
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
+});
+
+// GET /teams/members/:userId/absences - Get absences for member (unplanned absences)
+// Shows days when worker didn't check in and the review status (EXCUSED/UNEXCUSED)
+teamsRoutes.get('/members/:userId/absences', async (c) => {
+  const memberId = c.req.param('userId');
+  const companyId = c.get('companyId');
+  const currentUser = c.get('user');
+  const page = parseInt(c.req.query('page') || '1');
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
+  const status = c.req.query('status'); // Optional: EXCUSED, UNEXCUSED, PENDING_REVIEW, PENDING_JUSTIFICATION
+
+  // Verify member exists and belongs to company
+  const member = await prisma.user.findFirst({
+    where: { id: memberId, companyId },
+    select: { id: true, teamId: true },
+  });
+
+  if (!member) {
+    return c.json({ error: 'Member not found' }, 404);
+  }
+
+  // Check permission: TL can only view own team members
+  if (currentUser.role === 'TEAM_LEAD') {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: currentUser.id, companyId, isActive: true },
+    });
+    if (!leaderTeam || member.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only view members of your own team' }, 403);
+    }
+  }
+
+  const where: any = { userId: memberId };
+  if (status) {
+    where.status = status;
+  }
+
+  // Parallel fetch: data + count
+  const [absences, total] = await Promise.all([
+    prisma.absence.findMany({
+      where,
+      orderBy: { absenceDate: 'desc' },
+      select: {
+        id: true,
+        absenceDate: true,
+        reasonCategory: true,
+        explanation: true,
+        justifiedAt: true,
+        status: true,
+        reviewedAt: true,
+        reviewNotes: true,
+        createdAt: true,
+        reviewer: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.absence.count({ where }),
+  ]);
+
+  return c.json({
+    data: absences,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });

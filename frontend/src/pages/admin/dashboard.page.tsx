@@ -105,7 +105,7 @@ export function AdminDashboard() {
       const response = await systemLogsService.getLogs({ limit: 5 });
       return response.data;
     },
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 2 * 60 * 1000, // 2 minutes - logs don't need real-time updates
   });
 
   // Fetch log statistics
@@ -119,7 +119,7 @@ export function AdminDashboard() {
   const { data: recentCheckins, isLoading: checkinsLoading } = useQuery({
     queryKey: ['admin-recent-checkins'],
     queryFn: () => analyticsService.getRecentCheckins(10),
-    staleTime: 30 * 1000, // 30 seconds
+    staleTime: 2 * 60 * 1000, // 2 minutes - recent checkins can be slightly stale
   });
 
   return (

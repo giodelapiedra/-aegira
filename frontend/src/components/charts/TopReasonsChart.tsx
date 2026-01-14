@@ -66,7 +66,7 @@ export function TopReasonsChart({ data, maxItems = 5 }: TopReasonsChartProps) {
       <h3 className="text-sm font-medium text-gray-700 mb-4">Top Reasons for Low Scores</h3>
 
       <div className="space-y-3">
-        {displayData.map((item, index) => {
+        {displayData.map((item, _index) => {
           const Icon = REASON_ICONS[item.reason] || HelpCircle;
           const colors = REASON_COLORS[item.reason] || REASON_COLORS.OTHER;
           const percentage = (item.count / maxCount) * 100;

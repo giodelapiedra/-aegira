@@ -15,6 +15,7 @@ import {
   calculateActualStreak,
   formatLocalDate,
   getTodayForDbDate,
+  toDbDate,
   DEFAULT_TIMEZONE,
 } from '../../utils/date-helpers.js';
 import {
@@ -915,18 +916,74 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
     ? Math.round((prevTotalCheckins / prevTotalExpectedWorkDays) * 100)
     : 0;
 
-  // Build comparison object
+  // =====================================================
+  // USE DailyTeamSummary FOR CONSISTENCY WITH TEAM ANALYTICS
+  // This ensures AI Insights shows the same values as Team Analytics page
+  // =====================================================
+  // Convert dates to DB format (noon UTC) for proper DailyTeamSummary comparison
+  // DailyTeamSummary.date is stored as noon UTC, must use toDbDate() for matching
+  const dbStartDate = toDbDate(startDate, timezone);
+  const dbEndDate = toDbDate(endDate, timezone);
+
+  const dailySummaries = await prisma.dailyTeamSummary.findMany({
+    where: {
+      teamId,
+      companyId,
+      date: { gte: dbStartDate, lte: dbEndDate },
+      isWorkDay: true,
+      isHoliday: false,
+    },
+    select: {
+      checkedInCount: true,
+      expectedToCheckIn: true,
+      avgReadinessScore: true,
+      greenCount: true,
+      yellowCount: true,
+      redCount: true,
+    },
+  });
+
+  // Calculate period stats from DailyTeamSummary (same as Team Analytics)
+  let summaryTotalCheckins = 0;
+  let summaryTotalExpected = 0;
+  let summaryWeightedReadiness = 0;
+  let summaryTotalGreen = 0;
+  let summaryTotalYellow = 0;
+  let summaryTotalRed = 0;
+
+  for (const day of dailySummaries) {
+    summaryTotalCheckins += day.checkedInCount;
+    summaryTotalExpected += day.expectedToCheckIn;
+    if (day.avgReadinessScore !== null && day.checkedInCount > 0) {
+      summaryWeightedReadiness += day.avgReadinessScore * day.checkedInCount;
+    }
+    summaryTotalGreen += day.greenCount;
+    summaryTotalYellow += day.yellowCount;
+    summaryTotalRed += day.redCount;
+  }
+
+  // Use DailyTeamSummary values (consistent with Team Analytics)
+  // Fallback to raw calculation if no daily summaries exist
+  const periodCompliance = summaryTotalExpected > 0
+    ? Math.round((summaryTotalCheckins / summaryTotalExpected) * 100)
+    : currentCheckinRate; // Fallback
+
+  const periodAvgReadiness = summaryTotalCheckins > 0
+    ? Math.round(summaryWeightedReadiness / summaryTotalCheckins)
+    : currentAvgScore; // Fallback
+
+  // Build comparison object - use periodCompliance for consistency with Team Analytics
   const periodComparison = {
     current: {
       periodStart: startDate.toISOString(),
       periodEnd: endDate.toISOString(),
-      checkinRate: currentCheckinRate,
+      checkinRate: periodCompliance, // Use DailyTeamSummary-based compliance
       avgScore: currentAvgScore,
       atRiskCount: currentAtRiskCount,
-      totalCheckins: currentTotalCheckins,
-      greenCount: currentGreenCount,
-      yellowCount: currentYellowCount,
-      redCount: currentRedCount,
+      totalCheckins: summaryTotalCheckins, // Use DailyTeamSummary total
+      greenCount: summaryTotalGreen,
+      yellowCount: summaryTotalYellow,
+      redCount: summaryTotalRed,
     },
     previous: {
       periodStart: prevStartDate.toISOString(),
@@ -940,11 +997,34 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       redCount: prevRedCount,
     },
     changes: {
-      checkinRate: currentCheckinRate - prevCheckinRate,
+      checkinRate: periodCompliance - prevCheckinRate,
       avgScore: currentAvgScore - prevAvgScore,
       atRiskCount: currentAtRiskCount - prevAtRiskCount,
-      totalCheckins: currentTotalCheckins - prevTotalCheckins,
+      totalCheckins: summaryTotalCheckins - prevTotalCheckins,
     },
+  };
+
+  // Calculate team grade for snapshot (consistent with Team Analytics page)
+  // periodCompliance and periodAvgReadiness are already calculated above from DailyTeamSummary
+  // Formula: (Team Avg Score × 60%) + (Compliance × 40%)
+  const gradeScore = Math.round((periodAvgReadiness * 0.60) + (periodCompliance * 0.40));
+  const getGradeInfoLocal = (score: number) => {
+    if (score >= 90) return { letter: 'A', label: 'Excellent', color: 'GREEN' };
+    if (score >= 80) return { letter: 'B', label: 'Good', color: 'GREEN' };
+    if (score >= 70) return { letter: 'C+', label: 'Satisfactory', color: 'YELLOW' };
+    if (score >= 60) return { letter: 'C', label: 'Fair', color: 'YELLOW' };
+    if (score >= 50) return { letter: 'D', label: 'Needs Improvement', color: 'ORANGE' };
+    return { letter: 'F', label: 'Critical', color: 'RED' };
+  };
+  const gradeInfo = getGradeInfoLocal(gradeScore);
+
+  // Build teamGrade object for AI generator (uses DailyTeamSummary values)
+  const teamGradeForAI = {
+    score: gradeScore,
+    letter: gradeInfo.letter,
+    label: gradeInfo.label,
+    avgReadiness: periodAvgReadiness,
+    compliance: periodCompliance, // This is from DailyTeamSummary, consistent with Team Analytics
   };
 
   try {
@@ -956,6 +1036,7 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       memberAnalytics,
       openIncidents,
       pendingExceptions,
+      teamGrade: teamGradeForAI, // Pass correct team grade to AI
     });
 
     // Map frontend status to database enum
@@ -965,7 +1046,72 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       critical: 'CRITICAL',
     };
 
-    // Save to database
+    // Calculate team health score (different formula: Readiness 40% + Compliance 30% + Consistency 30%)
+    // For simplicity, use streak data to estimate consistency
+    const avgStreak = membersWithCheckins.length > 0
+      ? membersWithCheckins.reduce((sum, m) => sum + (m.currentStreak || 0), 0) / membersWithCheckins.length
+      : 0;
+    const consistencyScore = Math.min(100, avgStreak * 10); // 10 days streak = 100%
+    const teamHealthScore = Math.round(
+      (periodAvgReadiness * 0.40) + (periodCompliance * 0.30) + (consistencyScore * 0.30)
+    );
+
+    // Get top performers (top 3 by avgScore, minimum 70% check-in rate)
+    const topPerformers = [...memberAnalytics]
+      .filter(m => m.checkinRate >= 70 && m.checkinCount > 0)
+      .sort((a, b) => b.avgScore - a.avgScore)
+      .slice(0, 3)
+      .map(m => ({
+        name: m.name,
+        avgScore: m.avgScore,
+        checkinRate: m.checkinRate,
+        currentStreak: m.currentStreak || 0,
+      }));
+
+    // Get top reasons for low scores (from check-in data)
+    // Aggregate reasons from check-ins with low scores
+    const lowScoreCheckins = await prisma.checkin.findMany({
+      where: {
+        userId: { in: memberIds },
+        createdAt: { gte: startDate, lte: endDate },
+        readinessScore: { lt: 70 },
+        lowScoreReason: { not: null },
+      },
+      select: {
+        lowScoreReason: true,
+      },
+    });
+
+    // Count reason occurrences
+    const reasonCounts = new Map<string, number>();
+    for (const checkin of lowScoreCheckins) {
+      if (checkin.lowScoreReason) {
+        reasonCounts.set(checkin.lowScoreReason, (reasonCounts.get(checkin.lowScoreReason) || 0) + 1);
+      }
+    }
+
+    // Convert to sorted array with labels
+    const reasonLabels: Record<string, string> = {
+      POOR_SLEEP: 'Poor Sleep',
+      HIGH_STRESS: 'High Stress',
+      PHYSICAL_ILLNESS: 'Physical Illness',
+      MENTAL_HEALTH: 'Mental Health',
+      PERSONAL_ISSUES: 'Personal Issues',
+      WORK_ISSUES: 'Work Issues',
+      FATIGUE: 'Fatigue',
+      OTHER: 'Other',
+    };
+
+    const topReasons = Array.from(reasonCounts.entries())
+      .map(([reason, count]) => ({
+        reason,
+        label: reasonLabels[reason] || reason.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        count,
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    // Save to database with complete aggregateData
     const savedSummary = await prisma.aISummary.create({
       data: {
         companyId,
@@ -984,6 +1130,25 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
           pendingExceptions,
           memberAnalytics,
           periodComparison,
+          // Add team grade snapshot (consistent with Team Analytics page)
+          // Uses DailyTeamSummary for exact same values as Team Analytics
+          teamHealthScore,
+          teamGrade: {
+            score: gradeScore,
+            letter: gradeInfo.letter,
+            label: gradeInfo.label,
+            avgReadiness: periodAvgReadiness,
+            compliance: periodCompliance,
+          },
+          // Status distribution from DailyTeamSummary
+          statusDistribution: {
+            green: summaryTotalGreen,
+            yellow: summaryTotalYellow,
+            red: summaryTotalRed,
+            total: summaryTotalCheckins,
+          },
+          topPerformers,
+          topReasons,
         },
       },
     });

@@ -74,15 +74,32 @@ export async function detectAndCreateAbsences(
     baselineDate = getStartOfNextDay(new Date(user.createdAt), tz);
   }
 
-  // 4. Get yesterday in COMPANY TIMEZONE (not UTC!)
+  // 4. Get today and yesterday in COMPANY TIMEZONE (not UTC!)
   const nowInTz = getNowDT(tz);
+  const todayInTz = nowInTz.startOf('day');
   const yesterdayInTz = nowInTz.minus({ days: 1 }).startOf('day');
   const baselineDateInTz = toDateTime(baselineDate, tz).startOf('day');
 
-  // 5. If no gap, return early
-  if (baselineDateInTz >= yesterdayInTz) return [];
+  // 5. Check if shift has ended today (include today in detection)
+  const shiftEnd = user.team.shiftEnd || '17:00';
+  const [shiftEndHour, shiftEndMin] = shiftEnd.split(':').map(Number);
+  const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
+  const currentMinutes = nowInTz.hour * 60 + nowInTz.minute;
+  const shiftEndedToday = currentMinutes > shiftEndMinutes;
 
-  // 6. Get existing data for quick lookup
+  // Check if today is a work day
+  const todayDayOfWeek = getDayOfWeekInTimezone(todayInTz.toJSDate(), tz);
+  const todayDayName = DAY_NAMES[todayDayOfWeek];
+  const isTodayWorkDay = teamWorkDays.includes(todayDayName);
+
+  // If shift ended today AND today is a work day, include today in detection
+  // Otherwise, only check up to yesterday
+  const checkUntilDate = (isTodayWorkDay && shiftEndedToday) ? todayInTz : yesterdayInTz;
+
+  // 6. If no gap, return early
+  if (baselineDateInTz > checkUntilDate) return [];
+
+  // 7. Get existing data for quick lookup
   const [checkins, exemptions, holidays, existingAbsences] = await Promise.all([
     prisma.checkin.findMany({
       where: { userId, createdAt: { gte: baselineDate } },
@@ -117,10 +134,10 @@ export async function detectAndCreateAbsences(
 
   const createdAbsences = [];
 
-  // 7. Iterate using Luxon DateTime in company timezone
+  // 8. Iterate using Luxon DateTime in company timezone
   let current = baselineDateInTz; // Start from baseline date
 
-  while (current <= yesterdayInTz) {
+  while (current <= checkUntilDate) {
     const dateStr = current.toFormat('yyyy-MM-dd');
 
     // Get day of week in COMPANY TIMEZONE

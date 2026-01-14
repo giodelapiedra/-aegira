@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { exceptionService } from '../../services/exception.service';
 import { Button } from '../../components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
+import { Card } from '../../components/ui/Card';
 import { Pagination } from '../../components/ui/Pagination';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { useToast } from '../../components/ui/Toast';
@@ -13,7 +13,7 @@ import { useAuthStore } from '../../store/auth.store';
 import { cn } from '../../lib/utils';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import {
-  FileText,
+  
   CheckCircle,
   XCircle,
   Clock,
@@ -21,7 +21,7 @@ import {
   StopCircle,
   Trash2,
   X,
-  AlertCircle,
+  
   CalendarDays,
   ChevronRight,
   Inbox,
@@ -282,7 +282,6 @@ export function ApprovalsPage() {
               >
                 {/* Avatar */}
                 <Avatar
-                  src={exception.user?.avatar}
                   firstName={exception.user?.firstName}
                   lastName={exception.user?.lastName}
                   size="md"
@@ -354,7 +353,6 @@ export function ApprovalsPage() {
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               <div className="flex items-center gap-3">
                 <Avatar
-                  src={selectedException.user?.avatar}
                   firstName={selectedException.user?.firstName}
                   lastName={selectedException.user?.lastName}
                   size="md"

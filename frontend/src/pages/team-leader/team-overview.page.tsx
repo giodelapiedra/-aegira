@@ -14,7 +14,7 @@ import {
   AlertTriangle,
   Clock,
   Activity,
-  TrendingUp,
+  
   UserCheck,
   UserPlus,
   UserMinus,

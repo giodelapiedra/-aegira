@@ -15,13 +15,13 @@ export async function getHolidays(year?: number, month?: number): Promise<Holida
 // Check if a specific date is a holiday
 export async function checkHoliday(date: string): Promise<{ isHoliday: boolean; holiday: Holiday | null }> {
   const response = await api.get<{ isHoliday: boolean; holiday: Holiday | null }>(`/holidays/check/${date}`);
-  return response;
+  return response.data;
 }
 
 // Add a holiday (Executive only)
 export async function addHoliday(date: string, name: string): Promise<Holiday> {
   const response = await api.post<Holiday>('/holidays', { date, name });
-  return response;
+  return response.data;
 }
 
 // Remove a holiday by ID (Executive only)

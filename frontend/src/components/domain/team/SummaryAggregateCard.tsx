@@ -27,9 +27,11 @@ export function SummaryAggregateCard({ aggregate, periodLabel }: SummaryAggregat
   const complianceColor =
     aggregate.avgComplianceRate === null
       ? 'text-gray-500'
-      : aggregate.avgComplianceRate >= 90
+      : aggregate.avgComplianceRate >= 100
       ? 'text-green-600'
-      : aggregate.avgComplianceRate >= 70
+      : aggregate.avgComplianceRate >= 80
+      ? 'text-blue-600'
+      : aggregate.avgComplianceRate >= 60
       ? 'text-yellow-600'
       : 'text-red-600';
 

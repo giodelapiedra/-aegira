@@ -251,7 +251,7 @@ function StatCard({
   isLoading,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   icon: typeof Users;
   color: 'primary' | 'secondary' | 'success' | 'warning' | 'danger';
   isLoading?: boolean;

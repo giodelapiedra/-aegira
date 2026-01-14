@@ -73,7 +73,7 @@ export function FillFormsPage() {
   const [pdfBase64, setPdfBase64] = useState('');
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSizes, setPageSizes] = useState<PageSize[]>([]);
+  const [_pageSizes, setPageSizes] = useState<PageSize[]>([]);
   const [fields, setFields] = useState<TemplateField[]>([]);
   const [values, setValues] = useState<Record<string, any>>({});
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);

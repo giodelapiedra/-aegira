@@ -8,10 +8,10 @@ import { cn } from '../../lib/utils';
 import {
   getStatusConfig,
   type StatusVariant,
-  readinessStatusConfig,
-  exceptionStatusConfig,
-  incidentStatusConfig,
-  incidentSeverityConfig,
+  
+  
+  
+  
 } from '../../lib/status-config';
 
 // ============================================

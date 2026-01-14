@@ -11,7 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  ReferenceArea,
+  
   Legend,
 } from 'recharts';
 import {
@@ -32,7 +32,7 @@ import {
   BrainCircuit,
   Gauge,
   Clock,
-  FileText,
+  
   ChevronDown,
   CalendarDays,
   Shield,
@@ -41,6 +41,7 @@ import { cn } from '../../lib/utils';
 import { teamService, type TeamAnalytics } from '../../services/team.service';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Avatar } from '../../components/ui/Avatar';
+import { getComplianceColorClasses, getComplianceGradientClasses } from '../../lib/status-config';
 
 type PeriodOption = 'today' | '7days' | '14days' | 'alltime' | 'custom';
 
@@ -277,18 +278,25 @@ export function TeamAnalyticsPage() {
               </div>
 
               {/* Period Compliance */}
-              <div className="text-center p-4 bg-success-50 rounded-xl border border-success-100">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <CheckCircle2 className="h-5 w-5 text-success-600" />
-                  <span className="text-2xl font-bold text-success-700">
-                    {analytics.teamGrade.compliance}%
-                  </span>
-                </div>
-                <p className="text-sm text-success-600 font-medium">Compliance</p>
-                <p className="text-xs text-success-400 mt-1">
-                  {period === 'today' ? "Today's rate" : `${period === '7days' ? '7-day' : period === '14days' ? '14-day' : 'Period'} average`}
-                </p>
-              </div>
+              {(() => {
+                const compliance = analytics.teamGrade.compliance;
+                const complianceColorClasses = getComplianceColorClasses(compliance);
+
+                return (
+                  <div className={cn('text-center p-4 rounded-xl border', complianceColorClasses.bg, complianceColorClasses.border)}>
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <CheckCircle2 className={cn('h-5 w-5', complianceColorClasses.icon)} />
+                      <span className={cn('text-2xl font-bold', complianceColorClasses.text)}>
+                        {compliance}%
+                      </span>
+                    </div>
+                    <p className={cn('text-sm font-medium', complianceColorClasses.label)}>Compliance</p>
+                    <p className={cn('text-xs mt-1', complianceColorClasses.subtext)}>
+                      {period === 'today' ? "Today's rate" : `${period === '7days' ? '7-day' : period === '14days' ? '14-day' : 'Period'} average`}
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Grade Formula Explanation */}
@@ -801,11 +809,17 @@ function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics[
             {latestScore !== null ? `${latestScore}%` : 'N/A'}
           </p>
         </div>
-        <div className="bg-gradient-to-br from-success-50 to-success-100/50 rounded-xl p-4 border border-success-200">
-          <span className="text-xs text-success-600 font-medium block mb-2">Check-in Compliance</span>
-          <p className="text-3xl font-bold text-success-700">{periodCompliance}%</p>
-          <p className="text-xs text-success-500 mt-1">Period Average</p>
-        </div>
+        {(() => {
+          const complianceColorClasses = getComplianceGradientClasses(periodCompliance);
+
+          return (
+            <div className={cn('bg-gradient-to-br rounded-xl p-4 border', complianceColorClasses.bg, complianceColorClasses.border)}>
+              <span className={cn('text-xs font-medium block mb-2', complianceColorClasses.label)}>Check-in Compliance</span>
+              <p className={cn('text-3xl font-bold', complianceColorClasses.value)}>{periodCompliance}%</p>
+              <p className={cn('text-xs mt-1', complianceColorClasses.subtext)}>Period Average</p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Chart */}

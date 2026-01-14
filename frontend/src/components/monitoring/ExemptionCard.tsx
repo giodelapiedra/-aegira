@@ -3,7 +3,7 @@
  * Cards for displaying pending and active exemptions
  */
 
-import { useState } from 'react';
+
 import { cn } from '../../lib/utils';
 import {
   Clock,
@@ -12,7 +12,7 @@ import {
   Calendar,
   User,
   FileText,
-  AlertTriangle,
+  
   Timer,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
@@ -39,7 +39,7 @@ export function PendingExemptionCard({
   exemption,
   onApprove,
   onReject,
-  onViewDetails,
+  onViewDetails: _onViewDetails,
   isLoading = false,
   className,
 }: PendingExemptionCardProps) {
@@ -120,7 +120,7 @@ export function PendingExemptionCard({
         <div className="flex gap-2">
           <Button
             size="sm"
-            variant="secondary"
+            variant="danger"
             className="flex-1"
             onClick={() => onReject(exemption)}
             disabled={isLoading}
@@ -130,7 +130,7 @@ export function PendingExemptionCard({
           </Button>
           <Button
             size="sm"
-            variant="primary"
+            variant="success"
             className="flex-1"
             onClick={() => onApprove(exemption)}
             disabled={isLoading}
@@ -159,7 +159,7 @@ interface ActiveExemptionCardProps {
 export function ActiveExemptionCard({
   exemption,
   onEndEarly,
-  onViewDetails,
+  onViewDetails: _onViewDetails,
   className,
   timezone = 'Asia/Manila',
 }: ActiveExemptionCardProps) {
@@ -230,7 +230,7 @@ export function ActiveExemptionCard({
         {onEndEarly && (
           <Button
             size="sm"
-            variant="secondary"
+            variant="danger"
             className="w-full"
             onClick={() => onEndEarly(exemption)}
           >

@@ -18,7 +18,7 @@ interface MetricsAverageChartProps {
   showLabels?: boolean;
 }
 
-export function MetricsAverageChart({ data, showLabels = true }: MetricsAverageChartProps) {
+export function MetricsAverageChart({ data, showLabels: _showLabels = true }: MetricsAverageChartProps) {
   const getColor = (value: number, inverted = false) => {
     if (inverted) {
       // For stress: lower is better

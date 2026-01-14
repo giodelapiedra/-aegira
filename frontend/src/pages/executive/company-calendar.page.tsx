@@ -5,6 +5,8 @@ import { Calendar } from '../../components/calendar';
 import { getHolidays, addHoliday, removeHoliday } from '../../services/holiday.service';
 import { useAuthStore } from '../../store/auth.store';
 import { useToast } from '../../components/ui/Toast';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 import type { Holiday } from '../../types/calendar';
 import api from '../../services/api';
 
@@ -30,7 +32,7 @@ export default function CompanyCalendarPage() {
   const [existingHoliday, setExistingHoliday] = useState<Holiday | null>(null);
 
   // Fetch holidays for the year
-  const { data: holidays = [], isLoading: holidaysLoading } = useQuery({
+  const { data: holidays = [], isLoading: _holidaysLoading } = useQuery({
     queryKey: ['holidays', year],
     queryFn: () => getHolidays(year),
   });
@@ -276,17 +278,24 @@ export default function CompanyCalendarPage() {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="holiday-modal-title"
+            className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4"
+          >
             <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="text-lg font-semibold">
+              <h3 id="holiday-modal-title" className="text-lg font-semibold">
                 {modalMode === 'add' ? 'Add Holiday' : 'Remove Holiday'}
               </h3>
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowModal(false)}
-                className="p-1 hover:bg-gray-100 rounded"
+                className="p-1"
               >
                 <X className="w-5 h-5" />
-              </button>
+              </Button>
             </div>
 
             <form onSubmit={handleSubmit} className="p-4">
@@ -296,15 +305,12 @@ export default function CompanyCalendarPage() {
 
               {modalMode === 'add' ? (
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Holiday Name
-                  </label>
-                  <input
+                  <Input
+                    label="Holiday Name"
                     type="text"
                     value={holidayName}
                     onChange={e => setHolidayName(e.target.value)}
                     placeholder="e.g., New Year's Day"
-                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     autoFocus
                   />
                 </div>
@@ -317,24 +323,23 @@ export default function CompanyCalendarPage() {
               )}
 
               <div className="flex gap-3">
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-2 border rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant={modalMode === 'add' ? 'primary' : 'danger'}
                   disabled={modalMode === 'add' && !holidayName.trim()}
-                  className={`flex-1 px-4 py-2 rounded-lg text-white transition-colors ${
-                    modalMode === 'add'
-                      ? 'bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300'
-                      : 'bg-red-600 hover:bg-red-700'
-                  }`}
+                  isLoading={addMutation.isPending || removeMutation.isPending}
+                  className="flex-1"
                 >
                   {modalMode === 'add' ? 'Add Holiday' : 'Remove'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>

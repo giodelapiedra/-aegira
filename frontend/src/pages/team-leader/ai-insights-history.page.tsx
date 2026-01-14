@@ -291,8 +291,7 @@ export function AIInsightsHistoryPage() {
     queryKey: ['ai-summary-history', team?.id],
     queryFn: () => analyticsService.getTeamAISummaryHistory(team!.id),
     enabled: !!team?.id,
-    staleTime: 0,
-    refetchOnMount: 'always',
+    staleTime: 30 * 60 * 1000, // 30 minutes - historical data doesn't change frequently
   });
 
   const allSummaries: AISummaryHistoryItem[] = historyData?.summaries || [];

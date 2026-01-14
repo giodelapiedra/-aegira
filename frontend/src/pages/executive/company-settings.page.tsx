@@ -80,6 +80,7 @@ export function CompanySettingsPage() {
         industry: updatedCompany.industry,
         size: updatedCompany.size,
         isActive: updatedCompany.isActive,
+        timezone: updatedCompany.timezone,
       });
 
       // Update local form data

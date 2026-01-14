@@ -35,7 +35,6 @@ export {
   formatDisplayDateTime,
   formatDisplayTime,
   formatRelativeTime,
-  formatShiftTime,
   getWeekCalendar,
   isToday,
   isFuture,
@@ -69,9 +68,8 @@ export {
   parseWorkDays,
   getCheckinInfo,
   isWithinShiftHours,
-  formatShiftTime,
   type CheckinInfo,
 } from './schedule-utils';
 
 // Query utilities
-export { queryClient } from './query-utils';
+export { invalidateRelatedQueries, invalidateAllQueries } from './query-utils';

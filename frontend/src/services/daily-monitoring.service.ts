@@ -35,6 +35,97 @@ export interface MonitoringStats {
   activeExemptions: number;
   suddenChanges: number;
   criticalChanges: number;
+  isHoliday?: boolean;
+  holidayName?: string | null;
+}
+
+// ============================================
+// PAGINATION TYPES
+// ============================================
+
+export interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  teamId?: string;
+}
+
+export interface StatsResponse {
+  team: TeamInfo;
+  stats: MonitoringStats;
+  generatedAt: string;
+}
+
+export interface CheckinsPaginatedResponse {
+  data: TodayCheckin[];
+  pagination: PaginationInfo;
+}
+
+export interface NotCheckedInPaginatedResponse {
+  data: NotCheckedInMember[];
+  pagination: PaginationInfo;
+  isHoliday: boolean;
+  holidayName?: string;
+}
+
+export interface SuddenChangesPaginatedResponse {
+  data: DetailedSuddenChange[];
+  pagination: PaginationInfo;
+  summary: {
+    total: number;
+    criticalCount: number;
+    significantCount: number;
+    notableCount: number;
+    minorCount: number;
+  };
+}
+
+export interface ExemptionWithDetails {
+  id: string;
+  type: string;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  startDate: string;
+  endDate: string;
+  notes?: string;
+  reviewNotes?: string;
+  createdAt: string;
+  reviewedAt?: string;
+  user: CheckinUser;
+  reviewedBy?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+  triggeredByCheckin?: {
+    id: string;
+    mood: number;
+    stress: number;
+    sleep: number;
+    physicalHealth: number;
+    readinessScore: number;
+    readinessStatus: ReadinessStatus;
+    notes?: string;
+    createdAt: string;
+  };
+  isActiveToday: boolean;
+}
+
+export interface ExemptionsPaginatedResponse {
+  data: ExemptionWithDetails[];
+  pagination: PaginationInfo;
+  summary: {
+    pendingCount: number;
+    approvedCount: number;
+    activeCount: number;
+  };
 }
 
 export interface CheckinUser {
@@ -222,6 +313,67 @@ export async function getMemberDetail(
   const response = await api.get(`/daily-monitoring/member/${memberId}`, {
     params: days ? { days } : undefined,
   });
+  return response.data;
+}
+
+// ============================================
+// NEW PAGINATED API FUNCTIONS
+// ============================================
+
+/**
+ * Get lightweight stats only (fast endpoint for initial page load)
+ * @param teamId - Optional team ID for higher roles
+ */
+export async function getStats(teamId?: string): Promise<StatsResponse> {
+  const response = await api.get('/daily-monitoring/stats', {
+    params: teamId ? { teamId } : undefined,
+  });
+  return response.data;
+}
+
+/**
+ * Get paginated today's check-ins
+ * @param params - Pagination and filter params
+ */
+export async function getCheckinsPaginated(
+  params: PaginatedParams & { status?: ReadinessStatus }
+): Promise<CheckinsPaginatedResponse> {
+  const response = await api.get('/daily-monitoring/checkins', { params });
+  return response.data;
+}
+
+/**
+ * Get paginated members who haven't checked in today
+ * Excludes members on approved leave
+ * @param params - Pagination and filter params
+ */
+export async function getNotCheckedInPaginated(
+  params: PaginatedParams
+): Promise<NotCheckedInPaginatedResponse> {
+  const response = await api.get('/daily-monitoring/not-checked-in', { params });
+  return response.data;
+}
+
+/**
+ * Get paginated sudden changes with summary counts
+ * @param params - Pagination and filter params
+ */
+export async function getSuddenChangesPaginated(
+  params: PaginatedParams & { minDrop?: number; severity?: SeverityLevel }
+): Promise<SuddenChangesPaginatedResponse> {
+  const response = await api.get('/daily-monitoring/sudden-changes', { params });
+  return response.data;
+}
+
+/**
+ * Get paginated exemptions (pending + active)
+ * IMPORTANT: Only APPROVED exemptions affect "on leave" calculations
+ * @param params - Pagination and filter params
+ */
+export async function getExemptionsPaginated(
+  params: PaginatedParams & { status?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'active' }
+): Promise<ExemptionsPaginatedResponse> {
+  const response = await api.get('/daily-monitoring/exemptions', { params });
   return response.data;
 }
 

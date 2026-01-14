@@ -6,7 +6,7 @@
 import {
   DAY_CODE_TO_NAME,
   DAY_CODE_TO_SHORT,
-  DAY_INDEX_TO_CODE,
+  
   CHECKIN_GRACE_PERIOD_MINUTES,
   type DayCode,
 } from './constants';
@@ -193,7 +193,7 @@ export function getCheckinInfo(
   if (!withinShift) {
     const now = new Date();
     const shiftStart = getShiftTimeAsDate(team.shiftStart);
-    const shiftEnd = getShiftTimeAsDate(team.shiftEnd);
+    // shiftEnd removed - unused
 
     if (now < shiftStart) {
       // Before shift starts

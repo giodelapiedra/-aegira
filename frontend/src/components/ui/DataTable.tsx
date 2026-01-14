@@ -225,7 +225,6 @@ export function DataTable<T>({
     enableRowSelection,
   });
 
-  const hasData = data.length > 0;
   const showPagination = pagination && pagination.totalPages > 1;
   const visibleRows = table.getRowModel().rows;
 

@@ -2,8 +2,7 @@ import api from './api';
 import type {
   Absence,
   AbsenceWithUser,
-  AbsenceWithReviewer,
-  AbsenceWithAll,
+    AbsenceWithAll,
   JustifyAbsencesRequest,
   ReviewAbsenceRequest,
   PendingAbsencesResponse,

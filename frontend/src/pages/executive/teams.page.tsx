@@ -923,7 +923,6 @@ export function TeamsPage() {
                         >
                           <div className="flex items-center gap-3">
                             <Avatar
-                              src={user.avatar}
                               firstName={user.firstName}
                               lastName={user.lastName}
                               size="md"
@@ -1132,8 +1131,8 @@ export function TeamsPage() {
           </>
         }
         confirmText="Reactivate"
-        type="primary"
-        action="update"
+        type="info"
+        action="custom"
         isLoading={reactivateMutation.isPending}
       />
     </div>
