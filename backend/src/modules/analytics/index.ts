@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { prisma } from '../../config/prisma.js';
 import type { AppContext } from '../../types/context.js';
-import { generateTeamAnalyticsSummary } from '../../utils/ai.js';
+import { generateTeamAnalyticsSummary, generateExpertDataInterpretation } from '../../utils/ai.js';
 import { env } from '../../config/env.js';
 import { createSystemLog } from '../system-logs/index.js';
 import {
@@ -646,6 +646,10 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       ? Math.round(validCheckins.reduce((sum, c) => sum + c.sleep, 0) / validCheckins.length * 10) / 10
       : 0;
 
+    const avgPhysical = validCheckins.length > 0
+      ? Math.round(validCheckins.reduce((sum, c) => sum + c.physicalHealth, 0) / validCheckins.length * 10) / 10
+      : 0;
+
     // Calculate check-in rate based on expected work days (after exemptions)
     const checkinRate = expectedWorkDays > 0
       ? Math.min(100, Math.round((validCheckins.length / expectedWorkDays) * 100))
@@ -653,19 +657,18 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
 
     const missedWorkDays = Math.max(0, expectedWorkDays - validCheckins.length);
 
-    // Determine risk level
-    // HIGH: 4+ missed work days (almost 1 full week), or 3+ RED, or 40%+ RED
-    // MEDIUM: 2-3 missed work days, or 3+ YELLOW, or 2+ RED
+    // Determine risk level based on Score only
+    // Score already factors in Mood, Stress, Sleep, Physical
+    // HIGH: avgScore < 40 (RED zone)
+    // MEDIUM: avgScore 40-69 (YELLOW zone)
+    // LOW: avgScore >= 70 (GREEN zone)
     let riskLevel: 'low' | 'medium' | 'high' = 'low';
-    if (redCount >= 3 || (checkins.length > 0 && redCount / checkins.length > 0.4)) {
-      riskLevel = 'high';
-    } else if (yellowCount >= 3 || redCount >= 2) {
-      riskLevel = 'medium';
-    }
-    if (missedWorkDays >= 4) {
-      riskLevel = 'high';
-    } else if (missedWorkDays >= 2 && riskLevel === 'low') {
-      riskLevel = 'medium';
+    if (validCheckins.length > 0) {
+      if (avgScore < 40) {
+        riskLevel = 'high';
+      } else if (avgScore < 70) {
+        riskLevel = 'medium';
+      }
     }
 
     // Calculate the actual streak based on team schedule
@@ -695,6 +698,7 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       avgMood,
       avgStress,
       avgSleep,
+      avgPhysical,
       riskLevel,
     };
   });
@@ -1029,6 +1033,60 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
 
   try {
     const user = c.get('user');
+
+    // Calculate team averages from all check-ins for Expert Data Interpretation
+    const teamAvgMood = allCheckins.length > 0
+      ? Math.round(allCheckins.reduce((sum, c) => sum + c.mood, 0) / allCheckins.length * 10) / 10
+      : 0;
+    const teamAvgStress = allCheckins.length > 0
+      ? Math.round(allCheckins.reduce((sum, c) => sum + c.stress, 0) / allCheckins.length * 10) / 10
+      : 0;
+    const teamAvgSleep = allCheckins.length > 0
+      ? Math.round(allCheckins.reduce((sum, c) => sum + c.sleep, 0) / allCheckins.length * 10) / 10
+      : 0;
+    const teamAvgPhysicalHealth = allCheckins.length > 0
+      ? Math.round(allCheckins.reduce((sum, c) => sum + c.physicalHealth, 0) / allCheckins.length * 10) / 10
+      : 0;
+
+    // Build member stats for Expert Data Interpretation
+    const memberStats = memberAnalytics.map((m: any) => ({
+      name: m.name,
+      avgScore: m.avgScore,
+      checkinCount: m.checkinCount,
+      redCount: m.redCount,
+      riskLevel: m.riskLevel,
+      avgMood: m.avgMood,
+      avgStress: m.avgStress,
+      avgSleep: m.avgSleep,
+      avgPhysical: m.avgPhysical,
+    }));
+
+    // Calculate status distribution
+    const statusDistributionForAI = {
+      GREEN: allCheckins.filter((c: any) => c.readinessStatus === 'GREEN').length,
+      YELLOW: allCheckins.filter((c: any) => c.readinessStatus === 'YELLOW').length,
+      RED: allCheckins.filter((c: any) => c.readinessStatus === 'RED').length,
+    };
+
+    // Generate Expert Data Interpretation (narrative style) - NEW FORMAT
+    const expertInterpretation = await generateExpertDataInterpretation({
+      teamName: team.name,
+      totalMembers: team.members.length,
+      totalCheckins: allCheckins.length,
+      periodStart: formatLocalDate(startDate, timezone),
+      periodEnd: formatLocalDate(endDate, timezone),
+      statusDistribution: statusDistributionForAI,
+      averages: {
+        score: periodAvgReadiness,
+        mood: teamAvgMood,
+        stress: teamAvgStress,
+        sleep: teamAvgSleep,
+        physical: teamAvgPhysicalHealth,
+      },
+      memberStats,
+    });
+
+    // Also generate structured summary for highlights/concerns/recommendations
     const summary = await generateTeamAnalyticsSummary({
       teamName: team.name,
       totalMembers: team.members.length,
@@ -1112,16 +1170,17 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       .slice(0, 5);
 
     // Save to database with complete aggregateData
+    // Use expertNarrative as main summary (new format)
     const savedSummary = await prisma.aISummary.create({
       data: {
         companyId,
         teamId,
         generatedById: user.id,
-        summary: summary.summary,
+        summary: expertInterpretation.narrative, // NEW: Use Expert Data Interpretation narrative
         highlights: summary.highlights,
         concerns: summary.concerns,
         recommendations: summary.recommendations,
-        overallStatus: statusMap[summary.overallStatus] || 'HEALTHY',
+        overallStatus: statusMap[expertInterpretation.overallStatus] || 'HEALTHY',
         periodStart: startDate,
         periodEnd: endDate,
         aggregateData: {
@@ -1147,8 +1206,14 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
             red: summaryTotalRed,
             total: summaryTotalCheckins,
           },
+          // Wellness metrics for display
+          teamAvgMood,
+          teamAvgStress,
+          teamAvgSleep,
+          teamAvgPhysicalHealth,
           topPerformers,
           topReasons,
+          expertNarrative: expertInterpretation.narrative, // Also store in aggregateData for reference
         },
       },
     });
@@ -1160,14 +1225,14 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       action: 'AI_SUMMARY_GENERATED',
       entityType: 'ai_summary',
       entityId: savedSummary.id,
-      description: `AI Insights report generated for team "${team.name}" (${formatLocalDate(startDate)} to ${formatLocalDate(endDate)}) - Status: ${summary.overallStatus.toUpperCase()}`,
+      description: `AI Insights report generated for team "${team.name}" (${formatLocalDate(startDate, timezone)} to ${formatLocalDate(endDate, timezone)}) - Status: ${expertInterpretation.overallStatus.toUpperCase()}`,
       metadata: {
         teamId,
         teamName: team.name,
         periodStart: startDate.toISOString(),
         periodEnd: endDate.toISOString(),
         periodDays,
-        overallStatus: summary.overallStatus,
+        overallStatus: expertInterpretation.overallStatus,
         totalMembers: team.members.length,
         highlightsCount: summary.highlights.length,
         concernsCount: summary.concerns.length,
@@ -1176,7 +1241,11 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
     });
 
     return c.json({
-      ...summary,
+      summary: expertInterpretation.narrative,
+      highlights: summary.highlights,
+      concerns: summary.concerns,
+      recommendations: summary.recommendations,
+      overallStatus: expertInterpretation.overallStatus,
       id: savedSummary.id,
       createdAt: savedSummary.createdAt,
     });

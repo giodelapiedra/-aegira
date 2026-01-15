@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getStats, type StatsResponse } from '../../../../services/daily-monitoring.service';
 
 const QUERY_KEY = 'daily-monitoring-stats';
-const REFETCH_INTERVAL = 60000; // 1 minute
+const STALE_TIME = 5 * 60 * 1000; // 5 minutes
 
 interface UseStatsOptions {
   teamId?: string;
@@ -20,8 +20,8 @@ export function useDailyMonitoringStats(options: UseStatsOptions = {}) {
   return useQuery<StatsResponse>({
     queryKey: [QUERY_KEY, teamId],
     queryFn: () => getStats(teamId),
-    refetchInterval: REFETCH_INTERVAL,
-    staleTime: 30000,
+    staleTime: STALE_TIME,
+    refetchOnWindowFocus: true,
     enabled,
   });
 }

@@ -14,7 +14,7 @@ import {
 
 const QUERY_KEY = 'daily-monitoring-exemptions';
 const PAGE_SIZE = 20;
-const REFETCH_INTERVAL = 60000; // 1 minute
+const STALE_TIME = 5 * 60 * 1000; // 5 minutes
 
 type ExemptionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'active';
 
@@ -39,8 +39,8 @@ export function useExemptions(options: UseExemptionsOptions = {}) {
         page,
         limit: PAGE_SIZE,
       }),
-    refetchInterval: REFETCH_INTERVAL,
-    staleTime: 30000,
+    staleTime: STALE_TIME,
+    refetchOnWindowFocus: true,
     enabled,
   });
 }

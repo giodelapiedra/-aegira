@@ -2,12 +2,12 @@
  * LowScoreReasonModal Component
  *
  * Modal for workers to provide a reason for their low (YELLOW/RED) check-in score.
- * This is a blocking modal - must submit to continue.
+ * Submitting the reason will notify the team leader.
  */
 
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Send } from 'lucide-react';
 import { useToast } from '../../../../components/ui/Toast';
 import { Button } from '../../../../components/ui/Button';
 import {
@@ -42,12 +42,12 @@ export function LowScoreReasonModal({
         details: reason === 'OTHER' ? details : undefined,
       }),
     onSuccess: () => {
-      toast.success('Thank You', 'Your response has been recorded.');
+      toast.success('Submitted', 'Your team leader has been notified.');
       onSuccess();
       onClose();
     },
     onError: () => {
-      toast.error('Error', 'Failed to save your response. Please try again.');
+      toast.error('Error', 'Failed to submit. Please try again.');
     },
   });
 
@@ -64,8 +64,11 @@ export function LowScoreReasonModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop - no click to close, must submit */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
 
       {/* Modal */}
       <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
@@ -76,7 +79,7 @@ export function LowScoreReasonModal({
               <AlertTriangle className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-white">Low Check-in Score</h3>
+              <h3 className="text-lg font-semibold text-white">Report Low Score</h3>
               <p className="text-sm text-white/80">Score: {score}%</p>
             </div>
           </div>
@@ -84,17 +87,19 @@ export function LowScoreReasonModal({
 
         {/* Content */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          <div className="p-4 bg-warning-50 rounded-lg border border-warning-100">
-            <p className="text-sm text-warning-700">
-              Your check-in score is below the healthy threshold. Please let us know the main
-              reason so we can better support you.
-            </p>
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+            <div className="flex items-start gap-2">
+              <Send className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-blue-700">
+                Your team leader will be notified so they can provide support if needed.
+              </p>
+            </div>
           </div>
 
           {/* Reason Select */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">
-              What's the main reason? <span className="text-danger-500">*</span>
+              What's affecting your readiness? <span className="text-danger-500">*</span>
             </label>
             <select
               value={reason}
@@ -126,16 +131,26 @@ export function LowScoreReasonModal({
             </div>
           )}
 
-          {/* Submit */}
-          <Button
-            type="submit"
-            variant="primary"
-            className="w-full"
-            isLoading={updateMutation.isPending}
-            leftIcon={<CheckCircle2 className="h-4 w-4" />}
-          >
-            Submit
-          </Button>
+          {/* Buttons */}
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              className="flex-1"
+              onClick={onClose}
+            >
+              Skip
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              className="flex-1"
+              isLoading={updateMutation.isPending}
+              leftIcon={<CheckCircle2 className="h-4 w-4" />}
+            >
+              Submit
+            </Button>
+          </div>
         </form>
       </div>
     </div>

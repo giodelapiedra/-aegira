@@ -348,21 +348,34 @@ async function seedMockData() {
 
         const { score, status } = calculateReadiness(mood, stress, sleep, physical);
 
-        await prisma.checkin.create({
-          data: {
+        // Check if check-in already exists for this user on this date (prevent duplicates)
+        const existingCheckin = await prisma.checkin.findFirst({
+          where: {
             userId: worker.id,
-            companyId: company.id,
-            mood,
-            stress,
-            sleep,
-            physicalHealth: physical,
-            readinessStatus: status,
-            readinessScore: score,
-            lowScoreReason,
-            createdAt: checkInTime,
+            createdAt: {
+              gte: checkDate,
+              lt: new Date(checkDate.getTime() + 24 * 60 * 60 * 1000), // Next day
+            },
           },
         });
-        checkinCount++;
+
+        if (!existingCheckin) {
+          await prisma.checkin.create({
+            data: {
+              userId: worker.id,
+              companyId: company.id,
+              mood,
+              stress,
+              sleep,
+              physicalHealth: physical,
+              readinessStatus: status,
+              readinessScore: score,
+              lowScoreReason,
+              createdAt: checkInTime,
+            },
+          });
+          checkinCount++;
+        }
 
         const attendanceStatus = isLate ? AttendanceStatus.YELLOW : AttendanceStatus.GREEN;
         const attendanceScore = isLate ? 75 : 100;

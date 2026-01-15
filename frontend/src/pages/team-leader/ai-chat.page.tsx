@@ -514,9 +514,9 @@ export function AIChatPage() {
 
     const endDate = new Date();
     const startDate = new Date();
-    // Match Team Analytics date range: selectedPeriod - 1 days back + today = selectedPeriod total days
-    // e.g., for 14 days: 13 days back + today = 14 days total
-    startDate.setDate(startDate.getDate() - (selectedPeriod - 1));
+    // Match Member History date range: go back exactly selectedPeriod days
+    // e.g., for 7 days on Jan 15: Jan 15 - 7 = Jan 8, so range is Jan 8-15
+    startDate.setDate(startDate.getDate() - selectedPeriod);
 
     setShowPeriodModal(false);
     const message = pendingMessage;

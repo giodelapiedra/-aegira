@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx prisma db push:*)",
+      "Bash(ping:*)",
+      "Bash(git checkout:*)",
+      "Bash(npx prisma generate)",
+      "Bash(npm run dev:*)",
+      "Bash(npx prisma studio)",
+      "Bash(npx tsx:*)",
+      "Bash(del check-duplicates.ts)",
+      "Bash(del \"D:\\\\Aegira\\\\backend\\\\cleanup-duplicate-checkins.ts\")"
+    ]
+  }
+}

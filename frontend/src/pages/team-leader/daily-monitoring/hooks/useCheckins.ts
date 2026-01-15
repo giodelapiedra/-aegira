@@ -12,7 +12,7 @@ import {
 
 const QUERY_KEY = 'daily-monitoring-checkins';
 const PAGE_SIZE = 50;
-const REFETCH_INTERVAL = 60000; // 1 minute
+const STALE_TIME = 5 * 60 * 1000; // 5 minutes
 
 interface UseCheckinsOptions {
   teamId?: string;
@@ -35,8 +35,8 @@ export function useCheckinsPaginated(options: UseCheckinsOptions = {}) {
         page,
         limit: PAGE_SIZE,
       }),
-    refetchInterval: REFETCH_INTERVAL,
-    staleTime: 30000,
+    staleTime: STALE_TIME,
+    refetchOnWindowFocus: true,
     enabled,
   });
 }

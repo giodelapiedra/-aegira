@@ -89,7 +89,8 @@
       "WebFetch(domain:localhost)",
       "Bash(tree:*)",
       "Bash(wc:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(cmd //c \"taskkill /PID 105544 /F\")"
     ]
   }
 }

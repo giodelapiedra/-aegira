@@ -357,12 +357,12 @@ async function seed() {
         // Occasionally create "bad days" for sudden change detection (5% chance)
         // This simulates real-world scenarios where workers have off days
         const isBadDay = Math.random() < 0.05; // 5% chance of bad day
-        
+
         let mood: number;
         let stress: number;
         let sleep: number;
         let physical: number;
-        
+
         if (isBadDay) {
           // Bad day: Low mood, high stress, poor sleep, poor physical
           mood = randomInt(2, 4); // Very low mood
@@ -376,7 +376,7 @@ async function seed() {
           sleep = randomInt(4, 10);
           physical = randomInt(5, 10);
         }
-        
+
         const { score, status } = calculateReadiness(mood, stress, sleep, physical);
 
         // Determine if late
@@ -389,6 +389,27 @@ async function seed() {
         // Calculate check-in time
         const checkinTime = new Date(currentDate);
         checkinTime.setHours(shiftHour, shiftMin + minutesLate - (isLate ? 0 : randomInt(0, 25)), randomInt(0, 59), 0);
+
+        // Check if check-in already exists for this user on this date (prevent duplicates)
+        const dayStart = new Date(currentDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(currentDate);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        const existingCheckin = await prisma.checkin.findFirst({
+          where: {
+            userId: user.id,
+            createdAt: {
+              gte: dayStart,
+              lte: dayEnd,
+            },
+          },
+        });
+
+        // Only create if no existing check-in for this day
+        if (existingCheckin) {
+          continue; // Skip to next day
+        }
 
         // Create check-in
         await prisma.checkin.create({

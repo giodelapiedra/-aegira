@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { prisma } from '../../config/prisma.js';
 import { env } from '../../config/env.js';
-import { generateTeamAnalyticsSummary } from '../../utils/ai.js';
+import { generateTeamAnalyticsSummary, generateExpertDataInterpretation } from '../../utils/ai.js';
 import type { AppContext } from '../../types/context.js';
 import { createSystemLog } from '../system-logs/index.js';
 import {
@@ -447,17 +447,18 @@ async function handleGenerateSummary(
 
     const missedWorkDays = Math.max(0, expectedWorkDays - checkins.length);
 
-    // Determine risk level
+    // Determine risk level based on Score only
+    // Score already factors in Mood, Stress, Sleep, Physical
+    // HIGH: avgScore < 40 (RED zone)
+    // MEDIUM: avgScore 40-69 (YELLOW zone)
+    // LOW: avgScore >= 70 (GREEN zone)
     let riskLevel: 'low' | 'medium' | 'high' = 'low';
-    if (redCount >= 3 || (checkins.length > 0 && redCount / checkins.length > 0.4)) {
-      riskLevel = 'high';
-    } else if (yellowCount >= 3 || redCount >= 2) {
-      riskLevel = 'medium';
-    }
-    if (missedWorkDays >= 4) {
-      riskLevel = 'high';
-    } else if (missedWorkDays >= 2 && riskLevel === 'low') {
-      riskLevel = 'medium';
+    if (checkins.length > 0) {
+      if (avgScore < 40) {
+        riskLevel = 'high';
+      } else if (avgScore < 70) {
+        riskLevel = 'medium';
+      }
     }
 
     // Calculate actual streak using date-helpers (timezone-aware)
@@ -651,6 +652,45 @@ async function handleGenerateSummary(
     }));
 
   try {
+    // Build member stats for Expert Data Interpretation
+    const memberStats = memberAnalytics.map((m: any) => ({
+      name: m.name,
+      avgScore: m.avgScore || 0,
+      checkinCount: m.checkinCount || 0,
+      redCount: m.redCount || 0,
+      riskLevel: m.riskLevel || 'low',
+      avgMood: m.avgMood || 0,
+      avgStress: m.avgStress || 0,
+      avgSleep: m.avgSleep || 0,
+      avgPhysical: m.avgPhysicalHealth || 0,
+    }));
+
+    // Calculate status distribution from all check-ins
+    const statusDistribution = {
+      GREEN: allCheckins.filter((c: any) => c.readinessStatus === 'GREEN').length,
+      YELLOW: allCheckins.filter((c: any) => c.readinessStatus === 'YELLOW').length,
+      RED: allCheckins.filter((c: any) => c.readinessStatus === 'RED').length,
+    };
+
+    // Generate Expert Data Interpretation (narrative style)
+    const expertInterpretation = await generateExpertDataInterpretation({
+      teamName: team.name,
+      totalMembers: team.members.length,
+      totalCheckins: allCheckins.length,
+      periodStart: formatLocalDate(startDate, timezone),
+      periodEnd: formatLocalDate(endDate, timezone),
+      statusDistribution,
+      averages: {
+        score: teamAvgReadiness,
+        mood: teamAvgMood,
+        stress: teamAvgStress,
+        sleep: teamAvgSleep,
+        physical: teamAvgPhysicalHealth,
+      },
+      memberStats,
+    });
+
+    // Also generate structured summary for saved report
     const summary = await generateTeamAnalyticsSummary({
       teamName: team.name,
       totalMembers: team.members.length,
@@ -670,16 +710,17 @@ async function handleGenerateSummary(
     };
 
     // Save to database with user's ID (privacy)
+    // Use expertNarrative as main summary (new format)
     const savedSummary = await prisma.aISummary.create({
       data: {
         companyId,
         teamId: team.id,
         generatedById: user.id, // This user generated it - only they can see it
-        summary: summary.summary,
+        summary: expertInterpretation.narrative, // NEW: Use Expert Data Interpretation narrative
         highlights: summary.highlights,
         concerns: summary.concerns,
         recommendations: summary.recommendations,
-        overallStatus: statusMap[summary.overallStatus] || 'HEALTHY',
+        overallStatus: statusMap[expertInterpretation.overallStatus] || 'HEALTHY',
         periodStart: startDate,
         periodEnd: endDate,
         aggregateData: {
@@ -694,6 +735,7 @@ async function handleGenerateSummary(
           teamAvgPhysicalHealth,
           topPerformers,
           topReasons,
+          expertNarrative: expertInterpretation.narrative,
         },
       },
     });
@@ -705,14 +747,14 @@ async function handleGenerateSummary(
       action: 'AI_SUMMARY_GENERATED',
       entityType: 'ai_summary',
       entityId: savedSummary.id,
-      description: `AI Insights report generated for team "${team.name}" (${formatLocalDate(startDate, timezone)} to ${formatLocalDate(endDate, timezone)}) - Grade: ${teamGrade.letter}, Status: ${summary.overallStatus.toUpperCase()}`,
+      description: `AI Insights report generated for team "${team.name}" (${formatLocalDate(startDate, timezone)} to ${formatLocalDate(endDate, timezone)}) - Grade: ${teamGrade.letter}, Status: ${expertInterpretation.overallStatus.toUpperCase()}`,
       metadata: {
         teamId: team.id,
         teamName: team.name,
         periodStart: startDate.toISOString(),
         periodEnd: endDate.toISOString(),
         periodDays: Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)),
-        overallStatus: summary.overallStatus,
+        overallStatus: expertInterpretation.overallStatus,
         totalMembers: team.members.length,
         highlightsCount: summary.highlights.length,
         concernsCount: summary.concerns.length,
@@ -724,18 +766,26 @@ async function handleGenerateSummary(
       },
     });
 
-    // Build response message (professional format)
-    const statusLabel = {
-      healthy: 'Healthy',
-      attention: 'Needs Attention',
-      critical: 'Critical',
-    };
+    // Build Expert Data Interpretation response (narrative format)
+    const periodLabel = `${formatLocalDate(startDate, timezone)} - ${formatLocalDate(endDate, timezone)}`;
+
+    const narrativeHeader = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 Expert Data Interpretation Summary (Team-Level)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Period: ${periodLabel}
+Team: ${team.name} (${team.members.length} members)
+Records Analyzed: ${allCheckins.length} check-ins
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+    const narrativeFooter = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generated: ${new Date().toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
     const response: ChatResponse = {
       message: {
         id: generateId(),
         role: 'assistant',
-        content: `**Team Performance Report Generated**\n\n**${team.name}**\n\n| Metric | Value |\n|--------|-------|\n| Team Grade | ${teamGrade.letter} (${teamGrade.label}) |\n| Status | ${statusLabel[summary.overallStatus]} |\n| Readiness | ${teamGrade.avgReadiness}% |\n| Compliance | ${teamGrade.compliance}% |\n| Avg Mood | ${teamAvgMood}/10 |\n| Avg Stress | ${teamAvgStress}/10 |\n| Avg Sleep | ${teamAvgSleep}/10 |\n| Avg Physical Health | ${teamAvgPhysicalHealth}/10 |\n\n**Executive Summary:**\n${summary.summary}\n\n**Report Contents:** ${summary.highlights.length} highlights, ${summary.concerns.length} concerns, ${summary.recommendations.length} recommendations`,
+        content: `${narrativeHeader}\n\n${expertInterpretation.narrative}\n\n${narrativeFooter}`,
         timestamp: new Date(),
         links: [
           {
@@ -746,7 +796,7 @@ async function handleGenerateSummary(
         ],
         summaryPreview: {
           id: savedSummary.id,
-          status: summary.overallStatus,
+          status: expertInterpretation.overallStatus,
           highlightsCount: summary.highlights.length,
           concernsCount: summary.concerns.length,
           recommendationsCount: summary.recommendations.length,

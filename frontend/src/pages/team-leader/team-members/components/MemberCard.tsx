@@ -25,7 +25,7 @@ export const MemberCard = memo(function MemberCard({
   const hasActions = showActions && (onTransfer || onDeactivate);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-visible">
       {/* Card Header with Avatar and Actions */}
       <div className="p-4">
         <div className="flex items-start justify-between">
@@ -69,51 +69,65 @@ export const MemberCard = memo(function MemberCard({
 
           {/* Actions Menu */}
           {hasActions && (
-            <div className="relative">
+            <div className="relative z-10">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onToggleMenu(isMenuOpen ? null : member.id);
                 }}
-                className="p-2 -m-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+                className="p-2 -m-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all relative z-10"
               >
                 <MoreVertical className="h-5 w-5" />
               </button>
 
               {isMenuOpen && (
-                <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-gray-200 shadow-xl py-1.5 z-50 animate-in fade-in slide-in-from-top-1 duration-150">
-                  <button
-                    onClick={() => {
-                      onViewProfile(member);
-                      onToggleMenu(null);
-                    }}
-                    className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition-colors"
-                  >
-                    <Eye className="h-4 w-4 text-gray-400" />
-                    View Profile
-                  </button>
-                  {onTransfer && (
+                <>
+                  {/* Backdrop to close menu on outside click */}
+                  <div
+                    className="fixed inset-0 z-[50]"
+                    onClick={() => onToggleMenu(null)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl border border-gray-200 shadow-2xl py-1.5 z-[60] min-w-max">
                     <button
-                      onClick={() => onTransfer(member)}
-                      className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewProfile(member);
+                        onToggleMenu(null);
+                      }}
+                      className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition-colors whitespace-nowrap"
                     >
-                      <ArrowRightLeft className="h-4 w-4 text-gray-400" />
-                      Transfer
+                      <Eye className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                      View Profile
                     </button>
-                  )}
-                  {onDeactivate && (
-                    <>
-                      <div className="border-t border-gray-100 my-1.5 mx-2" />
+                    {onTransfer && (
                       <button
-                        onClick={() => onDeactivate(member)}
-                        className="w-full px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onTransfer(member);
+                        }}
+                        className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition-colors whitespace-nowrap"
                       >
-                        <UserMinus className="h-4 w-4" />
-                        Deactivate
+                        <ArrowRightLeft className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                        Transfer
                       </button>
-                    </>
-                  )}
-                </div>
+                    )}
+                    {onDeactivate && (
+                      <>
+                        <div className="border-t border-gray-100 my-1.5 mx-2" />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeactivate(member);
+                          }}
+                          className="w-full px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition-colors whitespace-nowrap"
+                        >
+                          <UserMinus className="h-4 w-4 flex-shrink-0" />
+                          Deactivate
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -137,7 +151,7 @@ export const MemberCard = memo(function MemberCard({
       {/* Quick Action - View Profile */}
       <button
         onClick={() => onViewProfile(member)}
-        className="w-full py-3 px-4 bg-gray-50 text-sm font-medium text-primary-600 hover:bg-gray-100 transition-colors border-t border-gray-100 flex items-center justify-center gap-2"
+        className="w-full py-3 px-4 bg-gray-50 text-sm font-medium text-primary-600 hover:bg-gray-100 transition-colors border-t border-gray-100 flex items-center justify-center gap-2 rounded-b-2xl"
       >
         <Eye className="h-4 w-4" />
         View Full Profile

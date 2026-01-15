@@ -309,8 +309,20 @@ export function TeamsPage() {
       user.teamId === null
   );
 
+  // Get list of users who are already team leaders (from active teams)
+  const existingLeaderIds = new Set(
+    teams.filter((team) => team.isActive !== false && team.leaderId).map((team) => team.leaderId)
+  );
+
   // Only TEAM_LEAD role users can be assigned as team leaders
-  const teamLeadUsers = users.filter((user) => user.role === 'TEAM_LEAD');
+  // Exclude those already assigned as leaders of another team, except the current team's leader when editing
+  const teamLeadUsers = users.filter((user) => {
+    if (user.role !== 'TEAM_LEAD') return false;
+    // If editing and this user is the current team's leader, include them
+    if (showEditModal && selectedTeam && user.id === selectedTeam.leaderId) return true;
+    // Otherwise, only include if they're not already a leader of another team
+    return !existingLeaderIds.has(user.id);
+  });
 
   const openEditModal = (team: Team) => {
     setSelectedTeam(team);

@@ -23,7 +23,6 @@ import { useToast } from '../../../../components/ui/Toast';
 import { checkinService, type CreateCheckinData, type CheckinWithAttendance } from '../../../../services/checkin.service';
 import { invalidateRelatedQueries } from '../../../../lib/query-utils';
 import { CheckinErrorMessage } from './CheckinErrorMessage';
-import { LowScoreReasonModal } from './LowScoreReasonModal';
 import { formatExceptionType } from '../utils';
 
 interface LeaveStatus {
@@ -50,10 +49,6 @@ export function CheckinForm({ leaveStatus }: CheckinFormProps) {
     notes: '',
   });
 
-  // Low score reason modal state
-  const [showLowScoreModal, setShowLowScoreModal] = useState(false);
-  const [newCheckinData, setNewCheckinData] = useState<CheckinWithAttendance | null>(null);
-
   const createMutation = useMutation({
     mutationFn: (data: CreateCheckinData) => checkinService.create(data),
     onSuccess: (data: CheckinWithAttendance) => {
@@ -62,12 +57,6 @@ export function CheckinForm({ leaveStatus }: CheckinFormProps) {
         ? ` | Attendance: ${data.attendance.status}${data.attendance.minutesLate > 0 ? ` (${data.attendance.minutesLate} mins late)` : ''}`
         : '';
       toast.success('Check-in Submitted!', `Readiness: ${data.readinessScore}%${attendanceMsg}`);
-
-      // Show low score reason modal for RED or YELLOW status
-      if (data.readinessStatus === 'RED' || data.readinessStatus === 'YELLOW') {
-        setNewCheckinData(data);
-        setShowLowScoreModal(true);
-      }
     },
   });
 
@@ -232,19 +221,6 @@ export function CheckinForm({ leaveStatus }: CheckinFormProps) {
           )}
         </form>
       </Card>
-
-      {/* Low Score Reason Modal */}
-      {newCheckinData && (
-        <LowScoreReasonModal
-          checkinId={newCheckinData.id}
-          score={newCheckinData.readinessScore}
-          isOpen={showLowScoreModal}
-          onClose={() => setShowLowScoreModal(false)}
-          onSuccess={() => {
-            invalidateRelatedQueries(queryClient, 'checkins');
-          }}
-        />
-      )}
     </div>
   );
 }

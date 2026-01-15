@@ -12,7 +12,7 @@ import {
 
 const QUERY_KEY = 'daily-monitoring-sudden-changes';
 const PAGE_SIZE = 20;
-const REFETCH_INTERVAL = 60000; // 1 minute
+const STALE_TIME = 5 * 60 * 1000; // 5 minutes - data considered fresh
 
 interface UseSuddenChangesOptions {
   teamId?: string;
@@ -35,8 +35,8 @@ export function useSuddenChanges(options: UseSuddenChangesOptions = {}) {
         page,
         limit: PAGE_SIZE,
       }),
-    refetchInterval: REFETCH_INTERVAL,
-    staleTime: 30000,
+    staleTime: STALE_TIME,
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
     enabled,
   });
 }

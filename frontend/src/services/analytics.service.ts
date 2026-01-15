@@ -75,7 +75,10 @@ export interface AISummaryDetail extends AISummaryHistoryItem {
     totalMembers: number;
     openIncidents: number;
     pendingExceptions: number;
-    teamHealthScore?: number;
+    teamAvgMood?: number;
+    teamAvgStress?: number;
+    teamAvgSleep?: number;
+    teamAvgPhysicalHealth?: number;
     teamGrade?: {
       score: number;
       letter: string;

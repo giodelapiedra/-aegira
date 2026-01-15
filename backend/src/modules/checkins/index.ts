@@ -762,6 +762,18 @@ const lowScoreReasons = [
   'OTHER',
 ] as const;
 
+// Human-readable reason labels
+const lowScoreReasonLabels: Record<string, string> = {
+  PHYSICAL_INJURY: 'Physical Injury',
+  ILLNESS_SICKNESS: 'Illness/Sickness',
+  POOR_SLEEP: 'Poor Sleep',
+  HIGH_STRESS: 'High Stress',
+  PERSONAL_ISSUES: 'Personal Issues',
+  FAMILY_EMERGENCY: 'Family Emergency',
+  WORK_RELATED: 'Work-Related Issues',
+  OTHER: 'Other',
+};
+
 // PATCH /checkins/:id/low-score-reason - Update low score reason for a check-in
 checkinsRoutes.patch('/:id/low-score-reason', async (c) => {
   const id = c.req.param('id');
@@ -776,18 +788,35 @@ checkinsRoutes.patch('/:id/low-score-reason', async (c) => {
     return c.json({ error: 'Invalid reason provided' }, 400);
   }
 
-  // Find the check-in (must belong to current user)
+  // Find the check-in with user and team info
   const checkin = await prisma.checkin.findFirst({
     where: { id, userId, companyId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          teamId: true,
+          team: {
+            select: {
+              id: true,
+              name: true,
+              leaderId: true,
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!checkin) {
     return c.json({ error: 'Check-in not found' }, 404);
   }
 
-  // Only allow updating reason for RED status check-ins
-  if (checkin.readinessStatus !== 'RED') {
-    return c.json({ error: 'Low score reason can only be set for RED status check-ins' }, 400);
+  // Only allow updating reason for RED or YELLOW status check-ins
+  if (checkin.readinessStatus !== 'RED' && checkin.readinessStatus !== 'YELLOW') {
+    return c.json({ error: 'Low score reason can only be set for RED or YELLOW status check-ins' }, 400);
   }
 
   // Update the check-in with reason
@@ -798,6 +827,33 @@ checkinsRoutes.patch('/:id/low-score-reason', async (c) => {
       lowScoreDetails: reason === 'OTHER' ? details : null,
     },
   });
+
+  // Notify team leader if exists
+  if (checkin.user.team?.leaderId) {
+    const workerName = `${checkin.user.firstName} ${checkin.user.lastName || ''}`.trim();
+    const reasonLabel = lowScoreReasonLabels[reason] || reason;
+    const statusEmoji = checkin.readinessStatus === 'RED' ? '🔴' : '🟡';
+
+    await prisma.notification.create({
+      data: {
+        userId: checkin.user.team.leaderId,
+        companyId,
+        title: `${statusEmoji} Low Score Report`,
+        message: `${workerName} reported: ${reasonLabel}${reason === 'OTHER' && details ? ` - ${details}` : ''}. Score: ${checkin.readinessScore.toFixed(0)}%`,
+        type: 'LOW_SCORE_REPORT',
+        data: {
+          checkinId: id,
+          workerId: userId,
+          workerName,
+          score: checkin.readinessScore,
+          status: checkin.readinessStatus,
+          reason,
+          reasonLabel,
+          details: reason === 'OTHER' ? details : null,
+        },
+      },
+    });
+  }
 
   return c.json(updated);
 });

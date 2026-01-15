@@ -23,16 +23,16 @@ function LazyPage({ children }: { children: React.ReactNode }) {
 }
 
 // ============================================
-// EAGER IMPORTS (Frequently accessed - load immediately)
+// EAGER IMPORTS (Public pages - load immediately)
 // ============================================
 import { LoginPage } from '../pages/login/login.page';
 import { RegisterPage } from '../pages/register/register.page';
-import { HomePage } from '../pages/worker/home';
-import { CheckinPage } from '../pages/worker/checkin';
 
 // ============================================
 // LAZY IMPORTS - Worker Pages
 // ============================================
+const HomePage = lazy(() => import('../pages/worker/home').then(m => ({ default: m.HomePage })));
+const CheckinPage = lazy(() => import('../pages/worker/checkin').then(m => ({ default: m.CheckinPage })));
 const ReportIncidentPage = lazy(() => import('../pages/worker/report-incident.page').then(m => ({ default: m.ReportIncidentPage })));
 const RequestExceptionPage = lazy(() => import('../pages/worker/request-exception.page').then(m => ({ default: m.RequestExceptionPage })));
 const MyHistoryPage = lazy(() => import('../pages/worker/my-history.page').then(m => ({ default: m.MyHistoryPage })));
@@ -127,10 +127,10 @@ export const router = createBrowserRouter([
       </ProtectedRoute>
     ),
     children: [
-      // Home/Dashboard (No lazy - most accessed page)
+      // Home/Dashboard
       {
         index: true,
-        element: <HomePage />,
+        element: <LazyPage><HomePage /></LazyPage>,
       },
 
       // Notifications (all users)
@@ -158,7 +158,7 @@ export const router = createBrowserRouter([
         path: 'checkin',
         element: (
           <RoleGuard allowedRoles={['WORKER', 'MEMBER']}>
-            <CheckinPage />
+            <LazyPage><CheckinPage /></LazyPage>
           </RoleGuard>
         ),
       },

@@ -100,22 +100,6 @@ export const ROLES = {
 
 export type Role = (typeof ROLES)[keyof typeof ROLES];
 
-export const ROLE_HIERARCHY: Record<Role, number> = {
-  EXECUTIVE: 5,
-  ADMIN: 4,
-  SUPERVISOR: 3,
-  TEAM_LEAD: 2,
-  MEMBER: 1,
-};
-
-export const ROLE_DISPLAY_NAMES: Record<Role, string> = {
-  EXECUTIVE: 'Executive',
-  ADMIN: 'Administrator',
-  SUPERVISOR: 'Supervisor',
-  TEAM_LEAD: 'Team Leader',
-  MEMBER: 'Team Member',
-};
-
 // ============================================
 // STATUS TYPES
 // ============================================

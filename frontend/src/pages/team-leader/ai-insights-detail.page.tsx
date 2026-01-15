@@ -14,13 +14,15 @@ import {
   Minus,
   Users,
   FileWarning,
-  
   Activity,
   CheckCircle2,
   AlertTriangle,
-  
-  
   Sparkles,
+  Smile,
+  Brain,
+  Moon,
+  Lightbulb,
+  Heart,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import api from '../../services/api';
@@ -32,9 +34,7 @@ import {
   formatDateTimeFull,
   formatPeriod,
   STATUS_CONFIG,
-  RISK_CONFIG,
   type StatusType,
-  type RiskLevel,
 } from './ai-insights.utils';
 
 // =============================================================================
@@ -239,6 +239,232 @@ const ListItem = memo(function ListItem({ text, index, variant }: ListItemProps)
   );
 });
 
+// =============================================================================
+// WELLNESS COMPONENTS
+// =============================================================================
+
+interface WellnessMetricsCardProps {
+  avgMood: number;
+  avgStress: number;
+  avgSleep: number;
+  avgPhysicalHealth: number;
+}
+
+// Metric configuration for DRY approach
+const METRIC_CONFIG = {
+  mood: {
+    label: 'Mood',
+    icon: Smile,
+    getStatus: (v: number) => v >= 7 ? 'good' : v >= 5 ? 'warning' : 'danger',
+    getLabel: (v: number) => v >= 7 ? 'Good' : v >= 5 ? 'Moderate' : 'Low',
+  },
+  stress: {
+    label: 'Stress',
+    icon: Brain,
+    getStatus: (v: number) => v <= 4 ? 'good' : v <= 6 ? 'warning' : 'danger',
+    getLabel: (v: number) => v <= 4 ? 'Low' : v <= 6 ? 'Moderate' : 'High',
+  },
+  sleep: {
+    label: 'Sleep',
+    icon: Moon,
+    getStatus: (v: number) => v >= 7 ? 'good' : v >= 5 ? 'warning' : 'danger',
+    getLabel: (v: number) => v >= 7 ? 'Good' : v >= 5 ? 'Fair' : 'Poor',
+  },
+  physical: {
+    label: 'Physical',
+    icon: Heart,
+    getStatus: (v: number) => v >= 7 ? 'good' : v >= 5 ? 'warning' : 'danger',
+    getLabel: (v: number) => v >= 7 ? 'Good' : v >= 5 ? 'Fair' : 'Poor',
+  },
+} as const;
+
+const STATUS_STYLES = {
+  good: { text: 'text-emerald-600', bg: 'bg-emerald-100' },
+  warning: { text: 'text-amber-600', bg: 'bg-amber-100' },
+  danger: { text: 'text-rose-600', bg: 'bg-rose-100' },
+} as const;
+
+// Wellness Status Card - Extracted as proper component
+interface WellnessStatusCardProps {
+  mood: number;
+  stress: number;
+  sleep: number;
+  physical: number;
+}
+
+const WellnessStatusCard = memo(function WellnessStatusCard({ mood, stress, sleep, physical }: WellnessStatusCardProps) {
+  const moodOk = mood >= 6;
+  const stressOk = stress <= 5;
+  const sleepOk = sleep >= 6;
+  const physicalOk = physical >= 6;
+  const goodCount = [moodOk, stressOk, sleepOk, physicalOk].filter(Boolean).length;
+
+  const statusConfig = goodCount >= 3
+    ? { status: 'Healthy', color: 'text-emerald-600', bg: 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200', dot: 'bg-emerald-500', desc: 'Team wellness metrics are within healthy ranges.' }
+    : goodCount >= 2
+    ? { status: 'Needs Attention', color: 'text-amber-600', bg: 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200', dot: 'bg-amber-500', desc: 'Some wellness metrics need monitoring.' }
+    : { status: 'Critical', color: 'text-rose-600', bg: 'bg-gradient-to-br from-rose-50 to-red-50 border-rose-200', dot: 'bg-rose-500', desc: 'Multiple wellness metrics require immediate attention.' };
+
+  return (
+    <div className={cn('rounded-xl p-6 border', statusConfig.bg)}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-gray-900">Team Wellness Status</h3>
+        <Heart className={cn('h-5 w-5', statusConfig.color)} />
+      </div>
+      <div className="flex items-center gap-3">
+        <div className={cn('h-3 w-3 rounded-full', statusConfig.dot)} />
+        <span className={cn('text-2xl font-bold', statusConfig.color)}>{statusConfig.status}</span>
+      </div>
+      <p className="text-sm text-gray-600 mt-3">{statusConfig.desc}</p>
+    </div>
+  );
+});
+
+// Single metric card component
+interface MetricItemProps {
+  type: keyof typeof METRIC_CONFIG;
+  value: number;
+}
+
+const MetricItem = memo(function MetricItem({ type, value }: MetricItemProps) {
+  const config = METRIC_CONFIG[type];
+  const status = config.getStatus(value);
+  const styles = STATUS_STYLES[status];
+  const Icon = config.icon;
+
+  return (
+    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+      <div className="flex items-center gap-2 mb-3">
+        <div className={cn('h-9 w-9 rounded-xl flex items-center justify-center', styles.bg)}>
+          <Icon className={cn('h-5 w-5', styles.text)} />
+        </div>
+        <span className="text-sm font-medium text-gray-700">{config.label}</span>
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span className={cn('text-3xl font-bold', styles.text)}>{value}</span>
+        <span className="text-gray-400 text-sm">/10</span>
+      </div>
+      <p className={cn('text-xs font-medium mt-1', styles.text)}>{config.getLabel(value)}</p>
+    </div>
+  );
+});
+
+// AI Predictions generator
+function getWellnessPredictions(mood: number, stress: number, sleep: number, physical: number) {
+  const predictions: { type: 'success' | 'warning' | 'danger'; message: string }[] = [];
+
+  // Individual metric predictions
+  const addPrediction = (
+    value: number,
+    thresholds: { good: number; warning: number },
+    messages: { good: string; warning: string; danger: string },
+    inverted = false
+  ) => {
+    const isGood = inverted ? value <= thresholds.good : value >= thresholds.good;
+    const isWarning = inverted ? value <= thresholds.warning : value >= thresholds.warning;
+
+    if (isGood) predictions.push({ type: 'success', message: messages.good });
+    else if (isWarning) predictions.push({ type: 'warning', message: messages.warning });
+    else predictions.push({ type: 'danger', message: messages.danger });
+  };
+
+  addPrediction(mood, { good: 7, warning: 5 }, {
+    good: 'Team morale is high. Maintain current engagement activities.',
+    warning: 'Team mood is moderate. Consider team-building activities to boost morale.',
+    danger: 'Low team mood detected. Immediate intervention recommended.',
+  });
+
+  addPrediction(stress, { good: 4, warning: 6 }, {
+    good: 'Stress levels are well-managed. Current workload appears sustainable.',
+    warning: 'Moderate stress detected. Monitor workload distribution.',
+    danger: 'High stress levels across the team. Risk of burnout is elevated.',
+  }, true);
+
+  addPrediction(sleep, { good: 7, warning: 5 }, {
+    good: 'Team is well-rested. Good sleep quality supports optimal performance.',
+    warning: 'Sleep quality is below optimal. Encourage better work-life balance.',
+    danger: 'Poor sleep quality detected. This may impact productivity and safety.',
+  });
+
+  addPrediction(physical, { good: 7, warning: 5 }, {
+    good: 'Team physical health is excellent. Continue promoting healthy practices.',
+    warning: 'Physical health is moderate. Consider wellness programs.',
+    danger: 'Low physical health reported. Review workplace safety measures.',
+  });
+
+  // Combined risk analysis
+  if (stress > 6 && sleep < 5) {
+    predictions.push({ type: 'danger', message: 'Critical: High stress with poor sleep. Immediate action needed to prevent burnout.' });
+  } else if (mood >= 7 && stress <= 4 && sleep >= 7 && physical >= 7) {
+    predictions.push({ type: 'success', message: 'Excellent overall wellness! Team is in optimal condition.' });
+  }
+
+  return predictions;
+}
+
+// Prediction item component
+const PREDICTION_STYLES = {
+  success: { bg: 'bg-emerald-50', border: 'border-emerald-200', iconBg: 'bg-emerald-200', iconColor: 'text-emerald-700', text: 'text-emerald-800' },
+  warning: { bg: 'bg-amber-50', border: 'border-amber-200', iconBg: 'bg-amber-200', iconColor: 'text-amber-700', text: 'text-amber-800' },
+  danger: { bg: 'bg-rose-50', border: 'border-rose-200', iconBg: 'bg-rose-200', iconColor: 'text-rose-700', text: 'text-rose-800' },
+} as const;
+
+const PredictionItem = memo(function PredictionItem({ type, message }: { type: 'success' | 'warning' | 'danger'; message: string }) {
+  const styles = PREDICTION_STYLES[type];
+  const Icon = type === 'success' ? CheckCircle2 : AlertTriangle;
+
+  return (
+    <div className={cn('flex items-start gap-3 p-3 rounded-xl border', styles.bg, styles.border)}>
+      <div className={cn('h-5 w-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5', styles.iconBg)}>
+        <Icon className={cn('h-3 w-3', styles.iconColor)} />
+      </div>
+      <p className={cn('text-sm leading-relaxed', styles.text)}>{message}</p>
+    </div>
+  );
+});
+
+// Main Wellness Metrics Card
+const WellnessMetricsCard = memo(function WellnessMetricsCard({ avgMood, avgStress, avgSleep, avgPhysicalHealth }: WellnessMetricsCardProps) {
+  const predictions = getWellnessPredictions(avgMood, avgStress, avgSleep, avgPhysicalHealth);
+
+  return (
+    <div className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+          <Activity className="h-6 w-6 text-white" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-gray-900">Team Wellness Metrics</h3>
+          <p className="text-sm text-gray-500">Average metrics with AI predictions</p>
+        </div>
+      </div>
+
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+        <MetricItem type="mood" value={avgMood} />
+        <MetricItem type="stress" value={avgStress} />
+        <MetricItem type="sleep" value={avgSleep} />
+        <MetricItem type="physical" value={avgPhysicalHealth} />
+      </div>
+
+      {/* AI Predictions */}
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <div className="h-8 w-8 rounded-lg bg-violet-100 flex items-center justify-center">
+            <Lightbulb className="h-4 w-4 text-violet-600" />
+          </div>
+          <span className="text-sm font-semibold text-gray-700">AI Predictions & Suggestions</span>
+        </div>
+        <div className="space-y-2">
+          {predictions.map((prediction, i) => (
+            <PredictionItem key={i} type={prediction.type} message={prediction.message} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+});
+
 // Period comparison card
 interface PeriodComparisonCardProps {
   comparison: PeriodComparison;
@@ -348,7 +574,18 @@ const PeriodComparisonCard = memo(function PeriodComparisonCard({ comparison }: 
 // =============================================================================
 
 function generatePrintHTML(summary: AISummaryDetail, teamName: string, timezone: string): string {
-  const statusLabels = { healthy: 'Healthy', attention: 'Needs Attention', critical: 'Critical' };
+  const statusLabels: Record<string, string> = { healthy: 'Healthy', attention: 'Needs Attention', critical: 'Critical', HEALTHY: 'Healthy', ATTENTION: 'Needs Attention', CRITICAL: 'Critical' };
+
+  // Calculate avg score and total checkins from memberAnalytics
+  const memberAnalytics = summary.aggregateData?.memberAnalytics || [];
+  const avgScore = memberAnalytics.length > 0
+    ? Math.round(memberAnalytics.reduce((sum: number, m: any) => sum + m.avgScore, 0) / memberAnalytics.length)
+    : 0;
+  const totalCheckins = memberAnalytics.reduce((sum: number, m: any) => sum + m.checkinCount, 0);
+
+  // Risk level helper
+  const getRiskLabel = (score: number) => score >= 70 ? 'Low' : score >= 40 ? 'Medium' : 'High';
+  const getRiskClass = (score: number) => score >= 70 ? 'low' : score >= 40 ? 'medium' : 'high';
 
   return `
     <!DOCTYPE html>
@@ -357,32 +594,38 @@ function generatePrintHTML(summary: AISummaryDetail, teamName: string, timezone:
       <title>AI Insights Report - ${teamName}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; color: #1f2937; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; color: #1f2937; line-height: 1.5; }
         .header { text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
         .header h1 { font-size: 24px; color: #111827; margin-bottom: 8px; }
-        .header .meta { color: #6b7280; font-size: 14px; }
-        .status { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin: 10px 0; }
-        .status.healthy { background: #d1fae5; color: #065f46; }
-        .status.attention { background: #fef3c7; color: #92400e; }
-        .status.critical { background: #fee2e2; color: #991b1b; }
-        .section { margin-bottom: 25px; }
+        .header .meta { color: #6b7280; font-size: 14px; line-height: 1.8; }
+        .status { display: inline-block; padding: 6px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; margin: 10px 0; }
+        .status.healthy, .status.HEALTHY { background: #d1fae5; color: #065f46; }
+        .status.attention, .status.ATTENTION { background: #fef3c7; color: #92400e; }
+        .status.critical, .status.CRITICAL { background: #fee2e2; color: #991b1b; }
+        .section { margin-bottom: 25px; page-break-inside: avoid; }
         .section h2 { font-size: 16px; color: #374151; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
-        .summary { background: #f9fafb; padding: 16px; border-radius: 8px; line-height: 1.6; }
-        .list { list-style: none; }
-        .list li { padding: 8px 0; padding-left: 20px; position: relative; border-bottom: 1px solid #f3f4f6; }
-        .list li:before { content: "•"; position: absolute; left: 0; color: #9ca3af; }
-        .list li.highlight:before { color: #10b981; }
-        .list li.concern:before { color: #f59e0b; }
-        .list li.recommendation:before { color: #8b5cf6; }
+        .summary { background: #f9fafb; padding: 16px; border-radius: 8px; line-height: 1.7; white-space: pre-wrap; }
+        .health-card { background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; display: inline-block; }
+        .health-card .label { font-size: 13px; color: #6b7280; margin-bottom: 8px; }
+        .health-card .value { font-size: 24px; font-weight: 700; }
+        .health-card .stats { font-size: 12px; color: #6b7280; margin-top: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th { background: #f9fafb; padding: 10px 8px; text-align: left; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; }
+        td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
+        .risk-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+        .risk-badge.low { background: #d1fae5; color: #065f46; }
+        .risk-badge.medium { background: #fef3c7; color: #92400e; }
+        .risk-badge.high { background: #fee2e2; color: #991b1b; }
+        .score { font-weight: 700; }
+        .score.green { color: #059669; }
+        .score.yellow { color: #d97706; }
+        .score.red { color: #dc2626; }
+        .metric { font-weight: 500; }
+        .metric.good { color: #059669; }
+        .metric.warning { color: #d97706; }
+        .metric.bad { color: #dc2626; }
         .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; color: #9ca3af; font-size: 12px; }
-        .members-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-        .members-table th, .members-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
-        .members-table th { background: #f9fafb; font-weight: 600; color: #374151; }
-        .comparison-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
-        .comparison-card { background: #f9fafb; padding: 12px; border-radius: 8px; text-align: center; }
-        .comparison-card .label { font-size: 12px; color: #6b7280; margin-bottom: 4px; }
-        .comparison-card .value { font-size: 20px; font-weight: 700; color: #111827; }
-        @media print { body { padding: 20px; } }
+        @media print { body { padding: 20px; } .section { page-break-inside: avoid; } }
       </style>
     </head>
     <body>
@@ -393,58 +636,64 @@ function generatePrintHTML(summary: AISummaryDetail, teamName: string, timezone:
           Period: ${formatPeriod(summary.periodStart, summary.periodEnd, timezone)}<br/>
           Generated: ${formatDateTimeFull(summary.createdAt, timezone)} by ${summary.generatedBy}
         </div>
-        <div class="status ${summary.overallStatus}">${statusLabels[summary.overallStatus]}</div>
+        <div class="status ${summary.overallStatus}">${statusLabels[summary.overallStatus] || summary.overallStatus}</div>
       </div>
 
       <div class="section">
-        <h2>Executive Summary</h2>
-        <div class="summary">${summary.summary}</div>
+        <h2>Team Health Status</h2>
+        <div class="health-card">
+          <div class="label">Overall Status</div>
+          <div class="value">${statusLabels[summary.overallStatus] || summary.overallStatus}</div>
+          <div class="stats">Avg Score: ${avgScore}% • Total Check-ins: ${totalCheckins}</div>
+        </div>
       </div>
 
-      ${summary.highlights.length > 0 ? `
+      ${memberAnalytics.length > 0 ? `
       <div class="section">
-        <h2>Highlights</h2>
-        <ul class="list">${summary.highlights.map(h => `<li class="highlight">${h}</li>`).join('')}</ul>
-      </div>
-      ` : ''}
-
-      ${summary.concerns.length > 0 ? `
-      <div class="section">
-        <h2>Concerns</h2>
-        <ul class="list">${summary.concerns.map(c => `<li class="concern">${c}</li>`).join('')}</ul>
-      </div>
-      ` : ''}
-
-      ${summary.recommendations.length > 0 ? `
-      <div class="section">
-        <h2>Recommendations</h2>
-        <ul class="list">${summary.recommendations.map(r => `<li class="recommendation">${r}</li>`).join('')}</ul>
-      </div>
-      ` : ''}
-
-      ${summary.aggregateData?.memberAnalytics ? `
-      <div class="section">
-        <h2>Member Analytics</h2>
-        <table class="members-table">
+        <h2>Member Performance</h2>
+        <table>
           <thead>
-            <tr><th>Name</th><th>Risk</th><th>Avg Score</th><th>Check-in Rate</th><th>G/Y/R</th></tr>
+            <tr>
+              <th>Member</th>
+              <th>Status</th>
+              <th>Score</th>
+              <th>Mood</th>
+              <th>Stress</th>
+              <th>Sleep</th>
+              <th>Physical</th>
+            </tr>
           </thead>
           <tbody>
-            ${summary.aggregateData.memberAnalytics.map(m => `
-              <tr>
-                <td>${m.name}</td>
-                <td>${m.riskLevel === 'high' ? 'At Risk' : m.riskLevel === 'medium' ? 'Caution' : 'Good'}</td>
-                <td>${m.avgScore}%</td>
-                <td>${m.checkinRate}%</td>
-                <td>${m.greenCount}/${m.yellowCount}/${m.redCount}</td>
-              </tr>
-            `).join('')}
+            ${memberAnalytics.map((m: any) => {
+              const scoreClass = m.avgScore >= 70 ? 'green' : m.avgScore >= 40 ? 'yellow' : 'red';
+              const moodClass = m.avgMood >= 7 ? 'good' : m.avgMood >= 5 ? 'warning' : 'bad';
+              const stressClass = m.avgStress <= 4 ? 'good' : m.avgStress <= 6 ? 'warning' : 'bad';
+              const sleepClass = m.avgSleep >= 7 ? 'good' : m.avgSleep >= 5 ? 'warning' : 'bad';
+              const physical = m.avgPhysical ?? m.avgPhysicalHealth;
+              const physicalClass = physical >= 7 ? 'good' : physical >= 5 ? 'warning' : 'bad';
+              return `
+                <tr>
+                  <td><strong>${m.name}</strong><br/><span style="color:#9ca3af;font-size:11px;">${m.checkinCount} check-ins</span></td>
+                  <td><span class="risk-badge ${getRiskClass(m.avgScore)}">${getRiskLabel(m.avgScore)}</span></td>
+                  <td><span class="score ${scoreClass}">${m.avgScore}%</span></td>
+                  <td><span class="metric ${moodClass}">${m.avgMood}/10</span></td>
+                  <td><span class="metric ${stressClass}">${m.avgStress}/10</span></td>
+                  <td><span class="metric ${sleepClass}">${m.avgSleep}/10</span></td>
+                  <td><span class="metric ${physical != null ? physicalClass : ''}">${physical != null ? physical + '/10' : '-'}</span></td>
+                </tr>
+              `;
+            }).join('')}
           </tbody>
         </table>
       </div>
       ` : ''}
 
-      <div class="footer">Generated by AegiraAI Insights &bull; ${new Date().toLocaleDateString('en-US', { timeZone: timezone })}</div>
+      <div class="section">
+        <h2>Expert Data Interpretation</h2>
+        <div class="summary">${summary.summary}</div>
+      </div>
+
+      <div class="footer">Generated by AegiraAI Insights • ${new Date().toLocaleDateString('en-US', { timeZone: timezone })}</div>
     </body>
     </html>
   `;
@@ -518,8 +767,6 @@ export function AIInsightsDetailPage() {
       </div>
     );
   }
-
-  const healthScore = summary.aggregateData?.teamHealthScore || 0;
 
   return (
     <div className="relative min-h-[calc(100vh-120px)]">
@@ -595,230 +842,174 @@ export function AIInsightsDetailPage() {
 
           {/* Content */}
           <div className="p-8 space-y-8">
-            {/* Summary */}
+            {/* Team Health Status - Simple healthy/attention/critical based on member performance */}
+            <div className="max-w-md">
+              {(() => {
+                const status = summary.overallStatus;
+                const statusConfig = {
+                  healthy: { label: 'Healthy', icon: '✅', bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', desc: 'Team wellness is within healthy ranges' },
+                  attention: { label: 'Needs Attention', icon: '⚠️', bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', desc: 'Some members may need support' },
+                  critical: { label: 'Critical', icon: '🔴', bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', desc: 'Immediate attention required' },
+                };
+                const config = statusConfig[status] || statusConfig.healthy;
+                const avgScore = summary.aggregateData?.memberAnalytics?.length > 0
+                  ? Math.round(summary.aggregateData.memberAnalytics.reduce((sum: number, m: any) => sum + m.avgScore, 0) / summary.aggregateData.memberAnalytics.length)
+                  : 0;
+                const totalCheckins = summary.aggregateData?.memberAnalytics?.reduce((sum: number, m: any) => sum + m.checkinCount, 0) || 0;
+                return (
+                  <div className={cn('rounded-xl border p-6', config.bg, config.border)}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="text-2xl">{config.icon}</span>
+                      <div>
+                        <p className={cn('text-lg font-semibold', config.text)}>{config.label}</p>
+                        <p className="text-sm text-gray-600">{config.desc}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-200">
+                      <div>
+                        <p className="text-xs text-gray-500">Avg Score</p>
+                        <p className="font-semibold text-gray-900">{avgScore}%</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Total Check-ins</p>
+                        <p className="font-semibold text-gray-900">{totalCheckins}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Member Performance Table */}
+            {summary.aggregateData?.memberAnalytics && summary.aggregateData.memberAnalytics.length > 0 && (
+              <div>
+                <SectionHeader icon={Users} title="Member Performance" iconColor="text-blue-500" />
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  {/* Desktop Table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr className="text-xs font-medium text-gray-500 uppercase">
+                          <th className="px-4 py-3 text-left">Member</th>
+                          <th className="px-4 py-3 text-center">Status</th>
+                          <th className="px-4 py-3 text-center">Score</th>
+                          <th className="px-4 py-3 text-center">Mood</th>
+                          <th className="px-4 py-3 text-center">Stress</th>
+                          <th className="px-4 py-3 text-center">Sleep</th>
+                          <th className="px-4 py-3 text-center">Physical</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {summary.aggregateData.memberAnalytics.map((member: any, idx: number) => {
+                          const scoreColor = member.avgScore >= 70 ? 'text-emerald-600 bg-emerald-50' : member.avgScore >= 40 ? 'text-amber-600 bg-amber-50' : 'text-rose-600 bg-rose-50';
+                          const riskColor = member.riskLevel === 'high' ? 'bg-rose-100 text-rose-700' : member.riskLevel === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700';
+                          const riskLabel = member.riskLevel === 'high' ? 'High Risk' : member.riskLevel === 'medium' ? 'Medium' : 'Low';
+                          return (
+                            <tr key={idx} className="hover:bg-gray-50">
+                              <td className="px-4 py-3">
+                                <p className="text-sm font-medium text-gray-900">{member.name}</p>
+                                <p className="text-xs text-gray-500">{member.checkinCount} check-ins</p>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', riskColor)}>
+                                  {riskLabel}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={cn('px-2 py-0.5 text-sm font-bold rounded-md', scoreColor)}>
+                                  {member.avgScore}%
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={cn('text-sm font-medium', member.avgMood >= 7 ? 'text-emerald-600' : member.avgMood >= 5 ? 'text-amber-600' : 'text-rose-600')}>
+                                  {member.avgMood}/10
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={cn('text-sm font-medium', member.avgStress <= 4 ? 'text-emerald-600' : member.avgStress <= 6 ? 'text-amber-600' : 'text-rose-600')}>
+                                  {member.avgStress}/10
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={cn('text-sm font-medium', member.avgSleep >= 7 ? 'text-emerald-600' : member.avgSleep >= 5 ? 'text-amber-600' : 'text-rose-600')}>
+                                  {member.avgSleep}/10
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {(member.avgPhysical ?? member.avgPhysicalHealth) != null ? (
+                                  <span className={cn('text-sm font-medium', (member.avgPhysical ?? member.avgPhysicalHealth) >= 7 ? 'text-emerald-600' : (member.avgPhysical ?? member.avgPhysicalHealth) >= 5 ? 'text-amber-600' : 'text-rose-600')}>
+                                    {member.avgPhysical ?? member.avgPhysicalHealth}/10
+                                  </span>
+                                ) : (
+                                  <span className="text-sm text-gray-400">-</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Card View */}
+                  <div className="md:hidden divide-y divide-gray-100">
+                    {summary.aggregateData.memberAnalytics.map((member: any, idx: number) => {
+                      const scoreColor = member.avgScore >= 70 ? 'text-emerald-600 bg-emerald-50' : member.avgScore >= 40 ? 'text-amber-600 bg-amber-50' : 'text-rose-600 bg-rose-50';
+                      const riskColor = member.riskLevel === 'high' ? 'bg-rose-100 text-rose-700' : member.riskLevel === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700';
+                      const riskLabel = member.riskLevel === 'high' ? 'High Risk' : member.riskLevel === 'medium' ? 'Medium' : 'Low';
+                      return (
+                        <div key={idx} className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium text-gray-900">{member.name}</p>
+                              <p className="text-xs text-gray-500">{member.checkinCount} check-ins</p>
+                            </div>
+                            <span className={cn('px-2 py-0.5 text-xs font-medium rounded-full', riskColor)}>
+                              {riskLabel}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                            <span className="text-sm text-gray-600">Avg Score</span>
+                            <span className={cn('px-2 py-0.5 text-sm font-bold rounded-md', scoreColor)}>{member.avgScore}%</span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-2 text-center">
+                            <div className="bg-gray-50 rounded-lg p-2">
+                              <p className={cn('text-lg font-bold', member.avgMood >= 7 ? 'text-emerald-600' : member.avgMood >= 5 ? 'text-amber-600' : 'text-rose-600')}>{member.avgMood}</p>
+                              <p className="text-xs text-gray-500">Mood</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-2">
+                              <p className={cn('text-lg font-bold', member.avgStress <= 4 ? 'text-emerald-600' : member.avgStress <= 6 ? 'text-amber-600' : 'text-rose-600')}>{member.avgStress}</p>
+                              <p className="text-xs text-gray-500">Stress</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-2">
+                              <p className={cn('text-lg font-bold', member.avgSleep >= 7 ? 'text-emerald-600' : member.avgSleep >= 5 ? 'text-amber-600' : 'text-rose-600')}>{member.avgSleep}</p>
+                              <p className="text-xs text-gray-500">Sleep</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-2">
+                              <p className={cn('text-lg font-bold', (member.avgPhysical ?? member.avgPhysicalHealth) != null ? ((member.avgPhysical ?? member.avgPhysicalHealth) >= 7 ? 'text-emerald-600' : (member.avgPhysical ?? member.avgPhysicalHealth) >= 5 ? 'text-amber-600' : 'text-rose-600') : 'text-gray-400')}>
+                                {(member.avgPhysical ?? member.avgPhysicalHealth) != null ? (member.avgPhysical ?? member.avgPhysicalHealth) : '-'}
+                              </p>
+                              <p className="text-xs text-gray-500">Physical</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Expert Data Interpretation Narrative */}
             <div>
-              <SectionHeader icon={Sparkles} title="Summary" iconColor="text-violet-500" />
+              <SectionHeader icon={Sparkles} title="Expert Data Interpretation" iconColor="text-violet-500" />
               <div className="bg-gray-50 rounded-xl p-6">
-                <p className="text-gray-700 leading-relaxed text-base">{summary.summary}</p>
+                <div className="text-gray-700 leading-relaxed text-base whitespace-pre-wrap">
+                  {summary.summary}
+                </div>
               </div>
             </div>
 
-            {/* Key Metrics */}
-            {summary.aggregateData && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Health Score */}
-                  <MetricCard
-                    icon={Activity}
-                    label="Team Health Score"
-                    value={healthScore}
-                    subtext="/100"
-                    gradient="bg-gradient-to-br from-violet-50 to-purple-50 border-violet-100"
-                    iconColor="text-violet-500"
-                    progress={{
-                      value: healthScore,
-                      color: healthScore >= 75 ? 'bg-emerald-500' : healthScore >= 50 ? 'bg-amber-500' : 'bg-rose-500',
-                    }}
-                  >
-                    <p className="text-xs text-gray-500 mt-2">Readiness (40%) + Compliance (30%) + Consistency (30%)</p>
-                  </MetricCard>
-
-                  {/* Team Grade */}
-                  {summary.aggregateData.teamGrade && (
-                    <MetricCard
-                      icon={TrendingUp}
-                      label="Team Grade"
-                      value={summary.aggregateData.teamGrade.letter}
-                      gradient="bg-gradient-to-br from-purple-50 to-pink-50 border-purple-100"
-                      iconColor="text-purple-500"
-                    >
-                      <p className="font-medium text-gray-700 mt-2">{summary.aggregateData.teamGrade.label}</p>
-                      <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-purple-100">
-                        <div>
-                          <p className="text-xs text-gray-500">Avg Readiness</p>
-                          <p className="font-semibold text-gray-900">{summary.aggregateData.teamGrade.avgReadiness}%</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">Compliance</p>
-                          <p className="font-semibold text-gray-900">{summary.aggregateData.teamGrade.compliance}%</p>
-                        </div>
-                      </div>
-                    </MetricCard>
-                  )}
-                </div>
-
-                {/* Quick Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
-                    <Users className="h-5 w-5 text-gray-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-gray-900">{summary.aggregateData.totalMembers}</p>
-                    <p className="text-xs text-gray-500">Members</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
-                    <CheckCircle2 className="h-5 w-5 text-emerald-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-gray-900">{summary.highlights.length}</p>
-                    <p className="text-xs text-gray-500">Highlights</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
-                    <AlertTriangle className="h-5 w-5 text-amber-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-gray-900">{summary.concerns.length}</p>
-                    <p className="text-xs text-gray-500">Concerns</p>
-                  </div>
-                  <div className="bg-gray-50 rounded-xl p-4 text-center border border-gray-100">
-                    <TrendingUp className="h-5 w-5 text-violet-500 mx-auto mb-2" />
-                    <p className="text-2xl font-bold text-gray-900">{summary.recommendations.length}</p>
-                    <p className="text-xs text-gray-500">Recs</p>
-                  </div>
-                </div>
-
-                {/* Top Performers */}
-                {summary.aggregateData.topPerformers && summary.aggregateData.topPerformers.length > 0 && (
-                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-6 border border-emerald-100">
-                    <h3 className="font-semibold text-gray-900 mb-4">Top Performers</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {summary.aggregateData.topPerformers.map((p: any, i: number) => (
-                        <div key={i} className="bg-white rounded-lg p-4 border border-emerald-100">
-                          <div className="flex items-center gap-3 mb-3">
-                            <div className={cn('h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold text-white', i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-gray-400' : 'bg-orange-600')}>
-                              {i + 1}
-                            </div>
-                            <span className="font-medium text-gray-900">{p.name}</span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2 text-center">
-                            <div>
-                              <p className="text-lg font-bold text-emerald-600">{p.avgScore}%</p>
-                              <p className="text-xs text-gray-500">Score</p>
-                            </div>
-                            <div>
-                              <p className="text-lg font-bold text-violet-600">{p.checkinRate}%</p>
-                              <p className="text-xs text-gray-500">Rate</p>
-                            </div>
-                            <div>
-                              <p className="text-lg font-bold text-purple-600">{p.currentStreak}</p>
-                              <p className="text-xs text-gray-500">Streak</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Root Cause Analysis */}
-                {summary.aggregateData.topReasons && summary.aggregateData.topReasons.length > 0 && (
-                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-6 border border-amber-100">
-                    <h3 className="font-semibold text-gray-900 mb-4">Root Cause Analysis</h3>
-                    <div className="space-y-3">
-                      {summary.aggregateData.topReasons.map((r: any, i: number) => {
-                        const total = summary.aggregateData!.topReasons!.reduce((sum: number, x: any) => sum + x.count, 0);
-                        const pct = Math.round((r.count / total) * 100);
-                        return (
-                          <div key={i} className="flex items-center gap-4">
-                            <div className="w-28 text-sm font-medium text-gray-700 truncate">{r.label}</div>
-                            <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
-                              <div className="h-full bg-amber-400 rounded-full flex items-center justify-end pr-2" style={{ width: `${pct}%` }}>
-                                {pct >= 15 && <span className="text-xs font-medium text-white">{r.count}</span>}
-                              </div>
-                            </div>
-                            <div className="w-10 text-sm text-gray-500 text-right">{pct}%</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Period Comparison */}
-            {summary.aggregateData?.periodComparison && (
-              <PeriodComparisonCard comparison={summary.aggregateData.periodComparison as PeriodComparison} />
-            )}
-
-            {/* Highlights */}
-            {summary.highlights.length > 0 && (
-              <div>
-                <SectionHeader icon={CheckCircle2} title="Highlights" iconColor="text-emerald-500" />
-                <div className="space-y-3">
-                  {summary.highlights.map((h, i) => <ListItem key={i} text={h} variant="highlight" />)}
-                </div>
-              </div>
-            )}
-
-            {/* Concerns */}
-            {summary.concerns.length > 0 && (
-              <div>
-                <SectionHeader icon={AlertTriangle} title="Concerns" iconColor="text-amber-500" />
-                <div className="space-y-3">
-                  {summary.concerns.map((c, i) => <ListItem key={i} text={c} variant="concern" />)}
-                </div>
-              </div>
-            )}
-
-            {/* Recommendations */}
-            {summary.recommendations.length > 0 && (
-              <div>
-                <SectionHeader icon={TrendingUp} title="Recommendations" iconColor="text-violet-500" />
-                <div className="space-y-3">
-                  {summary.recommendations.map((r, i) => <ListItem key={i} text={r} index={i + 1} variant="recommendation" />)}
-                </div>
-              </div>
-            )}
-
-            {/* Member Analytics */}
-            {summary.aggregateData?.memberAnalytics && summary.aggregateData.memberAnalytics.length > 0 && (
-              <div>
-                <SectionHeader icon={Users} title="Member Analytics" />
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Name</th>
-                        <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">Risk</th>
-                        <th className="px-6 py-4 text-center text-sm font-semibold text-gray-700">Score</th>
-                        <th className="px-6 py-4 text-center text-sm font-semibold text-gray-700">Rate</th>
-                        <th className="px-6 py-4 text-center text-sm font-semibold text-gray-700">G/Y/R</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {summary.aggregateData.memberAnalytics.map((m, i) => {
-                        const risk = RISK_CONFIG[m.riskLevel as RiskLevel];
-                        return (
-                          <tr key={i} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-6 py-4 font-medium text-gray-900">{m.name}</td>
-                            <td className="px-6 py-4">
-                              <span className={cn('inline-flex px-2.5 py-1 rounded-full text-xs font-medium', risk.className)}>
-                                {risk.label}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center font-semibold text-gray-900">{m.avgScore}%</td>
-                            <td className="px-6 py-4 text-center">
-                              <div className="flex flex-col items-center">
-                                <span className={cn('font-semibold', m.checkinRate >= 80 ? 'text-emerald-600' : m.checkinRate >= 50 ? 'text-amber-600' : 'text-rose-600')}>
-                                  {m.checkinRate}%
-                                </span>
-                                {m.expectedWorkDays !== undefined && (
-                                  <span className="text-xs text-gray-500 mt-0.5">
-                                    ({m.checkinCount || 0}/{m.expectedWorkDays})
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span className="text-emerald-600 font-medium">{m.greenCount}</span>
-                              <span className="text-gray-400 mx-1">/</span>
-                              <span className="text-amber-600 font-medium">{m.yellowCount}</span>
-                              <span className="text-gray-400 mx-1">/</span>
-                              <span className="text-rose-600 font-medium">{m.redCount}</span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Footer */}

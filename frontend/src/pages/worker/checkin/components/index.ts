@@ -2,8 +2,8 @@
  * Check-in Page Components
  */
 
-export { ExemptionRequestModal } from './ExemptionRequestModal';
 export { LowScoreReasonModal } from './LowScoreReasonModal';
+export { WellnessInsightCard } from './WellnessInsightCard';
 export { CheckinErrorMessage } from './CheckinErrorMessage';
 export { WeekStatsCard } from './WeekStatsCard';
 export { StreakCard } from './StreakCard';

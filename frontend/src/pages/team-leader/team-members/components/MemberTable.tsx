@@ -29,7 +29,7 @@ export function MemberTable({
   showActions = true,
 }: MemberTableProps) {
   return (
-    <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+    <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-visible shadow-sm">
       <table className="w-full">
         <thead>
           <tr className="bg-gray-50/80 border-b border-gray-200">

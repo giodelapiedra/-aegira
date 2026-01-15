@@ -100,6 +100,7 @@ export function CheckinPage() {
 
   // Already checked in today - show dashboard
   if (todayCheckin.data) {
+    // Check if low score reason is needed (YELLOW/RED without reason submitted)
     const needsLowScoreReason =
       (todayCheckin.data.readinessStatus === 'RED' ||
         todayCheckin.data.readinessStatus === 'YELLOW') &&
@@ -110,13 +111,7 @@ export function CheckinPage() {
         currentUser={currentUser.data}
         team={team.data}
         todayCheckin={todayCheckin.data}
-        weekStats={weekStats.data}
-        recentCheckins={recentCheckins.data}
-        exemptionStatus={exemptionStatusWithId.data}
-        pendingExemption={pendingExemptionWithId.data}
         needsLowScoreReason={needsLowScoreReason}
-        onRefetchExemptionStatus={() => exemptionStatusWithId.refetch()}
-        onRefetchPendingExemption={() => pendingExemptionWithId.refetch()}
         onRefetchTodayCheckin={() => todayCheckin.refetch()}
       />
     );

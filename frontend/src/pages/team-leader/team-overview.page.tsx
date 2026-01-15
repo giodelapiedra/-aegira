@@ -22,7 +22,6 @@ import {
   Building2,
   MoreHorizontal,
   Eye,
-  ArrowRightLeft,
   Search,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -415,7 +414,7 @@ export function TeamOverviewPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 relative">
                       <div className="relative">
                         <button
                           onClick={(e) => {
@@ -428,43 +427,40 @@ export function TeamOverviewPage() {
                         </button>
 
                         {isMenuOpen && (
-                          <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded border border-gray-200 shadow-lg py-1 z-50">
-                            <button
-                              onClick={() => {
-                                handleViewProfile(member.id);
-                                setOpenMenuId(null);
-                              }}
-                              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                            >
-                              <Eye className="h-4 w-4" />
-                              View Profile
-                            </button>
-                            {isTeamLeader && (
-                              <>
+                          <>
+                            {/* Backdrop to close menu on outside click */}
+                            <div
+                              className="fixed inset-0 z-40"
+                              onClick={() => setOpenMenuId(null)}
+                            />
+                            <div className="absolute right-0 bottom-full mb-1 w-40 bg-white rounded-lg border border-gray-200 shadow-xl py-1 z-[100] min-w-max">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewProfile(member.id);
+                                  setOpenMenuId(null);
+                                }}
+                                className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 whitespace-nowrap"
+                              >
+                                <Eye className="h-4 w-4 flex-shrink-0" />
+                                View Profile
+                              </button>
+                              {isTeamLeader && (
                                 <button
-                                  onClick={() => {
-                                    toast.info('Coming Soon', 'Transfer feature will be available soon.');
-                                    setOpenMenuId(null);
-                                  }}
-                                  className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                >
-                                  <ArrowRightLeft className="h-4 w-4" />
-                                  Transfer
-                                </button>
-                                <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setSelectedMember(member);
                                     setShowRemoveMemberConfirm(true);
                                     setOpenMenuId(null);
                                   }}
-                                  className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                  className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 whitespace-nowrap"
                                 >
-                                  <UserMinus className="h-4 w-4" />
+                                  <UserMinus className="h-4 w-4 flex-shrink-0" />
                                   Remove
                                 </button>
-                              </>
-                            )}
-                          </div>
+                              )}
+                            </div>
+                          </>
                         )}
                       </div>
                     </td>

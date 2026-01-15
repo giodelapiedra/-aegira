@@ -33,6 +33,53 @@ async function getCompanyTimezone(companyId: string): Promise<string> {
   return company?.timezone || DEFAULT_TIMEZONE;
 }
 
+// Helper: Validate if a TEAM_LEAD can be assigned as team leader
+// Returns error message if invalid, null if valid
+async function validateTeamLeaderAssignment(
+  leaderId: string,
+  companyId: string,
+  excludeTeamId?: string
+): Promise<string | null> {
+  const leader = await prisma.user.findFirst({
+    where: { id: leaderId, companyId, isActive: true },
+  });
+
+  if (!leader) {
+    return 'Invalid team leader';
+  }
+
+  // Leader should be TEAM_LEAD, SUPERVISOR, or higher role
+  if (!['TEAM_LEAD', 'SUPERVISOR', 'ADMIN', 'EXECUTIVE'].includes(leader.role)) {
+    return 'Team leader must have Team Lead role or higher';
+  }
+
+  // For TEAM_LEAD role only: Check if they're already assigned to another team
+  if (leader.role === 'TEAM_LEAD') {
+    const whereClause: any = {
+      leaderId,
+      companyId,
+      isActive: true,
+    };
+
+    // Exclude current team when updating
+    if (excludeTeamId) {
+      whereClause.id = { not: excludeTeamId };
+    }
+
+    const existingTeam = await prisma.team.findFirst({
+      where: whereClause,
+    });
+
+    if (existingTeam) {
+      return excludeTeamId
+        ? 'This Team Leader is already assigned to another team. Please select a different Team Leader.'
+        : 'This Team Leader is already assigned to a team. Please select a different Team Leader.';
+    }
+  }
+
+  return null;
+}
+
 // GET /teams - List teams (company-scoped)
 // Query params:
 //   includeInactive=true to include deactivated teams
@@ -546,18 +593,10 @@ teamsRoutes.post('/', async (c) => {
     return c.json({ error: 'Team leader is required. Please assign a team leader.' }, 400);
   }
 
-  // Validate leader exists and has appropriate role
-  const leader = await prisma.user.findFirst({
-    where: { id: body.leaderId, companyId, isActive: true },
-  });
-
-  if (!leader) {
-    return c.json({ error: 'Invalid team leader' }, 400);
-  }
-
-  // Leader should be TEAM_LEAD, SUPERVISOR, or higher role
-  if (!['TEAM_LEAD', 'SUPERVISOR', 'ADMIN', 'EXECUTIVE'].includes(leader.role)) {
-    return c.json({ error: 'Team leader must have Team Lead role or higher' }, 400);
+  // Validate leader assignment
+  const validationError = await validateTeamLeaderAssignment(body.leaderId, companyId);
+  if (validationError) {
+    return c.json({ error: validationError }, 400);
   }
 
   const team = await prisma.team.create({
@@ -582,13 +621,14 @@ teamsRoutes.post('/', async (c) => {
   });
 
   // Log team creation
+  const leaderName = team.leader ? `${team.leader.firstName} ${team.leader.lastName}` : 'Unknown';
   await createSystemLog({
     companyId,
     userId: currentUser.id,
     action: 'TEAM_CREATED',
     entityType: 'team',
     entityId: team.id,
-    description: `${currentUser.firstName} ${currentUser.lastName} created team "${body.name}" with leader ${leader.firstName} ${leader.lastName}`,
+    description: `${currentUser.firstName} ${currentUser.lastName} created team "${body.name}" with leader ${leaderName}`,
     metadata: { teamName: body.name, leaderId: body.leaderId },
   });
 
@@ -624,17 +664,9 @@ teamsRoutes.put('/:id', async (c) => {
 
   // Validate new leader if changing
   if (body.leaderId && body.leaderId !== existing.leaderId) {
-    const leader = await prisma.user.findFirst({
-      where: { id: body.leaderId, companyId, isActive: true },
-    });
-
-    if (!leader) {
-      return c.json({ error: 'Invalid team leader' }, 400);
-    }
-
-    // Leader should be TEAM_LEAD, SUPERVISOR, or higher role
-    if (!['TEAM_LEAD', 'SUPERVISOR', 'ADMIN', 'EXECUTIVE'].includes(leader.role)) {
-      return c.json({ error: 'Team leader must have Team Lead role or higher' }, 400);
+    const validationError = await validateTeamLeaderAssignment(body.leaderId, companyId, id);
+    if (validationError) {
+      return c.json({ error: validationError }, 400);
     }
   }
 

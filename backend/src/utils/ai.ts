@@ -388,6 +388,214 @@ Always respond with valid JSON.`,
   return JSON.parse(content) as AnalyticsSummaryResult;
 }
 
+// Expert Data Interpretation - Narrative style output
+export interface ExpertInterpretationData {
+  teamName: string;
+  totalMembers: number;
+  totalCheckins: number;
+  periodStart: string;
+  periodEnd: string;
+  statusDistribution: {
+    GREEN: number;
+    YELLOW: number;
+    RED: number;
+  };
+  averages: {
+    score: number;
+    mood: number;
+    stress: number;
+    sleep: number;
+    physical: number;
+  };
+  memberStats: {
+    name: string;
+    avgScore: number;
+    checkinCount: number;
+    redCount: number;
+    riskLevel: 'low' | 'medium' | 'high';
+    avgMood: number;
+    avgStress: number;
+    avgSleep: number;
+    avgPhysical: number;
+  }[];
+}
+
+export interface ExpertInterpretationResult {
+  narrative: string;
+  overallStatus: 'healthy' | 'attention' | 'critical';
+}
+
+export async function generateExpertDataInterpretation(
+  data: ExpertInterpretationData
+): Promise<ExpertInterpretationResult> {
+  // Categorize members by risk level
+  const highRiskMembers = data.memberStats.filter(m => m.riskLevel === 'high');
+  const mediumRiskMembers = data.memberStats.filter(m => m.riskLevel === 'medium');
+
+  // Build member breakdown with risk levels
+  const memberBreakdown = data.memberStats.map(m => {
+    const riskLabel = m.riskLevel === 'high' ? '🔴 HIGH RISK' : m.riskLevel === 'medium' ? '🟡 MEDIUM' : '🟢 LOW';
+    return `- ${m.name} [${riskLabel}]: Score ${(m.avgScore || 0).toFixed(0)}%, Mood ${(m.avgMood || 0).toFixed(1)}/10, Stress ${(m.avgStress || 0).toFixed(1)}/10, Sleep ${(m.avgSleep || 0).toFixed(1)}/10, Physical ${(m.avgPhysical || 0).toFixed(1)}/10 (${m.checkinCount || 0} check-ins)`;
+  }).join('\n');
+
+  // Build at-risk members section for the prompt
+  let atRiskSection = '';
+  if (highRiskMembers.length > 0 || mediumRiskMembers.length > 0) {
+    atRiskSection = '\n\nAT-RISK MEMBERS REQUIRING ACTION:\n';
+    if (highRiskMembers.length > 0) {
+      atRiskSection += 'HIGH RISK (Score < 40%):\n';
+      highRiskMembers.forEach(m => {
+        atRiskSection += `- ${m.name}: Score ${(m.avgScore || 0).toFixed(0)}%, Stress ${(m.avgStress || 0).toFixed(1)}/10, Sleep ${(m.avgSleep || 0).toFixed(1)}/10\n`;
+      });
+    }
+    if (mediumRiskMembers.length > 0) {
+      atRiskSection += 'MEDIUM RISK (Score 40-69%):\n';
+      mediumRiskMembers.forEach(m => {
+        atRiskSection += `- ${m.name}: Score ${(m.avgScore || 0).toFixed(0)}%, Stress ${(m.avgStress || 0).toFixed(1)}/10, Sleep ${(m.avgSleep || 0).toFixed(1)}/10\n`;
+      });
+    }
+  }
+
+  const prompt = `You are an Expert Data Analyst specializing in workplace wellness.
+Analyze this team check-in data and provide a professional narrative interpretation.
+
+PERIOD: ${data.periodStart} to ${data.periodEnd}
+TEAM: ${data.teamName} (${data.totalMembers} members)
+TOTAL CHECK-INS: ${data.totalCheckins}
+
+DATA:
+- Average Score: ${(data.averages.score || 0).toFixed(0)}%
+- Status Distribution: GREEN ${data.statusDistribution.GREEN || 0}, YELLOW ${data.statusDistribution.YELLOW || 0}, RED ${data.statusDistribution.RED || 0}
+- Avg Mood: ${(data.averages.mood || 0).toFixed(1)}/10
+- Avg Stress: ${(data.averages.stress || 0).toFixed(1)}/10
+- Avg Sleep: ${(data.averages.sleep || 0).toFixed(1)}/10
+- Avg Physical: ${(data.averages.physical || 0).toFixed(1)}/10
+
+RISK LEVEL CRITERIA:
+- HIGH RISK: Score < 40%
+- MEDIUM RISK: Score 40-69%
+- LOW RISK: Score >= 70%
+
+MEMBER BREAKDOWN:
+${memberBreakdown}
+${atRiskSection}
+
+Write a formal expert interpretation with these EXACT sections (use the headers exactly as shown):
+
+STRUCTURE (use DOUBLE LINE BREAKS between sections):
+
+1. Opening paragraph (2-3 sentences) - overall assessment of team well-being
+
+[blank line]
+
+2. "✅ Positive Findings:" section header on its own line, followed by:
+   [blank line]
+   - 2-3 narrative PARAGRAPHS (NOT bullet points) about what's working well
+   - Each paragraph separated by a blank line
+   - Focus on patterns, not just numbers
+
+[blank line]
+
+3. "⚠️ Areas of Concern:" section header on its own line, followed by:
+   [blank line]
+   - 2-3 narrative PARAGRAPHS (NOT bullet points) about areas of concern
+   - Each paragraph separated by a blank line
+   - Focus on patterns and their implications
+   - Mention specific members who are at Medium or High risk
+
+[blank line]
+
+4. "📋 Recommended Actions:" section header on its own line, followed by:
+   [blank line]
+   - For EACH Medium or High Risk member, provide SPECIFIC actionable recommendations
+   - Format: "[Member Name]: [specific action based on their metrics]"
+   - Example: "Antonio Mendoza: Schedule a 1-on-1 to discuss stress management strategies given elevated stress levels (4.8/10)"
+   - If no at-risk members, provide general team wellness recommendations
+   - Be specific about what actions to take based on each member's metrics (mood, stress, sleep, physical)
+
+[blank line]
+
+5. "📊 Overall Summary:" section header on its own line, followed by:
+   [blank line]
+   - 1-2 narrative PARAGRAPHS as expert conclusion
+   - Include key factors for maintaining/improving team performance
+
+CRITICAL FORMATTING RULES:
+- Include TWO newlines (blank line) BEFORE each section header
+- Include ONE newline AFTER each section header before the content
+- Include ONE newline between paragraphs within a section
+- Write in prose/paragraphs for Positive Findings, Areas of Concern, and Overall Summary
+- For Recommended Actions: use "[Name]: [action]" format, one per line
+- Be professional and data-driven
+- Do not use markdown headers (# or ##), just plain text section headers with emoji
+
+Provide a JSON response with:
+- narrative: The complete narrative text with all sections. MUST include proper line breaks (\\n\\n between sections, \\n between paragraphs)
+- overallStatus: "healthy" if avg score >=70%, "attention" if avg score 40-69%, "critical" if avg score <40%`;
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      {
+        role: 'system',
+        content: `You are AEGIRA AI, an expert in workplace wellness data interpretation.
+
+WRITING STYLE:
+- Professional, formal tone suitable for executive review
+- Write in flowing paragraphs, NOT bullet points (except for Recommended Actions)
+- Focus on patterns, correlations, and insights
+- Provide data-driven observations without excessive statistics
+- Use narrative prose that reads naturally
+
+EXPERTISE AREAS:
+- Occupational health and wellness metrics
+- Team performance indicators
+- Sleep-stress-mood relationships
+- Readiness assessment interpretation
+- Pattern recognition in wellness data
+- Evidence-based intervention recommendations
+
+RECOMMENDED ACTIONS GUIDELINES:
+- For HIGH RISK members (Score < 40%): Urgent intervention needed
+  * Immediate 1-on-1 meeting with supervisor
+  * Consider EAP (Employee Assistance Program) referral
+  * Review workload and responsibilities
+- For MEDIUM RISK members (Score 40-69%): Proactive support
+  * Schedule check-in meeting within the week
+  * Address specific metric concerns (high stress, poor sleep, etc.)
+  * Monitor closely for improvement
+- Always tie recommendations to specific metrics (e.g., "elevated stress at 4.8/10")
+
+OUTPUT FORMAT - CRITICAL:
+- Plain text with clear section headers (with emoji)
+- MUST include proper line breaks for readability:
+  * Double newline (\\n\\n) BEFORE each section header
+  * Single newline (\\n) AFTER each section header
+  * Single newline (\\n) between paragraphs within a section
+- Narrative paragraphs for most sections
+- Recommended Actions: "[Name]: [specific action]" format
+- Professional language throughout
+- No markdown formatting (no #, **, etc.)
+
+Always respond with valid JSON containing properly formatted narrative with line breaks.`,
+      },
+      {
+        role: 'user',
+        content: prompt,
+      },
+    ],
+    response_format: { type: 'json_object' },
+    max_tokens: 2000,
+  });
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error('No response from AI');
+  }
+
+  return JSON.parse(content) as ExpertInterpretationResult;
+}
+
 export async function generateAnalyticsSummary(
   data: AnalyticsSummaryData
 ): Promise<AnalyticsSummaryResult> {
