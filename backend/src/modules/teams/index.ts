@@ -24,14 +24,8 @@ import { recalculateTodaySummary, generateWorkerHealthReport, getWorkerHistoryAr
 
 const teamsRoutes = new Hono<AppContext>();
 
-// Helper: Get company timezone from context or default
-async function getCompanyTimezone(companyId: string): Promise<string> {
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  return company?.timezone || DEFAULT_TIMEZONE;
-}
+// REMOVED: getCompanyTimezone helper - now use c.get('timezone') from context
+// Timezone is fetched once in auth middleware and available everywhere
 
 // Helper: Validate if a TEAM_LEAD can be assigned as team leader
 // Returns error message if invalid, null if valid
@@ -151,7 +145,7 @@ teamsRoutes.get('/my', async (c) => {
           select: {
             id: true,
             name: true,
-            timezone: true,
+            // Timezone comes from context, no need to include
           },
         },
         members: {
@@ -189,7 +183,7 @@ teamsRoutes.get('/my', async (c) => {
           select: {
             id: true,
             name: true,
-            timezone: true,
+            // Timezone comes from context, no need to include
           },
         },
         members: {
@@ -236,8 +230,8 @@ teamsRoutes.get('/my', async (c) => {
     });
   }
 
-  // Get today's date range for leave check (timezone-aware)
-  const timezone = team.company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const { start: today, end: tomorrow } = getTodayRange(timezone);
 
   // Get date range for check-in counts (last 30 days for performance)
@@ -398,8 +392,8 @@ teamsRoutes.get('/:id/stats', async (c) => {
     return c.json({ error: 'You can only view stats for your own team' }, 403);
   }
 
-  // Get company timezone
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const todayForDb = getTodayForDbDate(timezone);
 
   // Get today's summary from DailyTeamSummary (pre-computed)
@@ -505,8 +499,8 @@ teamsRoutes.get('/:id/summary', async (c) => {
     return c.json({ error: 'You can only view summary for your own team' }, 403);
   }
 
-  // Get company timezone
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Calculate date range - use toDbDate for proper date comparison
   // DailyTeamSummary.date is stored as noon UTC, so we need to compare with noon UTC dates
@@ -527,6 +521,7 @@ teamsRoutes.get('/:id/summary', async (c) => {
   }
 
   // Get summaries for date range
+  // Note: absentCount and excusedCount exist in schema but Prisma types may be outdated
   const summaries = await prisma.dailyTeamSummary.findMany({
     where: {
       teamId: id,
@@ -536,7 +531,11 @@ teamsRoutes.get('/:id/summary', async (c) => {
       },
     },
     orderBy: { date: 'desc' },
-  });
+  }) as Array<{
+    absentCount?: number;
+    excusedCount?: number;
+    [key: string]: any;
+  }>;
 
   // Calculate aggregates
   const workDaySummaries = summaries.filter(s => s.isWorkDay && !s.isHoliday);
@@ -546,6 +545,8 @@ teamsRoutes.get('/:id/summary', async (c) => {
   const totalGreen = workDaySummaries.reduce((sum, s) => sum + s.greenCount, 0);
   const totalYellow = workDaySummaries.reduce((sum, s) => sum + s.yellowCount, 0);
   const totalRed = workDaySummaries.reduce((sum, s) => sum + s.redCount, 0);
+  const totalAbsent = workDaySummaries.reduce((sum, s) => sum + ((s as any).absentCount || 0), 0);
+  const totalExcused = workDaySummaries.reduce((sum, s) => sum + ((s as any).excusedCount || 0), 0);
 
   const avgComplianceRate = totalExpected > 0
     ? Math.round((totalCheckedIn / totalExpected) * 100)
@@ -574,6 +575,8 @@ teamsRoutes.get('/:id/summary', async (c) => {
       totalGreen,
       totalYellow,
       totalRed,
+      totalAbsent,   // Total penalized absences in period
+      totalExcused,  // Total TL-approved absences in period
     },
   });
 });
@@ -698,7 +701,7 @@ teamsRoutes.put('/:id', async (c) => {
 
   // If workDays changed, recalculate today's summary (isWorkDay flag affected)
   if (workDaysChanged) {
-    const timezone = await getCompanyTimezone(companyId);
+    const timezone = c.get('timezone');
     recalculateTodaySummary(id, timezone).catch(err => {
       console.error('Failed to recalculate summary after workDays change:', err);
     });
@@ -740,8 +743,8 @@ teamsRoutes.post('/:id/deactivate', async (c) => {
   const endDate = body.endDate ? new Date(body.endDate) : null;
   const now = new Date();
 
-  // Get company timezone
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const todayForDb = getTodayForDbDate(timezone);
 
   // Transaction: Deactivate team and create exemptions for all workers
@@ -842,8 +845,8 @@ teamsRoutes.post('/:id/reactivate', async (c) => {
   const now = new Date();
   const memberIds = team.members.map((m) => m.id);
 
-  // Get company timezone
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const yesterdayForDb = new Date(getTodayForDbDate(timezone));
   yesterdayForDb.setDate(yesterdayForDb.getDate() - 1);
 
@@ -1024,7 +1027,8 @@ teamsRoutes.post('/:id/members', async (c) => {
   });
 
   // Recalculate daily team summary (member count changed)
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   recalculateTodaySummary(id, timezone).catch(err => {
     console.error('Failed to recalculate summary after member added:', err);
   });
@@ -1091,8 +1095,8 @@ teamsRoutes.get('/members/:userId/profile', async (c) => {
     }
   }
 
-  // Get company timezone and today's date range (timezone-aware)
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const { start: today, end: tomorrow } = getTodayRange(timezone);
 
   // OPTIMIZED: Parallel fetch all member stats
@@ -1497,7 +1501,8 @@ teamsRoutes.delete('/:id/members/:userId', async (c) => {
   });
 
   // Recalculate daily team summary (member count changed)
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   recalculateTodaySummary(id, timezone).catch(err => {
     console.error('Failed to recalculate summary after member removed:', err);
   });
@@ -1532,8 +1537,8 @@ teamsRoutes.get('/members/:userId/analytics', async (c) => {
     }
   }
 
-  // Get company timezone and date range (timezone-aware)
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const { start: startDate, end: endDate } = getLastNDaysRange(days, timezone);
 
   // Get all check-ins in date range
@@ -1572,7 +1577,9 @@ teamsRoutes.get('/members/:userId/analytics', async (c) => {
     red: checkins.filter((c) => c.readinessStatus === 'RED').length,
   };
 
-  // Calculate average metrics
+  // Calculate average metrics from ACTUAL check-ins only
+  // IMPORTANT: Absent workers don't affect metrics - they have NO check-in record, so NO metrics data
+  // Only workers who actually checked in and submitted mood/stress/sleep/physicalHealth scales are included
   const totalCheckins = checkins.length;
   const avgMetrics = {
     mood: totalCheckins > 0
@@ -1715,8 +1722,8 @@ teamsRoutes.get('/my/analytics', async (c) => {
     }
   }
 
-  // Get company timezone (centralized)
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Calculate date range based on period (timezone-aware)
   const { start: todayStart, end: todayEnd } = getTodayRange(timezone);
@@ -1733,9 +1740,11 @@ teamsRoutes.get('/my/analytics', async (c) => {
       break;
     }
     case '7days': {
+      // getLastNDaysRange(6) = 6 days ago to today = 7 days total
+      // Example: If today is Day 7, returns Day 1 to Day 7 (inclusive)
       const range = getLastNDaysRange(6, timezone);
-      startDate = range.start;
-      endDate = range.end; // IMPORTANT: Use range.end to ensure today is included
+      startDate = range.start; // 6 days ago start of day
+      endDate = range.end;      // Today end of day (ensures today is included)
       break;
     }
     case '14days': {
@@ -1811,6 +1820,26 @@ teamsRoutes.get('/my/analytics', async (c) => {
   const onLeaveUserIds = membersOnLeave.map((e) => e.userId);
   const activeMembers = totalMembers - onLeaveUserIds.length;
 
+  // Get TODAY's absence counts from DailyAttendance (for detailed breakdown)
+  // Uses toDbDate for proper DailyAttendance date comparison
+  const todayForDb = toDbDate(todayStart, timezone);
+  const [todayAbsentCount, todayExcusedCount] = await Promise.all([
+    prisma.dailyAttendance.count({
+      where: {
+        userId: { in: memberIds },
+        date: todayForDb,
+        status: 'ABSENT',
+      },
+    }),
+    prisma.dailyAttendance.count({
+      where: {
+        userId: { in: memberIds },
+        date: todayForDb,
+        status: 'EXCUSED',
+      },
+    }),
+  ]);
+
   // Create a map of exemption start dates to check if check-in was before exemption
   const exemptionStartDates = new Map<string, Date>();
   for (const exemption of membersOnLeave) {
@@ -1872,13 +1901,17 @@ teamsRoutes.get('/my/analytics', async (c) => {
     : 0;
 
   // Get all check-ins in period for team members (for trend data, metrics, etc.)
+  // IMPORTANT: This query gets ALL check-ins within the date range (startDate to endDate)
+  // For '7days' period: includes check-ins from 6 days ago to today (7 days total)
+  // Absent workers (no check-in) are NOT included - they have no check-in record
+  // Filtering for holidays/exempted days happens AFTER this query
   const checkins = await prisma.checkin.findMany({
     where: {
       userId: { in: memberIds },
       companyId,
       createdAt: {
-        gte: startDate,
-        lte: endDate,
+        gte: startDate, // Period start (e.g., 6 days ago for 7days)
+        lte: endDate,   // Period end (e.g., today end of day)
       },
     },
     orderBy: { createdAt: 'desc' },
@@ -1968,6 +2001,8 @@ teamsRoutes.get('/my/analytics', async (c) => {
   const expectedToCheckin = activeMembers + onLeaveButCheckedIn.length;
 
   // Compliance: everyone who checked in / everyone expected to check in
+  // IMPORTANT: Absent workers ARE included in expectedToCheckin (they were expected but didn't check in)
+  // This means absent workers LOWER the compliance rate (correct behavior)
   // Cap at 100% in case of edge cases
   // If nobody expected (all on leave), compliance is 100% (everyone met expectations)
   const compliance = expectedToCheckin > 0
@@ -2073,6 +2108,28 @@ teamsRoutes.get('/my/analytics', async (c) => {
     }
   }
 
+  // Calculate PERIOD-aggregated absent and excused counts from DailyTeamSummary
+  // For period views, sum up the absentCount and excusedCount across all days
+  let periodAbsentCount = 0;
+  let periodExcusedCount = 0;
+  if (period !== 'today' && trendData.length > 0) {
+    // Get DailyTeamSummary data for aggregation (already fetched above)
+    const dbStartDate = toDbDate(startDate, timezone);
+    const dbEndDate = toDbDate(endDate, timezone);
+    const summariesForCounts = await prisma.dailyTeamSummary.findMany({
+      where: {
+        teamId: team.id,
+        date: { gte: dbStartDate, lte: dbEndDate },
+        isWorkDay: true,
+        isHoliday: false,
+      },
+    });
+    for (const s of summariesForCounts) {
+      periodAbsentCount += (s as any).absentCount || 0;
+      periodExcusedCount += (s as any).excusedCount || 0;
+    }
+  }
+
   // Calculate PERIOD averages from trendData (average of all work days with data)
   // For 'today' period, use today's values
   const trendDataWithScores = trendData.filter(d => d.score !== null);
@@ -2085,14 +2142,17 @@ teamsRoutes.get('/my/analytics', async (c) => {
   // This is consistent with Team Summary / DailyTeamSummary calculation
   // OLD (incorrect): Average of daily rates = avg(day1%, day2%...)
   // NEW (correct): Total sum = totalCheckins / totalExpected
+  // IMPORTANT: Absent workers ARE included in totalExpected (they were expected but didn't check in)
+  // This means absent workers LOWER the compliance rate (correct behavior)
   const trendDataWithCompliance = trendData.filter(d => d.compliance !== null);
 
   // Calculate total check-ins and total expected across all work days
+  // expected includes absent workers (they were expected but didn't check in)
   let periodTotalCheckins = 0;
   let periodTotalExpected = 0;
   for (const d of trendDataWithCompliance) {
     periodTotalCheckins += d.checkedIn;
-    periodTotalExpected += d.expected;
+    periodTotalExpected += d.expected; // Includes absent workers in expected count
   }
 
   const periodCompliance = period !== 'today' && periodTotalExpected > 0
@@ -2136,10 +2196,69 @@ teamsRoutes.get('/my/analytics', async (c) => {
     .sort((a, b) => b.count - a.count);
 
   // Average metrics (from period) - use LATEST check-in per user per day for accuracy
-  // This ensures each member's daily status counts equally (no double-counting)
+  // IMPORTANT: 
+  // 1. Only includes ACTUAL check-ins (workers who checked in) - absent workers have NO check-in, so NO metrics data
+  // 2. Filter out holidays and exempted days (same as compliance calculation)
+  // This ensures avgMetrics only includes VALID work days with actual check-in data, consistent with compliance
+  // Note: Absent workers don't affect metrics because they have no check-in record (no mood/stress/sleep/physicalHealth data)
+  // Build exempted dates map (user -> set of exempted date strings)
+  const exemptedDatesByUser = new Map<string, Set<string>>();
+  if (period !== 'today') {
+    const periodExemptions = await prisma.exception.findMany({
+      where: {
+        userId: { in: memberIds },
+        status: 'APPROVED',
+        startDate: { lte: endDate },
+        endDate: { gte: startDate },
+      },
+      select: {
+        userId: true,
+        startDate: true,
+        endDate: true,
+      },
+    });
+
+    for (const exemption of periodExemptions) {
+      if (!exemption.startDate || !exemption.endDate) continue;
+      const userExemptions = exemptedDatesByUser.get(exemption.userId) || new Set<string>();
+      // Add all dates in exemption range
+      let current = new Date(exemption.startDate);
+      const end = new Date(exemption.endDate);
+      while (current <= end) {
+        const dateKey = formatLocalDate(current, timezone);
+        userExemptions.add(dateKey);
+        current = new Date(current);
+        current.setDate(current.getDate() + 1);
+      }
+      exemptedDatesByUser.set(exemption.userId, userExemptions);
+    }
+  }
+
+  // Build holiday date set for quick lookup
+  const holidayDateSet = new Set<string>();
+  for (const holiday of holidaysInPeriod) {
+    const dateKey = formatLocalDate(holiday.date, timezone);
+    holidayDateSet.add(dateKey);
+  }
+
+  // Get latest check-in per user per day, FILTERING out holidays and exempted days
+  // VERIFICATION: Only ACTUAL check-ins within the period are included
+  // - Absent workers: NOT included (no check-in record)
+  // - Holidays: EXCLUDED (filtered out)
+  // - Exempted days: EXCLUDED (filtered out)
+  // - Only valid work days with actual check-ins are counted
   const latestCheckinsByUserDay = new Map<string, typeof checkins[0]>();
   for (const checkin of checkins) {
     const dateKey = formatLocalDate(checkin.createdAt, timezone);
+    
+    // Skip if holiday (not a valid work day)
+    if (holidayDateSet.has(dateKey)) continue;
+    
+    // Skip if exempted for this user (not expected to check in)
+    const userExemptions = exemptedDatesByUser.get(checkin.userId);
+    if (userExemptions && userExemptions.has(dateKey)) continue;
+    
+    // Keep only the latest check-in per user per day
     const userDayKey = `${checkin.userId}_${dateKey}`;
     const existing = latestCheckinsByUserDay.get(userDayKey);
     // Keep the latest check-in (checkins are ordered DESC, so first one is latest)
@@ -2148,6 +2267,8 @@ teamsRoutes.get('/my/analytics', async (c) => {
     }
   }
 
+  // Extract metrics from FILTERED check-ins only
+  // This array contains ONLY actual check-ins from valid work days (no absent workers)
   const latestScores = Array.from(latestCheckinsByUserDay.values()).map((c) => ({
     mood: c.mood,
     stress: c.stress,
@@ -2155,6 +2276,11 @@ teamsRoutes.get('/my/analytics', async (c) => {
     physicalHealth: c.physicalHealth,
   }));
 
+  // Calculate avgMetrics from FILTERED check-ins only (excludes holidays & exempted days)
+  // VERIFICATION: When filtering by 7 days (or any period), only ACTUAL check-ins are counted
+  // - Absent workers: NOT included (no check-in = no metrics data)
+  // - Only workers who actually checked in and submitted mood/stress/sleep/physicalHealth scales
+  // This ensures consistency with compliance calculation - both use same filtering logic
   const avgMetrics = latestScores.length > 0
     ? {
         mood: Number((latestScores.reduce((sum, s) => sum + s.mood, 0) / latestScores.length).toFixed(1)),
@@ -2248,6 +2374,8 @@ teamsRoutes.get('/my/analytics', async (c) => {
           activeMembers: activeMembers,
           onLeave: onLeaveUserIds.length,
           notCheckedIn: Math.max(0, activeMembers - (checkedInToday - onLeaveButCheckedIn.length)),
+          absentCount: todayAbsentCount,   // Penalized absences (DailyAttendance ABSENT)
+          excusedCount: todayExcusedCount, // TL-approved absences (DailyAttendance EXCUSED)
         }
       : {
           // For period views, show unique members who checked in during the period
@@ -2255,6 +2383,8 @@ teamsRoutes.get('/my/analytics', async (c) => {
           activeMembers: totalMembers,
           onLeave: membersOnLeaveFormatted.length, // Members CURRENTLY on leave (today)
           notCheckedIn: Math.max(0, totalMembers - new Set(checkins.map((c) => c.userId)).size),
+          absentCount: periodAbsentCount,   // Total penalized absences in period
+          excusedCount: periodExcusedCount, // Total TL-approved absences in period
         },
     statusDistribution,
     trendData,

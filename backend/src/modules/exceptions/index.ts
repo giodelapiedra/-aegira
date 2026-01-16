@@ -4,6 +4,7 @@ import { createSystemLog } from '../system-logs/index.js';
 import { createExceptionSchema, updateExceptionSchema } from '../../utils/validator.js';
 import { getTodayStart, getTodayEnd, getNowDT, formatDisplayDate, DEFAULT_TIMEZONE } from '../../utils/date-helpers.js';
 import { recalculateSummariesForDateRange } from '../../utils/daily-summary.js';
+import { logger } from '../../utils/logger.js';
 import type { AppContext } from '../../types/context.js';
 
 const exceptionsRoutes = new Hono<AppContext>();
@@ -71,20 +72,41 @@ exceptionsRoutes.get('/pending', async (c) => {
   return c.json(exceptions);
 });
 
-// GET /exceptions - List all exceptions (company-scoped)
+// GET /exceptions - List all exceptions (company-scoped, team-filtered for team leads)
 exceptionsRoutes.get('/', async (c) => {
   const companyId = c.get('companyId');
+  const userId = c.get('userId');
+  const user = c.get('user');
   const page = parseInt(c.req.query('page') || '1');
   const limit = parseInt(c.req.query('limit') || '10');
   const status = c.req.query('status');
-  const userId = c.req.query('userId');
+  const userIdParam = c.req.query('userId');
   const activeOn = c.req.query('activeOn'); // Filter exceptions active on this date (YYYY-MM-DD)
 
   const skip = (page - 1) * limit;
 
+  // TEAM_LEAD: Only see exceptions from their team members
+  const isTeamLead = user.role?.toUpperCase() === 'TEAM_LEAD';
+  let teamIdFilter: string | undefined;
+  if (isTeamLead) {
+    const team = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!team) {
+      return c.json({ error: 'You are not assigned to lead any team' }, 403);
+    }
+    teamIdFilter = team.id;
+  }
+
   const where: any = { companyId };
   if (status) where.status = status;
-  if (userId) where.userId = userId;
+  if (userIdParam) where.userId = userIdParam;
+  
+  // TEAM_LEAD: Filter by team
+  if (isTeamLead && teamIdFilter) {
+    where.user = { teamId: teamIdFilter };
+  }
 
   // Filter exceptions that are active on a specific date
   // An exception is active if: startDate <= activeDate <= endDate
@@ -265,10 +287,12 @@ exceptionsRoutes.post('/', async (c) => {
   return c.json(exception, 201);
 });
 
-// GET /exceptions/:id - Get exception by ID (company-scoped)
+// GET /exceptions/:id - Get exception by ID (company-scoped, team-filtered for team leads)
 exceptionsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
+  const userId = c.get('userId');
+  const user = c.get('user');
 
   const exception = await prisma.exception.findFirst({
     where: { id, companyId },
@@ -279,6 +303,12 @@ exceptionsRoutes.get('/:id', async (c) => {
           firstName: true,
           lastName: true,
           email: true,
+          teamId: true,
+          team: {
+            select: {
+              leaderId: true,
+            },
+          },
         },
       },
       reviewedBy: {
@@ -293,6 +323,12 @@ exceptionsRoutes.get('/:id', async (c) => {
 
   if (!exception) {
     return c.json({ error: 'Exception not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only view exceptions from their team members
+  const isTeamLead = user.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && exception.user.team?.leaderId !== userId) {
+    return c.json({ error: 'You can only view exceptions for your own team members' }, 403);
   }
 
   return c.json(exception);
@@ -321,7 +357,20 @@ exceptionsRoutes.put('/:id', async (c) => {
 
   // Authorization check
   const isOwner = existing.userId === userId;
-  const hasApproverRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD'].includes(currentUser.role);
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR'].includes(currentUser.role);
+
+  // TEAM_LEAD: Can only update exceptions from their own team members
+  if (isTeamLead) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam || existing.user.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only update exceptions from your own team members' }, 403);
+    }
+  }
 
   // Owner can only update if status is still PENDING
   if (isOwner && existing.status !== 'PENDING') {
@@ -329,7 +378,7 @@ exceptionsRoutes.put('/:id', async (c) => {
   }
 
   // Must be owner (with PENDING status) or have approver role
-  if (!isOwner && !hasApproverRole) {
+  if (!isOwner && !hasElevatedRole && !isTeamLead) {
     return c.json({ error: 'Forbidden: You do not have permission to update this exception' }, 403);
   }
 
@@ -387,12 +436,8 @@ exceptionsRoutes.put('/:id', async (c) => {
     const endChanged = oldEndDate && newEndDate && oldEndDate.getTime() !== newEndDate.getTime();
 
     if (startChanged || endChanged) {
-      // Get company timezone
-      const company = await prisma.company.findUnique({
-        where: { id: companyId },
-        select: { timezone: true },
-      });
-      const timezone = company?.timezone || DEFAULT_TIMEZONE;
+      // Get company timezone from context (no DB query needed!)
+      const timezone = c.get('timezone');
 
       // Recalculate for the union of old and new date ranges
       const minStart = oldStart && newStart ? (oldStart < newStart ? oldStart : newStart) : (oldStart || newStart);
@@ -406,7 +451,7 @@ exceptionsRoutes.put('/:id', async (c) => {
           maxEnd,
           timezone
         ).catch(err => {
-          console.error('Failed to recalculate summaries after exception date update:', err);
+          logger.error(err, 'Failed to recalculate summaries after exception date update');
         });
       }
     }
@@ -420,6 +465,7 @@ exceptionsRoutes.patch('/:id/approve', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const reviewerId = c.get('userId');
+  const currentUser = c.get('user');
   const body = await c.req.json();
 
   // Verify exception belongs to company
@@ -427,13 +473,24 @@ exceptionsRoutes.patch('/:id/approve', async (c) => {
     where: { id, companyId },
     include: {
       user: {
-        select: { teamId: true },
+        select: { 
+          teamId: true,
+          team: {
+            select: { leaderId: true },
+          },
+        },
       },
     },
   });
 
   if (!existing) {
     return c.json({ error: 'Exception not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only approve exceptions from their own team members
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+  if (isTeamLead && existing.user.team?.leaderId !== reviewerId) {
+    return c.json({ error: 'You can only approve exceptions from your own team members' }, 403);
   }
 
   // Get reviewer info
@@ -506,12 +563,8 @@ exceptionsRoutes.patch('/:id/approve', async (c) => {
 
   // Recalculate daily team summaries for the leave period (affects expectedToCheckIn)
   if (existing.user.teamId && existing.startDate && existing.endDate) {
-    // Get company timezone
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { timezone: true },
-    });
-    const timezone = company?.timezone || DEFAULT_TIMEZONE;
+    // Get company timezone from context (no DB query needed!)
+    const timezone = c.get('timezone');
 
     // Fire and forget - don't block response
     recalculateSummariesForDateRange(
@@ -520,27 +573,44 @@ exceptionsRoutes.patch('/:id/approve', async (c) => {
       existing.endDate,
       timezone
     ).catch(err => {
-      console.error('Failed to recalculate summaries after exception approval:', err);
+      logger.error(err, 'Failed to recalculate summaries after exception approval');
     });
   }
 
   return c.json(exception);
 });
 
-// PATCH /exceptions/:id/reject - Reject exception (company-scoped)
+// PATCH /exceptions/:id/reject - Reject exception (company-scoped, team-filtered for team leads)
 exceptionsRoutes.patch('/:id/reject', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const reviewerId = c.get('userId');
+  const currentUser = c.get('user');
   const body = await c.req.json();
 
   // Verify exception belongs to company
   const existing = await prisma.exception.findFirst({
     where: { id, companyId },
+    include: {
+      user: {
+        select: { 
+          teamId: true,
+          team: {
+            select: { leaderId: true },
+          },
+        },
+      },
+    },
   });
 
   if (!existing) {
     return c.json({ error: 'Exception not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only reject exceptions from their own team members
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+  if (isTeamLead && existing.user.team?.leaderId !== reviewerId) {
+    return c.json({ error: 'You can only reject exceptions from your own team members' }, 403);
   }
 
   // Get reviewer info
@@ -619,6 +689,7 @@ exceptionsRoutes.patch('/:id/end-early', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const reviewerId = c.get('userId');
+  const currentUser = c.get('user');
   const body = await c.req.json();
 
   // Verify exception belongs to company and is approved
@@ -631,6 +702,9 @@ exceptionsRoutes.patch('/:id/end-early', async (c) => {
           firstName: true,
           lastName: true,
           teamId: true,
+          team: {
+            select: { leaderId: true },
+          },
         },
       },
     },
@@ -642,6 +716,12 @@ exceptionsRoutes.patch('/:id/end-early', async (c) => {
 
   if (existing.status !== 'APPROVED') {
     return c.json({ error: 'Only approved exceptions can be ended early' }, 400);
+  }
+
+  // TEAM_LEAD: Can only end exceptions from their own team members
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+  if (isTeamLead && existing.user.team?.leaderId !== reviewerId) {
+    return c.json({ error: 'You can only end exceptions from your own team members' }, 403);
   }
 
   if (!existing.startDate || !existing.endDate) {
@@ -781,7 +861,7 @@ exceptionsRoutes.patch('/:id/end-early', async (c) => {
       originalEndDate,
       timezone
     ).catch(err => {
-      console.error('Failed to recalculate summaries after exception end-early:', err);
+      logger.error(err, 'Failed to recalculate summaries after exception end-early');
     });
   }
 
@@ -817,15 +897,28 @@ exceptionsRoutes.delete('/:id', async (c) => {
 
   // Authorization check
   const isOwner = existing.userId === reviewerId;
-  const hasApproverRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD'].includes(currentUser.role);
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR'].includes(currentUser.role);
+
+  // TEAM_LEAD: Can only delete exceptions from their own team members
+  if (isTeamLead) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: reviewerId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam || existing.user.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only delete exceptions from your own team members' }, 403);
+    }
+  }
 
   // Owner can only cancel if status is still PENDING
-  if (isOwner && !hasApproverRole && existing.status !== 'PENDING') {
+  if (isOwner && !hasElevatedRole && !isTeamLead && existing.status !== 'PENDING') {
     return c.json({ error: 'Forbidden: Cannot cancel an exception that has already been reviewed' }, 403);
   }
 
   // Must be owner or have approver role
-  if (!isOwner && !hasApproverRole) {
+  if (!isOwner && !hasElevatedRole && !isTeamLead) {
     return c.json({ error: 'Forbidden: You do not have permission to cancel this exception' }, 403);
   }
 
@@ -871,12 +964,8 @@ exceptionsRoutes.delete('/:id', async (c) => {
   // Recalculate daily team summaries if the cancelled exception was APPROVED
   // (PENDING exceptions don't affect summaries)
   if (existing.status === 'APPROVED' && existing.user.teamId && existing.startDate && existing.endDate) {
-    // Get company timezone
-    const company = await prisma.company.findUnique({
-      where: { id: companyId },
-      select: { timezone: true },
-    });
-    const timezone = company?.timezone || DEFAULT_TIMEZONE;
+    // Get company timezone from context (no DB query needed!)
+    const timezone = c.get('timezone');
 
     // Fire and forget - don't block response
     recalculateSummariesForDateRange(
@@ -885,7 +974,7 @@ exceptionsRoutes.delete('/:id', async (c) => {
       existing.endDate,
       timezone
     ).catch(err => {
-      console.error('Failed to recalculate summaries after exception cancellation:', err);
+      logger.error(err, 'Failed to recalculate summaries after exception cancellation');
     });
   }
 

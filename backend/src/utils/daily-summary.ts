@@ -26,13 +26,15 @@ interface DailyTeamSummaryData {
   isWorkDay: boolean;
   isHoliday: boolean;
   totalMembers: number;
-  onLeaveCount: number;
+  onLeaveCount: number;      // Exception APPROVED only (planned leave)
   expectedToCheckIn: number;
   checkedInCount: number;
-  notCheckedInCount: number;
+  notCheckedInCount: number; // Legacy: for backwards compat
   greenCount: number;
   yellowCount: number;
   redCount: number;
+  absentCount: number;       // DailyAttendance status='ABSENT' (penalized)
+  excusedCount: number;      // DailyAttendance status='EXCUSED' (TL approved)
   avgReadinessScore: number | null;
   complianceRate: number | null;
 }
@@ -91,11 +93,9 @@ export async function recalculateDailyTeamSummary(
   });
   const isHoliday = !!holiday;
 
-  // 4. Count members on leave (approved exceptions + EXCUSED absences)
+  // 4. Count members on leave (Exception APPROVED only - planned leave)
   let onLeaveCount = 0;
-  let excusedAbsenceCount = 0;
   if (memberIds.length > 0) {
-    // Count approved exceptions (leave requests)
     onLeaveCount = await prisma.exception.count({
       where: {
         userId: { in: memberIds },
@@ -104,29 +104,40 @@ export async function recalculateDailyTeamSummary(
         endDate: { gte: dbDate },
       },
     });
+  }
 
-    // Count EXCUSED absences (TL approved = no penalty, like exemptions)
-    // Note: Absence dates are stored at midnight UTC, not noon
-    // Create a date at midnight for proper comparison
-    const absenceQueryDate = new Date(dbDate);
-    absenceQueryDate.setUTCHours(0, 0, 0, 0);
-
-    excusedAbsenceCount = await prisma.absence.count({
+  // 5. Count ABSENT and EXCUSED from DailyAttendance (source of truth, no duplication)
+  let absentCount = 0;
+  let excusedCount = 0;
+  if (memberIds.length > 0) {
+    // Count ABSENT status (penalized, 0 points)
+    absentCount = await prisma.dailyAttendance.count({
       where: {
         userId: { in: memberIds },
+        date: dbDate,
+        status: 'ABSENT',
+      },
+    });
+
+    // Count EXCUSED status (TL approved, not counted)
+    excusedCount = await prisma.dailyAttendance.count({
+      where: {
+        userId: { in: memberIds },
+        date: dbDate,
         status: 'EXCUSED',
-        absenceDate: absenceQueryDate,
       },
     });
   }
 
-  // Total exempted = approved exceptions + excused absences
-  const totalExempted = onLeaveCount + excusedAbsenceCount;
+  // 6. Calculate expected to check in
+  // Expected = totalMembers - onLeave - excused (not counted in expected)
+  // IMPORTANT: Absent workers ARE included in expectedToCheckIn (they're expected but didn't check in)
+  // This affects compliance rate: compliance = checkedIn / expected
+  const expectedToCheckIn = (!isWorkDay || isHoliday) ? 0 : (totalMembers - onLeaveCount - excusedCount);
 
-  // 5. Calculate expected to check in
-  const expectedToCheckIn = (!isWorkDay || isHoliday) ? 0 : (totalMembers - totalExempted);
-
-  // 6. Get check-in stats for this date
+  // 7. Get check-in stats for this date
+  // IMPORTANT: Only actual check-ins are included (absent workers have NO check-in record)
+  // This means absent workers DON'T affect avgReadinessScore or metrics (mood/stress/sleep/physicalHealth)
   const dayStart = getStartOfDay(date, tz);
   const dayEnd = getEndOfDay(date, tz);
 
@@ -150,16 +161,21 @@ export async function recalculateDailyTeamSummary(
   const yellowCount = checkins.filter(c => c.readinessStatus === 'YELLOW').length;
   const redCount = checkins.filter(c => c.readinessStatus === 'RED').length;
 
-  // 7. Calculate scores
+  // 8. Calculate scores
+  // avgReadinessScore = average of ACTUAL check-ins only
+  // Absent workers DON'T affect this (no check-in = no readiness score)
   const avgReadinessScore = checkins.length > 0
     ? checkins.reduce((sum, c) => sum + c.readinessScore, 0) / checkins.length
     : null;
 
+  // Compliance rate = checkedIn / expected
+  // Absent workers ARE included in expected (they were expected but didn't check in)
+  // This means absent workers LOWER the compliance rate (correct behavior)
   const complianceRate = expectedToCheckIn > 0
     ? (checkedInCount / expectedToCheckIn) * 100
     : null;
 
-  // 8. Upsert summary
+  // 9. Upsert summary
   const summaryData: DailyTeamSummaryData = {
     teamId,
     companyId: team.companyId,
@@ -167,36 +183,29 @@ export async function recalculateDailyTeamSummary(
     isWorkDay,
     isHoliday,
     totalMembers,
-    onLeaveCount: totalExempted, // Includes approved exceptions + EXCUSED absences
+    onLeaveCount,       // Exception APPROVED only (planned leave)
     expectedToCheckIn,
     checkedInCount,
-    notCheckedInCount,
+    notCheckedInCount,  // Legacy for backwards compat
     greenCount,
     yellowCount,
     redCount,
+    absentCount,        // DailyAttendance ABSENT (penalized)
+    excusedCount,       // DailyAttendance EXCUSED (TL approved)
     avgReadinessScore,
     complianceRate,
   };
 
+  // Note: absentCount and excusedCount exist in schema but Prisma types may be outdated
   await prisma.dailyTeamSummary.upsert({
     where: {
       teamId_date: { teamId, date: dbDate },
     },
     create: summaryData,
     update: {
-      isWorkDay,
-      isHoliday,
-      totalMembers,
-      onLeaveCount: totalExempted, // Includes approved exceptions + EXCUSED absences
-      expectedToCheckIn,
-      checkedInCount,
-      notCheckedInCount,
-      greenCount,
-      yellowCount,
-      redCount,
-      avgReadinessScore,
-      complianceRate,
-    },
+      ...summaryData,
+      // Explicitly include all fields (absentCount and excusedCount exist in schema)
+    } as any, // Type assertion needed - fields exist in schema but Prisma types outdated
   });
 
   return summaryData;
@@ -340,7 +349,9 @@ export function aggregateSummaries(summaries: DailyTeamSummaryData[]) {
   const totalYellow = workDaySummaries.reduce((sum, s) => sum + s.yellowCount, 0);
   const totalRed = workDaySummaries.reduce((sum, s) => sum + s.redCount, 0);
 
-  // Calculate average compliance
+  // Calculate compliance rate (NOT an average - it's a percentage rate)
+  // Compliance = (totalCheckedIn / totalExpected) * 100
+  // This is different from Average Metrics (mood, stress, sleep, physicalHealth)
   const avgComplianceRate = totalExpected > 0
     ? (totalCheckedIn / totalExpected) * 100
     : null;

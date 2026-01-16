@@ -1,14 +1,12 @@
 /**
  * Absence Detection and Management Utilities
  *
- * On-demand detection of worker absences (no cron jobs)
- * Called when worker opens app / attempts to check-in
+ * NOTE: Primary absence creation is handled by cron job (attendance-finalizer.ts)
+ * These utilities are for:
+ * - Reading absence data (getPendingJustifications, getAbsenceHistory, etc.)
+ * - Fallback detection (detectAndCreateAbsences) - only for edge cases
  *
- * Rules:
- * - Check for YESTERDAY and before (past days only)
- * - Skip if: has check-in, exemption, holiday, rest day, or existing absence
- * - Create absence record if none of above
- * - Baseline date: first check-in > next day after teamJoinedAt > next day after createdAt
+ * Baseline date: first check-in > next day after teamJoinedAt > next day after createdAt
  */
 
 import { prisma } from '../config/prisma.js';
@@ -24,8 +22,10 @@ import {
 } from './date-helpers.js';
 
 /**
- * Detect and create absence records for a worker
- * Called on app load / check-in attempt
+ * Detect and create absence records for a worker (FALLBACK ONLY)
+ *
+ * NOTE: Primary creation is done by cron job at 5 AM.
+ * This function is kept for edge cases (e.g., cron failure, historical gaps).
  *
  * @param userId - Worker's user ID
  * @param companyId - Company ID

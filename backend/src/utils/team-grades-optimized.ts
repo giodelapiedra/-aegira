@@ -329,7 +329,6 @@ function calculateTeamGradeFromSummaries(params: {
   let totalCheckins = 0;
   let totalExpected = 0;
   let totalGreen = 0;
-  let totalYellow = 0;
   let totalRed = 0;
   let totalExcused = 0;
 
@@ -341,8 +340,8 @@ function calculateTeamGradeFromSummaries(params: {
     totalCheckins += summary.checkedInCount;
     totalExpected += summary.expectedToCheckIn;
     totalExcused += summary.onLeaveCount;
-    totalGreen += summary.greenCount;
-    totalYellow += summary.yellowCount;
+    // Treat legacy YELLOW as GREEN (YELLOW status was removed)
+    totalGreen += summary.greenCount + summary.yellowCount;
     totalRed += summary.redCount;
   }
 
@@ -464,7 +463,6 @@ function calculateTeamGradeFromSummaries(params: {
     onTimeRate,
     breakdown: {
       green: totalGreen,
-      yellow: totalYellow,
       absent: Math.max(0, totalExpected - totalCheckins),
       excused: totalExcused,
     },

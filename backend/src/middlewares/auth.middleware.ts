@@ -3,6 +3,7 @@ import { jwtVerify } from 'jose';
 import { env } from '../config/env.js';
 import { prisma } from '../config/prisma.js';
 import { isTokenBlacklisted } from '../utils/token-blacklist.js';
+import { DEFAULT_TIMEZONE } from '../utils/date-helpers.js';
 
 export interface AuthUser {
   id: string;
@@ -19,6 +20,7 @@ declare module 'hono' {
     user: AuthUser;
     userId: string;
     companyId: string;
+    timezone: string; // Company timezone - fetched once per request
   }
 }
 
@@ -53,6 +55,12 @@ export async function authMiddleware(c: Context, next: Next) {
         companyId: true,
         teamId: true,
         isActive: true,
+        // Include company timezone - fetch once per request, use everywhere
+        company: {
+          select: {
+            timezone: true,
+          },
+        },
       },
     });
 
@@ -64,9 +72,14 @@ export async function authMiddleware(c: Context, next: Next) {
       return c.json({ error: 'Unauthorized: Account is deactivated' }, 401);
     }
 
+    // Get timezone from company (fetched above, no extra query!)
+    // This is available in ALL endpoints via c.get('timezone')
+    const timezone = user.company?.timezone || DEFAULT_TIMEZONE;
+
     c.set('user', user);
     c.set('userId', user.id);
     c.set('companyId', user.companyId);
+    c.set('timezone', timezone); // Available everywhere - no more DB queries needed!
     await next();
   } catch (error) {
     return c.json({ error: 'Unauthorized: Invalid token' }, 401);

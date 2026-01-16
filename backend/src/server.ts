@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { app } from './app.js';
 import { env, validateEnv } from './config/env.js';
 import { logger } from './utils/logger.js';
+import { initCronJobs } from './cron/index.js';
 
 // Validate environment variables
 try {
@@ -14,6 +15,9 @@ try {
 const port = Number(env.PORT);
 
 logger.info(`Starting server in ${env.NODE_ENV} mode...`);
+
+// Initialize cron jobs
+initCronJobs();
 
 serve({
   fetch: app.fetch,

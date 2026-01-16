@@ -40,11 +40,12 @@ export async function register(data: RegisterInput) {
   }
 
   // Create company first
+  // Timezone is validated in schema, so it's guaranteed to be valid
   const company = await prisma.company.create({
     data: {
       name: data.companyName,
       slug: generateSlug(data.companyName),
-      timezone: data.timezone || 'Asia/Manila',
+      timezone: data.timezone, // Already validated as valid IANA timezone in schema
     },
   });
 

@@ -27,14 +27,8 @@ import OpenAI from 'openai';
 
 const chatbotRoutes = new Hono<AppContext>();
 
-// Helper: Get company timezone
-async function getCompanyTimezone(companyId: string): Promise<string> {
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  return company?.timezone || DEFAULT_TIMEZONE;
-}
+// REMOVED: getCompanyTimezone helper - now use c.get('timezone') from context
+// Timezone is fetched once in auth middleware and available everywhere
 
 // Helper: Generate unique ID
 function generateId(): string {
@@ -264,8 +258,8 @@ async function handleGenerateSummary(
     return c.json(response);
   }
 
-  // Get company timezone
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Parse dates (default: last 14 days) - timezone aware
   const endDate = context?.dateRange?.endDate
@@ -850,8 +844,8 @@ function handleViewReports(c: any) {
 async function handleTeamStatus(c: any, team: any, companyId: string) {
   const memberIds = team.members.map((m: any) => m.id);
 
-  // Get company timezone and today's range
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const { start: today, end: tomorrow } = getTodayRange(timezone);
 
   // Get today's check-ins
@@ -912,8 +906,8 @@ async function handleTeamStatus(c: any, team: any, companyId: string) {
 async function handleAtRisk(c: any, team: any, companyId: string) {
   const memberIds = team.members.map((m: any) => m.id);
 
-  // Get company timezone
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const teamWorkDays = team.workDays || 'MON,TUE,WED,THU,FRI';
 
   // Get date range for last 14 days

@@ -29,33 +29,54 @@ import {
 
 const analyticsRoutes = new Hono<AppContext>();
 
-// Helper: Get company timezone
-async function getCompanyTimezone(companyId: string): Promise<string> {
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  return company?.timezone || DEFAULT_TIMEZONE;
-}
+// REMOVED: getCompanyTimezone helper - now use c.get('timezone') from context
+// Timezone is fetched once in auth middleware and available everywhere
 
 // GET /analytics/dashboard - Get dashboard analytics (company-scoped, except for ADMIN)
 // OPTIMIZED: Uses pre-computed DailyTeamSummary for fast queries
 analyticsRoutes.get('/dashboard', async (c) => {
   const companyId = c.get('companyId');
   const user = c.get('user');
+  const userId = c.get('userId');
 
-  // Get company timezone
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const todayDate = getTodayForDbDate(timezone);
 
   // ADMIN role: Super admin - can see ALL data across ALL companies (developer oversight)
   const userRole = user.role?.toUpperCase();
   const isAdmin = userRole === 'ADMIN';
+  const isTeamLead = userRole === 'TEAM_LEAD';
+
+  // TEAM_LEAD: Only see their own team's data
+  let teamIdFilter: string | undefined;
+  if (isTeamLead) {
+    // Get team where user is the leader
+    const team = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!team) {
+      return c.json({ error: 'You are not assigned to lead any team' }, 403);
+    }
+    teamIdFilter = team.id;
+  }
+
+  // Build where clause
+  const where: any = { date: todayDate };
+  if (isAdmin) {
+    // Admin sees all companies
+  } else if (isTeamLead && teamIdFilter) {
+    // Team lead sees only their team
+    where.teamId = teamIdFilter;
+    where.companyId = companyId;
+  } else {
+    // Other roles see all teams in their company
+    where.companyId = companyId;
+  }
 
   // Get today's summaries from DailyTeamSummary (pre-computed data)
-  const summaries = await prisma.dailyTeamSummary.findMany({
-    where: isAdmin ? { date: todayDate } : { companyId, date: todayDate },
-  });
+  const summaries = await prisma.dailyTeamSummary.findMany({ where });
 
   // Aggregate from summaries
   let totalMembers = 0;
@@ -79,9 +100,25 @@ analyticsRoutes.get('/dashboard', async (c) => {
   }
 
   // Get pending exceptions and open incidents (these aren't in summary)
+  // TEAM_LEAD: Only see exceptions/incidents from their team members
+  let teamMemberIds: string[] | undefined;
+  if (isTeamLead && teamIdFilter) {
+    teamMemberIds = (await prisma.user.findMany({
+      where: { teamId: teamIdFilter, isActive: true },
+      select: { id: true },
+    })).map(u => u.id);
+  }
+
   const exceptionWhere: any = { status: 'PENDING' };
   const incidentWhere: any = { status: { in: ['OPEN', 'IN_PROGRESS'] } };
-  if (!isAdmin) {
+  
+  if (isAdmin) {
+    // Admin sees all
+  } else if (isTeamLead && teamMemberIds) {
+    // Team lead sees only their team's exceptions/incidents
+    exceptionWhere.userId = { in: teamMemberIds };
+    incidentWhere.reportedBy = { in: teamMemberIds };
+  } else {
     exceptionWhere.companyId = companyId;
     incidentWhere.companyId = companyId;
   }
@@ -124,10 +161,27 @@ analyticsRoutes.get('/dashboard', async (c) => {
 analyticsRoutes.get('/recent-checkins', async (c) => {
   const companyId = c.get('companyId');
   const user = c.get('user');
+  const userId = c.get('userId');
   const limit = parseInt(c.req.query('limit') || '10');
 
   // ADMIN: see all check-ins across all companies, but only from members with teams
-  const isAdmin = user.role?.toUpperCase() === 'ADMIN';
+  const userRole = user.role?.toUpperCase();
+  const isAdmin = userRole === 'ADMIN';
+  const isTeamLead = userRole === 'TEAM_LEAD';
+
+  // TEAM_LEAD: Only see check-ins from their team members
+  let teamIdFilter: string | undefined;
+  if (isTeamLead) {
+    const team = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!team) {
+      return c.json({ error: 'You are not assigned to lead any team' }, 403);
+    }
+    teamIdFilter = team.id;
+  }
+
   const where: any = {
     // Only include check-ins from members who have teams assigned (for ALL roles)
     user: {
@@ -136,7 +190,14 @@ analyticsRoutes.get('/recent-checkins', async (c) => {
       isActive: true,
     },
   };
-  if (!isAdmin) {
+  
+  if (isAdmin) {
+    // Admin sees all companies
+  } else if (isTeamLead && teamIdFilter) {
+    // Team lead sees only their team's check-ins
+    where.user.teamId = teamIdFilter;
+    where.companyId = companyId;
+  } else {
     where.companyId = companyId;
   }
 
@@ -163,14 +224,31 @@ analyticsRoutes.get('/recent-checkins', async (c) => {
 analyticsRoutes.get('/readiness', async (c) => {
   const companyId = c.get('companyId');
   const user = c.get('user');
+  const userId = c.get('userId');
   const days = parseInt(c.req.query('days') || '7');
 
   // Get company timezone and date range (timezone-aware)
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const { start: startDate } = getLastNDaysRange(days, timezone);
 
   // ADMIN: see all check-ins across all companies, but only from members with teams
-  const isAdmin = user.role?.toUpperCase() === 'ADMIN';
+  const userRole = user.role?.toUpperCase();
+  const isAdmin = userRole === 'ADMIN';
+  const isTeamLead = userRole === 'TEAM_LEAD';
+
+  // TEAM_LEAD: Only see readiness data from their team members
+  let teamIdFilter: string | undefined;
+  if (isTeamLead) {
+    const team = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!team) {
+      return c.json({ error: 'You are not assigned to lead any team' }, 403);
+    }
+    teamIdFilter = team.id;
+  }
+
   const where: any = {
     createdAt: { gte: startDate },
     // Only include check-ins from members who have teams assigned (for ALL roles)
@@ -180,7 +258,14 @@ analyticsRoutes.get('/readiness', async (c) => {
       isActive: true,
     },
   };
-  if (!isAdmin) {
+  
+  if (isAdmin) {
+    // Admin sees all companies
+  } else if (isTeamLead && teamIdFilter) {
+    // Team lead sees only their team's check-ins
+    where.user.teamId = teamIdFilter;
+    where.companyId = companyId;
+  } else {
     where.companyId = companyId;
   }
 
@@ -238,8 +323,8 @@ analyticsRoutes.get('/team/:teamId', async (c) => {
     return c.json({ error: 'You can only view analytics for your own team' }, 403);
   }
 
-  // Get company timezone
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const todayDate = getTodayForDbDate(timezone);
 
   // Get today's summary from DailyTeamSummary (pre-computed)
@@ -288,21 +373,52 @@ analyticsRoutes.get('/team/:teamId', async (c) => {
 analyticsRoutes.get('/trends', async (c) => {
   const companyId = c.get('companyId');
   const user = c.get('user');
+  const userId = c.get('userId');
   const days = parseInt(c.req.query('days') || '30');
 
   // Get company timezone and date range (timezone-aware)
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const { start: startDate } = getLastNDaysRange(days, timezone);
 
   // ADMIN: see all trends across all companies, but only from members with teams
-  const isAdmin = user.role?.toUpperCase() === 'ADMIN';
+  const userRole = user.role?.toUpperCase();
+  const isAdmin = userRole === 'ADMIN';
+  const isTeamLead = userRole === 'TEAM_LEAD';
+
+  // TEAM_LEAD: Only see trends from their team members
+  let teamIdFilter: string | undefined;
+  let teamMemberIds: string[] | undefined;
+  if (isTeamLead) {
+    const team = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!team) {
+      return c.json({ error: 'You are not assigned to lead any team' }, 403);
+    }
+    teamIdFilter = team.id;
+    // Get team member IDs for filtering incidents
+    teamMemberIds = (await prisma.user.findMany({
+      where: { teamId: teamIdFilter, isActive: true },
+      select: { id: true },
+    })).map(u => u.id);
+  }
+
   const checkinWhere: any = {
     createdAt: { gte: startDate },
     user: { teamId: { not: null }, role: { in: ['MEMBER', 'WORKER'] }, isActive: true },
   };
   const incidentWhere: any = { createdAt: { gte: startDate } };
 
-  if (!isAdmin) {
+  if (isAdmin) {
+    // Admin sees all companies
+  } else if (isTeamLead && teamIdFilter) {
+    // Team lead sees only their team's data
+    checkinWhere.user.teamId = teamIdFilter;
+    checkinWhere.companyId = companyId;
+    incidentWhere.reportedBy = { in: teamMemberIds };
+    incidentWhere.companyId = companyId;
+  } else {
     checkinWhere.companyId = companyId;
     incidentWhere.companyId = companyId;
   }
@@ -333,13 +449,30 @@ analyticsRoutes.get('/trends', async (c) => {
 analyticsRoutes.get('/export', async (c) => {
   const companyId = c.get('companyId');
   const user = c.get('user');
+  const userId = c.get('userId');
   const startDate = c.req.query('startDate');
   const endDate = c.req.query('endDate');
   const page = parseInt(c.req.query('page') || '1');
   const limit = Math.min(parseInt(c.req.query('limit') || '1000'), 5000); // Max 5000 per request
 
   // ADMIN: see all check-ins across all companies, but only from members with teams
-  const isAdmin = user.role?.toUpperCase() === 'ADMIN';
+  const userRole = user.role?.toUpperCase();
+  const isAdmin = userRole === 'ADMIN';
+  const isTeamLead = userRole === 'TEAM_LEAD';
+
+  // TEAM_LEAD: Only export check-ins from their team members
+  let teamIdFilter: string | undefined;
+  if (isTeamLead) {
+    const team = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!team) {
+      return c.json({ error: 'You are not assigned to lead any team' }, 403);
+    }
+    teamIdFilter = team.id;
+  }
+
   const where: any = {
     // Only include check-ins from members who have teams assigned (for ALL roles)
     user: {
@@ -349,7 +482,13 @@ analyticsRoutes.get('/export', async (c) => {
     },
   };
 
-  if (!isAdmin) {
+  if (isAdmin) {
+    // Admin sees all companies
+  } else if (isTeamLead && teamIdFilter) {
+    // Team lead exports only their team's check-ins
+    where.user.teamId = teamIdFilter;
+    where.companyId = companyId;
+  } else {
     where.companyId = companyId;
   }
 
@@ -407,7 +546,7 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
   const { startDate: startDateParam, endDate: endDateParam } = body;
 
   // Get company timezone (centralized)
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
 
   // Parse dates (timezone-aware)
   const { start: defaultStart, end: defaultEnd } = getLastNDaysRange(30, timezone);
@@ -629,7 +768,9 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
     const yellowCount = validCheckins.filter((c) => c.readinessStatus === 'YELLOW').length;
     const redCount = validCheckins.filter((c) => c.readinessStatus === 'RED').length;
 
-    // avgScore from valid check-ins only (excludes holidays & exemptions)
+    // Calculate metrics from VALID check-ins only (excludes holidays & exemptions)
+    // IMPORTANT: Only includes ACTUAL check-ins - absent workers have NO check-in, so NO metrics data
+    // Absent workers don't affect metrics because they never submitted mood/stress/sleep/physicalHealth scales
     const avgScore = validCheckins.length > 0
       ? Math.round(validCheckins.reduce((sum, c) => sum + c.readinessScore, 0) / validCheckins.length)
       : 0;
@@ -1499,7 +1640,7 @@ analyticsRoutes.get('/teams-overview', async (c) => {
 
   try {
     // Get company timezone
-    const timezone = await getCompanyTimezone(companyId);
+    const timezone = c.get('timezone');
 
     // Calculate teams overview using OPTIMIZED utility (batched queries)
     const result = await calculateTeamsOverviewOptimized({
@@ -1591,7 +1732,7 @@ analyticsRoutes.get('/teams-overview/:teamId', async (c) => {
 
   try {
     // Get company timezone
-    const timezone = await getCompanyTimezone(companyId);
+    const timezone = c.get('timezone');
 
     // Calculate single team grade using optimized utility
     const teamGrade = await calculateSingleTeamGradeOptimized(teamId, {

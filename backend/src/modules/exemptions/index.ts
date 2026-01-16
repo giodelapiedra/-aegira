@@ -250,12 +250,8 @@ exemptionsRoutes.post('/create-for-worker', async (c) => {
     select: { firstName: true, lastName: true },
   });
 
-  // Get company timezone
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Set dates (timezone-aware)
   const today = getTodayStart(timezone);
@@ -488,12 +484,8 @@ exemptionsRoutes.get('/active', async (c) => {
     return c.json({ error: 'User not found' }, 404);
   }
 
-  // Get company timezone for date comparison
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const todayStart = getTodayStart(timezone);
 
   // Include ALL approved exceptions/exemptions that haven't ended yet
@@ -816,12 +808,8 @@ exemptionsRoutes.patch('/:id/approve', async (c) => {
     select: { firstName: true, lastName: true },
   });
 
-  // Get company timezone
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Set dates (timezone-aware)
   const today = getTodayStart(timezone);
@@ -1087,12 +1075,8 @@ exemptionsRoutes.patch('/:id/end-early', async (c) => {
     return c.json({ error: 'Exemption has no end date set' }, 400);
   }
 
-  // Get company timezone for date comparison
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const todayStart = getTodayStart(timezone);
   const todayEnd = getTodayEnd(timezone);
 

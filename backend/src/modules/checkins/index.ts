@@ -31,10 +31,9 @@ import { recalculateTodaySummary } from '../../utils/daily-summary.js';
 // ===========================================
 
 /**
- * Grace period in minutes for check-in and attendance scoring
+ * Grace period in minutes for early check-in
  * - Workers can check in this many minutes BEFORE their shift starts
- * - Workers are marked GREEN (on-time) if they check in within this period AFTER shift starts
- * - After this grace period, workers are marked YELLOW (late)
+ * - All check-ins within shift hours are GREEN (no late penalty)
  */
 const GRACE_PERIOD_MINUTES = 15;
 
@@ -45,12 +44,8 @@ checkinsRoutes.get('/leave-status', async (c) => {
   const userId = c.get('userId');
   const companyId = c.get('companyId');
 
-  // Get company timezone for accurate leave status
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   const leaveStatus = await getUserLeaveStatus(userId, timezone);
   return c.json(leaveStatus);
@@ -61,12 +56,8 @@ checkinsRoutes.get('/today', async (c) => {
   const userId = c.get('userId');
   const companyId = c.get('companyId');
 
-  // Get company timezone
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Use timezone-aware date range
   const { start: today, end: tomorrow } = getTodayRange(timezone);
@@ -261,8 +252,8 @@ checkinsRoutes.post('/', async (c) => {
     },
   });
 
-  // Get company timezone (centralized)
-  const timezone = user?.company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Validation 1: Only MEMBER/WORKER role can check in (Team leaders supervise only)
   if (user?.role !== 'MEMBER' && user?.role !== 'WORKER') {
@@ -378,9 +369,9 @@ checkinsRoutes.post('/', async (c) => {
   // Determine if this is a "returning from leave" check-in
   const isReturning = leaveStatus.isReturning;
 
-  // Calculate attendance status (on-time vs late) using company timezone
-  // Uses the same GRACE_PERIOD_MINUTES constant for consistency
-  const attendanceResult = calculateAttendanceStatus(now, team.shiftStart, GRACE_PERIOD_MINUTES, timezone);
+  // Calculate attendance status - simplified, no more late penalty
+  // Basta within shift hours = GREEN
+  const attendanceResult = calculateAttendanceStatus(now, team.shiftStart, team.shiftEnd, timezone);
 
   // Create checkin and attendance record in transaction
   const [checkin, attendance] = await prisma.$transaction([
@@ -407,16 +398,13 @@ checkinsRoutes.post('/', async (c) => {
         teamId: team.id,
         date: todayForDb,
         scheduledStart: team.shiftStart,
-        gracePeriodMins: GRACE_PERIOD_MINUTES,
         checkInTime: now,
-        minutesLate: attendanceResult.minutesLate,
         status: attendanceResult.status,
         score: attendanceResult.score,
         isCounted: attendanceResult.isCounted,
       },
       update: {
         checkInTime: now,
-        minutesLate: attendanceResult.minutesLate,
         status: attendanceResult.status,
         score: attendanceResult.score,
         isCounted: attendanceResult.isCounted,
@@ -501,13 +489,12 @@ checkinsRoutes.post('/', async (c) => {
     action: 'CHECKIN_SUBMITTED',
     entityType: 'checkin',
     entityId: checkin.id,
-    description: `${user.firstName} ${user.lastName} submitted daily check-in (Readiness: ${status}, Attendance: ${attendanceResult.status}${attendanceResult.minutesLate > 0 ? `, ${attendanceResult.minutesLate} mins late` : ''})${isReturning ? ' - returning from leave' : ''}`,
+    description: `${user.firstName} ${user.lastName} submitted daily check-in (Readiness: ${status}, Attendance: ${attendanceResult.status})${isReturning ? ' - returning from leave' : ''}`,
     metadata: {
       readinessScore: score,
       readinessStatus: status,
       attendanceStatus: attendanceResult.status,
       attendanceScore: attendanceResult.score,
-      minutesLate: attendanceResult.minutesLate,
       isReturning,
     },
   });
@@ -517,7 +504,6 @@ checkinsRoutes.post('/', async (c) => {
     attendance: {
       status: attendanceResult.status,
       score: attendanceResult.score,
-      minutesLate: attendanceResult.minutesLate,
     },
     isReturning,
   }, 201);
@@ -537,7 +523,7 @@ checkinsRoutes.get('/week-stats', async (c) => {
     where: { id: userId },
     include: {
       team: true,
-      company: { select: { timezone: true } },
+      // Timezone comes from context, no need to include company
     },
   });
 
@@ -545,7 +531,8 @@ checkinsRoutes.get('/week-stats', async (c) => {
     return c.json({ error: 'User not found' }, 404);
   }
 
-  const timezone = user.company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
   const workDays = user.team?.workDays?.split(',').map(d => d.trim().toUpperCase()) || ['MON', 'TUE', 'WED', 'THU', 'FRI'];
 
   // Get current week's Monday to Sunday range (in company timezone)
@@ -644,12 +631,8 @@ checkinsRoutes.get('/attendance/today', async (c) => {
   const userId = c.get('userId');
   const companyId = c.get('companyId');
 
-  // Get company timezone
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Use getTodayForDbDate for @db.Date columns to avoid timezone issues
   const todayForDb = getTodayForDbDate(timezone);
@@ -671,12 +654,8 @@ checkinsRoutes.get('/attendance/history', async (c) => {
   const days = parseInt(c.req.query('days') || '30');
   const status = c.req.query('status');
 
-  // Get company timezone
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Use timezone-aware date range to avoid off-by-one errors at timezone boundaries
   const { start: startDate, end: endDate } = getLastNDaysRange(days, timezone);
@@ -705,12 +684,8 @@ checkinsRoutes.get('/attendance/performance', async (c) => {
   const companyId = c.get('companyId');
   const daysParam = c.req.query('days');
 
-  // Get company timezone
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Max cap: 2 years (730 days) for performance safety
   const MAX_DAYS = 730;
@@ -858,15 +833,17 @@ checkinsRoutes.patch('/:id/low-score-reason', async (c) => {
   return c.json(updated);
 });
 
-// GET /checkins/:id - Get check-in by ID (company-scoped, except for ADMIN)
+// GET /checkins/:id - Get check-in by ID (company-scoped, except for ADMIN, team-filtered for team leads)
 // IMPORTANT: This must be AFTER all specific routes like /attendance/* to avoid matching them
 checkinsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const user = c.get('user');
+  const userId = c.get('userId');
 
   // ADMIN: Super admin - can access any check-in
   const isAdmin = user.role?.toUpperCase() === 'ADMIN';
+  const isTeamLead = user.role?.toUpperCase() === 'TEAM_LEAD';
   const where: any = { id };
   if (!isAdmin) {
     where.companyId = companyId;
@@ -881,6 +858,7 @@ checkinsRoutes.get('/:id', async (c) => {
           firstName: true,
           lastName: true,
           email: true,
+          teamId: true,
         },
       },
     },
@@ -888,6 +866,18 @@ checkinsRoutes.get('/:id', async (c) => {
 
   if (!checkin) {
     return c.json({ error: 'Check-in not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only view check-ins from their own team members
+  if (isTeamLead && checkin.user.teamId) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam || checkin.user.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only view check-ins from your own team members' }, 403);
+    }
   }
 
   return c.json(checkin);

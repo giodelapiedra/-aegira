@@ -21,14 +21,8 @@ import {
 
 const calendarRoutes = new Hono<AppContext>();
 
-// Helper: Get company timezone
-async function getCompanyTimezone(companyId: string): Promise<string> {
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  return company?.timezone || DEFAULT_TIMEZONE;
-}
+// REMOVED: getCompanyTimezone helper - now use c.get('timezone') from context
+// Timezone is fetched once in auth middleware and available everywhere
 
 // Helper: Get days in month
 function getDaysInMonth(year: number, month: number): number {
@@ -43,7 +37,7 @@ calendarRoutes.get('/my', async (c) => {
   const yearParam = c.req.query('year');
   const monthParam = c.req.query('month');
 
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
 
   // Default to current month
   const now = new Date();
@@ -304,7 +298,7 @@ calendarRoutes.get('/team', async (c) => {
   const yearParam = c.req.query('year');
   const monthParam = c.req.query('month');
 
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
 
   // Default to current month
   const now = new Date();

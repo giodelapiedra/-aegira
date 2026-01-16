@@ -22,13 +22,12 @@ import {
 // TYPES
 // ===========================================
 
-export type AttendanceStatus = 'GREEN' | 'YELLOW' | 'ABSENT' | 'EXCUSED';
+export type AttendanceStatus = 'GREEN' | 'ABSENT' | 'EXCUSED';
 
 export interface AttendanceResult {
   status: AttendanceStatus;
   score: number | null;
   isCounted: boolean;
-  minutesLate: number;
 }
 
 export interface PerformanceScore {
@@ -38,7 +37,6 @@ export interface PerformanceScore {
   workDays: number;
   breakdown: {
     green: number;
-    yellow: number;
     absent: number;
     excused: number;
     absenceExcused: number;    // Absence justified and TL excused
@@ -53,7 +51,6 @@ export interface DailyAttendanceRecord {
   score: number | null;
   isCounted: boolean;
   checkInTime?: Date | null;
-  minutesLate?: number;
   exceptionType?: string | null;
   absenceInfo?: {
     status: string;
@@ -69,7 +66,6 @@ export interface DailyAttendanceRecord {
 
 export const ATTENDANCE_SCORES = {
   GREEN: 100,
-  YELLOW: 75,
   ABSENT: 0,
   EXCUSED: null,
 } as const;
@@ -79,45 +75,24 @@ export const ATTENDANCE_SCORES = {
 // ===========================================
 
 /**
- * Calculate attendance status based on check-in time vs scheduled time
- * GREEN = On-time (within grace period) = 100 points
- * YELLOW = Late (after grace period) = 75 points
+ * Calculate attendance status based on check-in time
+ * GREEN = Checked in within shift hours = 100 points
  *
- * IMPORTANT: Uses company timezone for time comparison
+ * Note: Validation already blocks check-ins outside shift window.
+ * No more late penalty - basta naka-check-in within shift = GREEN.
  */
 export function calculateAttendanceStatus(
   checkInTime: Date,
-  scheduledStart: string,
-  gracePeriodMins: number = 15,
+  shiftStart: string,
+  shiftEnd: string,
   timezone: string = DEFAULT_TIMEZONE
 ): AttendanceResult {
-  const [schedHour, schedMin] = scheduledStart.split(':').map(Number);
-  const scheduledMinutes = schedHour * 60 + schedMin;
-  const graceEndMinutes = scheduledMinutes + gracePeriodMins;
-
-  // Get check-in time in company timezone (not UTC!)
-  const { hour: checkInHour, minute: checkInMin } = getTimeInTimezone(checkInTime, timezone);
-  const checkInMinutes = checkInHour * 60 + checkInMin;
-
-  // Calculate minutes late (0 if on-time or early)
-  const minutesLate = Math.max(0, checkInMinutes - graceEndMinutes);
-
-  // On-time: checked in before or within grace period
-  if (checkInMinutes <= graceEndMinutes) {
-    return {
-      status: 'GREEN',
-      score: ATTENDANCE_SCORES.GREEN,
-      isCounted: true,
-      minutesLate: 0,
-    };
-  }
-
-  // Late: checked in after grace period
+  // If they're checking in, they're within shift (validation already blocks outside)
+  // Always GREEN - no more late penalty
   return {
-    status: 'YELLOW',
-    score: ATTENDANCE_SCORES.YELLOW,
+    status: 'GREEN',
+    score: ATTENDANCE_SCORES.GREEN,
     isCounted: true,
-    minutesLate,
   };
 }
 
@@ -129,8 +104,7 @@ export function calculateAttendanceStatus(
  * Calculate performance score for a user over a period using lazy evaluation.
  * This checks all work days in the period and determines status on-the-fly:
  *
- * - GREEN (100) = on-time check-in, counted
- * - YELLOW (75) = late check-in, counted
+ * - GREEN (100) = checked in within shift hours, counted
  * - ABSENT (0) = no check-in AND no approved exception, counted (pulls down average)
  * - EXCUSED = has approved exception, NOT counted (excluded from computation)
  *
@@ -163,7 +137,6 @@ export async function calculatePerformanceScore(
       workDays: 0,
       breakdown: {
         green: 0,
-        yellow: 0,
         absent: 0,
         excused: 0,
         absenceExcused: 0,
@@ -266,7 +239,6 @@ export async function calculatePerformanceScore(
   // Iterate through all days in the period (starting from effective start date)
   const breakdown = {
     green: 0,
-    yellow: 0,
     absent: 0,
     excused: 0,
     absenceExcused: 0,
@@ -296,15 +268,13 @@ export async function calculatePerformanceScore(
 
       if (record) {
         // Has attendance record - use its status
-        switch (record.status) {
+        // Note: Old YELLOW records are treated as GREEN (backward compatibility)
+        const status = record.status as string;
+        switch (status) {
           case 'GREEN':
+          case 'YELLOW': // Legacy: treat old YELLOW as GREEN
             breakdown.green++;
             totalScore += ATTENDANCE_SCORES.GREEN;
-            countedDays++;
-            break;
-          case 'YELLOW':
-            breakdown.yellow++;
-            totalScore += ATTENDANCE_SCORES.YELLOW;
             countedDays++;
             break;
           case 'ABSENT':
@@ -525,7 +495,6 @@ export async function getAttendanceHistory(
           score: record.score,
           isCounted: record.isCounted,
           checkInTime: record.checkInTime,
-          minutesLate: record.minutesLate,
           exceptionType: record.exception?.type || null,
         });
       } else {
@@ -614,7 +583,6 @@ export async function getTeamAttendanceStats(
 ): Promise<{
   totalCheckins: number;
   onTime: number;
-  late: number;
   absent: number;
   excused: number;
   complianceRate: number;
@@ -627,17 +595,15 @@ export async function getTeamAttendanceStats(
   });
 
   let onTime = 0;
-  let late = 0;
   let absent = 0;
   let excused = 0;
 
   for (const record of attendanceRecords) {
-    switch (record.status) {
+    const status = record.status as string;
+    switch (status) {
       case 'GREEN':
+      case 'YELLOW': // Legacy: treat old YELLOW as on-time
         onTime++;
-        break;
-      case 'YELLOW':
-        late++;
         break;
       case 'ABSENT':
         absent++;
@@ -648,7 +614,7 @@ export async function getTeamAttendanceStats(
     }
   }
 
-  const totalCheckins = onTime + late;
+  const totalCheckins = onTime;
   const totalCountable = totalCheckins + absent;
   const complianceRate = totalCountable > 0
     ? Math.round((totalCheckins / totalCountable) * 100)
@@ -657,7 +623,6 @@ export async function getTeamAttendanceStats(
   return {
     totalCheckins,
     onTime,
-    late,
     absent,
     excused,
     complianceRate,

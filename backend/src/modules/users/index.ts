@@ -409,11 +409,12 @@ usersRoutes.delete('/me/avatar', async (c) => {
   }
 });
 
-// GET /users - List users (company-scoped, except for ADMIN - super admin sees all)
+// GET /users - List users (company-scoped, except for ADMIN - super admin sees all, team-filtered for team leads)
 usersRoutes.get('/', async (c) => {
   try {
     const companyId = c.get('companyId');
     const user = c.get('user');
+    const userId = c.get('userId');
 
     // Use validated pagination helper
     const { page, limit, skip } = parsePagination(c);
@@ -424,10 +425,32 @@ usersRoutes.get('/', async (c) => {
     const includeInactive = c.req.query('includeInactive') === 'true';
 
     // Validate teamId if provided
-    const teamId = parseOptionalUUID(teamIdParam);
+    let teamId = parseOptionalUUID(teamIdParam);
 
     // ADMIN: Super admin - can see ALL users across ALL companies
     const isAdmin = user.role?.toUpperCase() === 'ADMIN';
+    const isTeamLead = user.role?.toUpperCase() === 'TEAM_LEAD';
+
+    // TEAM_LEAD: Can only see users from their own team
+    if (isTeamLead) {
+      const leaderTeam = await prisma.team.findFirst({
+        where: { leaderId: userId, companyId, isActive: true },
+        select: { id: true },
+      });
+
+      if (!leaderTeam) {
+        return c.json({ error: 'You are not assigned to lead any team' }, 403);
+      }
+
+      // If teamId is provided, verify it matches their team
+      if (teamId && teamId !== leaderTeam.id) {
+        return c.json({ error: 'You can only view users from your own team' }, 403);
+      }
+
+      // Force teamId to their team (even if not provided)
+      teamId = leaderTeam.id;
+    }
+
     const where: any = {};
     
     // Only filter by companyId for non-admin roles
@@ -576,14 +599,15 @@ usersRoutes.put('/:id', async (c) => {
   // Check if team is being changed (transfer)
   const isTeamChanging = body.teamId !== undefined && body.teamId !== existing.teamId;
 
-  // TEAM_LEAD: Can only transfer members of their own team
-  if (isTeamLead && isTeamChanging) {
+  // TEAM_LEAD: Can ONLY update members of their own team
+  if (isTeamLead) {
+    // Must be updating a member of their own team
     if (!existing.team || existing.team.leaderId !== currentUserId) {
-      return c.json({ error: 'You can only transfer members from your own team' }, 403);
+      return c.json({ error: 'You can only update members of your own team' }, 403);
     }
-    // Team leads cannot transfer other team leads or higher roles
+    // Team leads can only update workers/members, not other roles
     if (existing.role !== 'MEMBER' && existing.role !== 'WORKER') {
-      return c.json({ error: 'You can only transfer workers/members' }, 403);
+      return c.json({ error: 'You can only update workers/members' }, 403);
     }
   }
 

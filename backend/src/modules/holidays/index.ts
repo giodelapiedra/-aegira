@@ -29,14 +29,8 @@ function isValidDate(dateStr: string): boolean {
   return !isNaN(d.getTime());
 }
 
-// Helper: Get company timezone
-async function getCompanyTimezone(companyId: string): Promise<string> {
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  return company?.timezone || DEFAULT_TIMEZONE;
-}
+// REMOVED: getCompanyTimezone helper - now use c.get('timezone') from context
+// Timezone is fetched once in auth middleware and available everywhere
 
 // GET /holidays - List holidays for company
 // Query params: ?year=2026&month=1 (optional)
@@ -45,7 +39,7 @@ holidaysRoutes.get('/', async (c) => {
   const yearParam = c.req.query('year');
   const monthParam = c.req.query('month');
 
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
 
   // Build date filter
   const where: any = { companyId };
@@ -117,7 +111,7 @@ holidaysRoutes.get('/check/:date', async (c) => {
     return c.json({ error: 'Invalid date format. Use YYYY-MM-DD' }, 400);
   }
 
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const checkDate = getStartOfDay(new Date(dateParam), timezone);
 
   const holiday = await prisma.holiday.findUnique({
@@ -167,7 +161,7 @@ holidaysRoutes.post('/', async (c) => {
     return c.json({ error: 'Holiday name cannot be empty' }, 400);
   }
 
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const holidayDate = getStartOfDay(new Date(date), timezone);
 
   // Check if holiday already exists on this date
@@ -245,7 +239,7 @@ holidaysRoutes.delete('/:id', async (c) => {
     return c.json({ error: 'Only executives can manage holidays' }, 403);
   }
 
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
 
   // Find the holiday
   const holiday = await prisma.holiday.findFirst({
@@ -307,7 +301,7 @@ holidaysRoutes.delete('/date/:date', async (c) => {
     return c.json({ error: 'Invalid date format. Use YYYY-MM-DD' }, 400);
   }
 
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const holidayDate = getStartOfDay(new Date(dateParam), timezone);
 
   // Find the holiday

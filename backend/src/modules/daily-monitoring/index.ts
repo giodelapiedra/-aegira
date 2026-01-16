@@ -21,14 +21,8 @@ import { parsePagination } from '../../utils/validator.js';
 
 const dailyMonitoringRoutes = new Hono<AppContext>();
 
-// Helper: Get company timezone
-async function getCompanyTimezone(companyId: string): Promise<string> {
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  return company?.timezone || DEFAULT_TIMEZONE;
-}
+// REMOVED: getCompanyTimezone helper - now use c.get('timezone') from context
+// Timezone is fetched once in auth middleware and available everywhere
 
 // ============================================
 // TYPES
@@ -300,8 +294,8 @@ dailyMonitoringRoutes.get('/', async (c) => {
   const teamId = team.id;
   const memberIds = team.members.map(m => m.id);
 
-  // Get company timezone (centralized)
-  const timezone = await getCompanyTimezone(companyId);
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Get date ranges (timezone-aware)
   const { start: todayStart, end: todayEnd } = getTodayRange(timezone);
@@ -622,17 +616,14 @@ dailyMonitoringRoutes.get('/stats', async (c) => {
   const teamId = team.id;
 
   // Get timezone and date range
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const { start: todayStart, end: todayEnd } = getTodayRange(timezone);
   const { start: sevenDaysAgo } = getLastNDaysRange(7, timezone);
 
-  // Efficient parallel COUNT queries (not fetching full records)
+  // Efficient parallel queries with groupBy for status counts (1 query instead of 4)
   const [
     todayHoliday,
-    checkedInCount,
-    greenCount,
-    yellowCount,
-    redCount,
+    statusCounts,
     pendingExemptionsCount,
     activeExemptions,
     historicalCheckins,
@@ -647,43 +638,15 @@ dailyMonitoringRoutes.get('/stats', async (c) => {
       select: { name: true },
     }),
 
-    // Total checked in today
-    prisma.checkin.count({
+    // Single groupBy query for all status counts (replaces 4 separate COUNT queries)
+    prisma.checkin.groupBy({
+      by: ['readinessStatus'],
       where: {
         companyId,
         userId: { in: memberIds },
         createdAt: { gte: todayStart },
       },
-    }),
-
-    // GREEN count
-    prisma.checkin.count({
-      where: {
-        companyId,
-        userId: { in: memberIds },
-        createdAt: { gte: todayStart },
-        readinessStatus: 'GREEN',
-      },
-    }),
-
-    // YELLOW count
-    prisma.checkin.count({
-      where: {
-        companyId,
-        userId: { in: memberIds },
-        createdAt: { gte: todayStart },
-        readinessStatus: 'YELLOW',
-      },
-    }),
-
-    // RED count
-    prisma.checkin.count({
-      where: {
-        companyId,
-        userId: { in: memberIds },
-        createdAt: { gte: todayStart },
-        readinessStatus: 'RED',
-      },
+      _count: { id: true },
     }),
 
     // Pending exemptions count
@@ -729,6 +692,18 @@ dailyMonitoringRoutes.get('/stats', async (c) => {
       select: { userId: true, readinessScore: true },
     }),
   ]);
+
+  // Extract counts from groupBy result
+  let checkedInCount = 0;
+  let greenCount = 0;
+  let yellowCount = 0;
+  let redCount = 0;
+  for (const item of statusCounts) {
+    checkedInCount += item._count.id;
+    if (item.readinessStatus === 'GREEN') greenCount = item._count.id;
+    if (item.readinessStatus === 'YELLOW') yellowCount = item._count.id;
+    if (item.readinessStatus === 'RED') redCount = item._count.id;
+  }
 
   // Calculate on-leave users
   const onLeaveUserIds = new Set(activeExemptions.map((e) => e.userId));
@@ -824,7 +799,7 @@ dailyMonitoringRoutes.get('/checkins', async (c) => {
   const { team, memberIds } = teamResult;
 
   // Get timezone and date ranges
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const { start: todayStart } = getTodayRange(timezone);
   const { start: sevenDaysAgo } = getLastNDaysRange(7, timezone);
 
@@ -859,36 +834,44 @@ dailyMonitoringRoutes.get('/checkins', async (c) => {
     userAverages.set(checkin.userId, existing);
   }
 
-  // Fetch check-ins with user data
-  let allCheckins = await prisma.checkin.findMany({
-    where: whereWithStatus,
-    include: {
-      user: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          avatar: true,
-          currentStreak: true,
+  // Build search filter for database query (instead of in-memory filtering)
+  const searchWhere = search
+    ? {
+        OR: [
+          { user: { firstName: { contains: search, mode: 'insensitive' as const } } },
+          { user: { lastName: { contains: search, mode: 'insensitive' as const } } },
+          { user: { email: { contains: search, mode: 'insensitive' as const } } },
+        ],
+      }
+    : {};
+
+  const finalWhere = { ...whereWithStatus, ...searchWhere };
+
+  // Fetch check-ins with database-level search and pagination
+  const [paginatedCheckins, total] = await Promise.all([
+    prisma.checkin.findMany({
+      where: finalWhere,
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            avatar: true,
+            currentStreak: true,
+          },
         },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+    prisma.checkin.count({ where: finalWhere }),
+  ]);
 
-  // Apply search filter (in-memory for name/email search)
-  if (search) {
-    allCheckins = allCheckins.filter(
-      (c) =>
-        c.user.firstName.toLowerCase().includes(search) ||
-        c.user.lastName.toLowerCase().includes(search) ||
-        c.user.email.toLowerCase().includes(search)
-    );
-  }
-
-  // Get exemptions linked to check-ins
-  const checkinIds = allCheckins.map((c) => c.id);
+  // Get exemptions linked to paginated check-ins only
+  const checkinIds = paginatedCheckins.map((c) => c.id);
   const exemptionsForCheckins =
     checkinIds.length > 0
       ? await prisma.exception.findMany({
@@ -910,10 +893,6 @@ dailyMonitoringRoutes.get('/checkins', async (c) => {
       exemptionMap.set(ex.triggeredByCheckinId, ex);
     }
   }
-
-  // Calculate total and apply pagination
-  const total = allCheckins.length;
-  const paginatedCheckins = allCheckins.slice(skip, skip + limit);
 
   // Format check-ins with analytics
   const data = paginatedCheckins.map((checkin) => {
@@ -987,7 +966,7 @@ dailyMonitoringRoutes.get('/not-checked-in', async (c) => {
   const teamId = team.id;
 
   // Get timezone and date range
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const { start: todayStart, end: todayEnd } = getTodayRange(timezone);
 
   // Check if today is a holiday
@@ -1132,7 +1111,7 @@ dailyMonitoringRoutes.get('/sudden-changes', async (c) => {
   const { memberIds } = teamResult;
 
   // Get company timezone and date ranges
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const { start: todayStart } = getTodayRange(timezone);
   const { start: sevenDaysAgo } = getLastNDaysRange(7, timezone);
 
@@ -1297,7 +1276,7 @@ dailyMonitoringRoutes.get('/exemptions', async (c) => {
   const teamId = team.id;
 
   // Get timezone and date range
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const { start: todayStart } = getTodayRange(timezone);
 
   // Build base where clause
@@ -1476,7 +1455,7 @@ dailyMonitoringRoutes.get('/member/:memberId', async (c) => {
   }
 
   // Get company timezone and date range (timezone-aware)
-  const timezone = await getCompanyTimezone(companyId);
+  const timezone = c.get('timezone');
   const { start: startDate } = getLastNDaysRange(days, timezone);
 
   const [member, checkins, exemptions] = await Promise.all([

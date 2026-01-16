@@ -6,6 +6,7 @@ export interface AppContext {
     user: AuthUser;
     userId: string;
     companyId: string;
+    timezone: string; // Company timezone - fetched once in auth middleware, available everywhere
   };
 }
 

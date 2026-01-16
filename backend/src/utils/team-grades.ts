@@ -6,7 +6,7 @@
  *
  * CALCULATION LOGIC:
  * - Team Score = Average of member scores (equal weight per member)
- * - Member Score = (GREEN×100 + YELLOW×75 + ABSENT×0) / Counted Days
+ * - Member Score = (GREEN×100 + ABSENT×0) / Counted Days
  * - Excludes: Holidays, Approved Exemptions, Future days, New members (<3 work days)
  *
  * GRADE SCALE:
@@ -69,7 +69,6 @@ export interface TeamGradeSummary {
   // Breakdown
   breakdown: {
     green: number;
-    yellow: number;
     absent: number;
     excused: number;
   };
@@ -137,8 +136,7 @@ const DEFAULT_MIN_WORK_DAYS = 3;
  * Minimum ACTUAL check-in days for a member to be included in team grade calculation.
  *
  * IMPORTANT: Only VALID check-in days count toward this threshold:
- * - GREEN (on-time check-in) = COUNTS ✓
- * - YELLOW (late check-in) = COUNTS ✓
+ * - GREEN (check-in within shift) = COUNTS ✓
  * - ABSENT (no check-in, no exemption) = does NOT count
  * - EXCUSED (on approved exemption/leave) = does NOT count
  * - Holiday = does NOT count (no check-in expected)
@@ -407,7 +405,6 @@ async function calculateSingleTeamGrade(params: {
   // Calculate scores for each member
   const memberScores: number[] = [];
   let totalGreen = 0;
-  let totalYellow = 0;
   let totalAbsent = 0;
   let totalExcused = 0;
   let totalExpectedWorkDays = 0;
@@ -472,10 +469,10 @@ async function calculateSingleTeamGrade(params: {
       timezone
     );
 
-    // Count ACTUAL check-in days (GREEN + YELLOW only)
+    // Count ACTUAL check-in days (GREEN only)
     // These are the only days where we have real readiness data
     // NOT counted: ABSENT, UNEXCUSED, EXCUSED, holidays - no readiness data
-    const actualCheckinDays = performance.breakdown.green + performance.breakdown.yellow;
+    const actualCheckinDays = performance.breakdown.green;
 
     // Skip members with < MIN_CHECKIN_DAYS_THRESHOLD total check-ins EVER (onboarding)
     // Members need 3+ check-ins EVER before being included in team grade
@@ -488,7 +485,6 @@ async function calculateSingleTeamGrade(params: {
 
     memberScores.push(performance.score);
     totalGreen += performance.breakdown.green;
-    totalYellow += performance.breakdown.yellow;
     totalAbsent += performance.breakdown.absent;
     totalExcused += performance.breakdown.excused;
     totalExpectedWorkDays += expectedWorkDays;
@@ -557,7 +553,6 @@ async function calculateSingleTeamGrade(params: {
     onTimeRate,
     breakdown: {
       green: totalGreen,
-      yellow: totalYellow,
       absent: totalAbsent,
       excused: totalExcused,
     },

@@ -137,12 +137,8 @@ systemLogsRoutes.get('/stats', async (c) => {
     return c.json({ error: 'Unauthorized: Admin/Executive/Supervisor access required' }, 403);
   }
 
-  // Get company timezone for date calculations
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
   // Use timezone-aware date helpers
   const today = getTodayStart(timezone);

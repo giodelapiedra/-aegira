@@ -3,13 +3,14 @@
  * Handles absence justification system
  *
  * Flow:
- * 1. Worker opens app / attempts check-in
- * 2. System detects missing days and creates absence records
- * 3. Worker submits justification for each absence (blocking popup)
- * 4. Team Leader reviews and marks as EXCUSED or UNEXCUSED
+ * 1. Cron job runs at 5 AM (per company timezone)
+ * 2. Creates DailyAttendance (ABSENT) + Absence records for workers who didn't check in
+ * 3. Worker opens app, sees pending absences (blocking popup)
+ * 4. Worker submits justification for each absence
+ * 5. Team Leader reviews and marks as EXCUSED or UNEXCUSED
  *
  * Rules:
- * - No auto actions - all manual review
+ * - Cron creates absence records (not on-demand)
  * - TL reviews one-by-one (no bulk actions)
  * - EXCUSED = no penalty (not counted)
  * - UNEXCUSED = 0 points (counted)
@@ -20,7 +21,6 @@ import { z } from 'zod';
 import { prisma } from '../../config/prisma.js';
 import { createSystemLog } from '../system-logs/index.js';
 import {
-  detectAndCreateAbsences,
   getPendingJustifications,
   getPendingReviews,
   getAbsenceHistory,
@@ -56,24 +56,13 @@ const reviewAbsenceSchema = z.object({
 
 /**
  * GET /absences/my-pending - Get worker's pending justifications
- * First detects and creates any new absences, then returns pending ones
- * This is called on app load to check if worker has blocking absences
+ * Returns absences created by the daily cron job (5 AM)
+ * Read-only - cron handles absence creation
  */
 absencesRoutes.get('/my-pending', async (c) => {
   const userId = c.get('userId');
-  const companyId = c.get('companyId');
 
-  // Get company timezone
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
-
-  // First, detect and create any new absences
-  await detectAndCreateAbsences(userId, companyId, timezone);
-
-  // Then get pending (not yet justified)
+  // Get pending (not yet justified) - created by cron
   const absences = await getPendingJustifications(userId);
 
   return c.json({
@@ -103,11 +92,18 @@ absencesRoutes.post('/justify', async (c) => {
     return c.json({ error: 'User not found' }, 404);
   }
 
-  // Validate all absences belong to this user and are not yet justified
+  // Batch fetch all absences for validation (single query instead of N queries)
+  const absenceIds = body.justifications.map((j) => j.absenceId);
+  const absences = await prisma.absence.findMany({
+    where: { id: { in: absenceIds } },
+  });
+
+  // Create lookup map for validation
+  const absenceMap = new Map(absences.map((a) => [a.id, a]));
+
+  // Validate all absences
   for (const item of body.justifications) {
-    const absence = await prisma.absence.findUnique({
-      where: { id: item.absenceId },
-    });
+    const absence = absenceMap.get(item.absenceId);
 
     if (!absence) {
       return c.json({ error: `Absence not found: ${item.absenceId}` }, 400);
@@ -126,21 +122,20 @@ absencesRoutes.post('/justify', async (c) => {
     }
   }
 
-  // Update all absences with justification
+  // Batch update all absences in a transaction (single transaction instead of N queries)
   const now = new Date();
-  const updatedAbsences = [];
-
-  for (const item of body.justifications) {
-    const absence = await prisma.absence.update({
-      where: { id: item.absenceId },
-      data: {
-        reasonCategory: item.reasonCategory,
-        explanation: item.explanation,
-        justifiedAt: now, // Mark as justified NOW
-      },
-    });
-    updatedAbsences.push(absence);
-  }
+  const updatedAbsences = await prisma.$transaction(
+    body.justifications.map((item) =>
+      prisma.absence.update({
+        where: { id: item.absenceId },
+        data: {
+          reasonCategory: item.reasonCategory,
+          explanation: item.explanation,
+          justifiedAt: now,
+        },
+      })
+    )
+  );
 
   // Notify team leader if user has a team
   if (user.teamId) {
@@ -344,31 +339,48 @@ absencesRoutes.post('/:id/review', async (c) => {
     select: { firstName: true, lastName: true },
   });
 
-  // Get company timezone for display
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
-    select: { timezone: true },
-  });
-  const timezone = company?.timezone || DEFAULT_TIMEZONE;
+  // Get company timezone from context (no DB query needed!)
+  const timezone = c.get('timezone');
 
-  // Update the absence
-  const updatedAbsence = await prisma.absence.update({
-    where: { id },
-    data: {
-      status: body.action,
-      reviewedBy: userId,
-      reviewedAt: new Date(),
-      reviewNotes: body.notes || null,
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
+  // Update the absence AND DailyAttendance in a transaction
+  const updatedAbsence = await prisma.$transaction(async (tx) => {
+    // Update absence record
+    const updated = await tx.absence.update({
+      where: { id },
+      data: {
+        status: body.action,
+        reviewedBy: userId,
+        reviewedAt: new Date(),
+        reviewNotes: body.notes || null,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
         },
       },
-    },
+    });
+
+    // If EXCUSED, also update DailyAttendance to EXCUSED status
+    if (body.action === 'EXCUSED') {
+      await tx.dailyAttendance.updateMany({
+        where: {
+          userId: absence.userId,
+          date: absence.absenceDate,
+        },
+        data: {
+          status: 'EXCUSED',
+          score: null,
+          isCounted: false,
+        },
+      });
+    }
+    // If UNEXCUSED, DailyAttendance stays ABSENT (already set by cron)
+
+    return updated;
   });
 
   // Notify worker
@@ -416,65 +428,6 @@ absencesRoutes.post('/:id/review', async (c) => {
   }
 
   return c.json(updatedAbsence);
-});
-
-/**
- * GET /absences/:id - Get absence by ID
- */
-absencesRoutes.get('/:id', async (c) => {
-  const id = c.req.param('id');
-  const userId = c.get('userId');
-  const companyId = c.get('companyId');
-  const currentUser = c.get('user');
-
-  const absence = await prisma.absence.findFirst({
-    where: { id, companyId },
-    include: {
-      user: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          avatar: true,
-          teamId: true,
-        },
-      },
-      team: {
-        select: {
-          id: true,
-          name: true,
-          leaderId: true,
-        },
-      },
-      reviewer: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-        },
-      },
-    },
-  });
-
-  if (!absence) {
-    return c.json({ error: 'Absence not found' }, 404);
-  }
-
-  // Workers can only view their own absences
-  if (currentUser.role === 'WORKER' || currentUser.role === 'MEMBER') {
-    if (absence.userId !== userId) {
-      return c.json({ error: 'You can only view your own absences' }, 403);
-    }
-  }
-
-  // Team leads can only view their team's absences
-  if (currentUser.role === 'TEAM_LEAD') {
-    if (absence.team?.leaderId !== userId && absence.userId !== userId) {
-      return c.json({ error: 'You can only view absences for your team' }, 403);
-    }
-  }
-
-  return c.json(absence);
 });
 
 /**
@@ -632,6 +585,66 @@ absencesRoutes.get('/stats', async (c) => {
     unexcused,
     total: pendingJustification + pendingReview + excused + unexcused,
   });
+});
+
+/**
+ * GET /absences/:id - Get absence by ID
+ * NOTE: This route MUST be after all specific routes to avoid conflicts
+ */
+absencesRoutes.get('/:id', async (c) => {
+  const id = c.req.param('id');
+  const userId = c.get('userId');
+  const companyId = c.get('companyId');
+  const currentUser = c.get('user');
+
+  const absence = await prisma.absence.findFirst({
+    where: { id, companyId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          avatar: true,
+          teamId: true,
+        },
+      },
+      team: {
+        select: {
+          id: true,
+          name: true,
+          leaderId: true,
+        },
+      },
+      reviewer: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+        },
+      },
+    },
+  });
+
+  if (!absence) {
+    return c.json({ error: 'Absence not found' }, 404);
+  }
+
+  // Workers can only view their own absences
+  if (currentUser.role === 'WORKER' || currentUser.role === 'MEMBER') {
+    if (absence.userId !== userId) {
+      return c.json({ error: 'You can only view your own absences' }, 403);
+    }
+  }
+
+  // Team leads can only view their team's absences
+  if (currentUser.role === 'TEAM_LEAD') {
+    if (absence.team?.leaderId !== userId && absence.userId !== userId) {
+      return c.json({ error: 'You can only view absences for your team' }, 403);
+    }
+  }
+
+  return c.json(absence);
 });
 
 export { absencesRoutes };

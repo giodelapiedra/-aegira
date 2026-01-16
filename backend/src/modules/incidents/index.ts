@@ -383,10 +383,12 @@ incidentsRoutes.post('/', async (c) => {
   return c.json(incident, 201);
 });
 
-// GET /incidents/:id - Get incident by ID (company-scoped)
+// GET /incidents/:id - Get incident by ID (company-scoped, team-filtered for team leads)
 incidentsRoutes.get('/:id', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
+  const currentUserId = c.get('userId');
+  const currentUser = c.get('user');
 
   const incident = await prisma.incident.findFirst({
     where: { id, companyId },
@@ -467,6 +469,19 @@ incidentsRoutes.get('/:id', async (c) => {
     return c.json({ error: 'Incident not found' }, 404);
   }
 
+  // TEAM_LEAD: Can only view incidents from their own team
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && incident.teamId) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: currentUserId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam || incident.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only view incidents from your own team' }, 403);
+    }
+  }
+
   return c.json(incident);
 });
 
@@ -491,9 +506,22 @@ incidentsRoutes.put('/:id', async (c) => {
   // Authorization check: Only reporter, assignee, or team lead+ can update
   const isReporter = existing.reportedBy === userId;
   const isAssignee = existing.assignedTo === userId;
-  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD'].includes(currentUser.role);
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR'].includes(currentUser.role);
 
-  if (!isReporter && !isAssignee && !hasElevatedRole) {
+  // TEAM_LEAD: Can only update incidents from their own team
+  if (isTeamLead && existing.teamId) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam || existing.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only update incidents from your own team' }, 403);
+    }
+  }
+
+  if (!isReporter && !isAssignee && !hasElevatedRole && !isTeamLead) {
     return c.json({ error: 'Forbidden: You do not have permission to update this incident' }, 403);
   }
 
@@ -525,11 +553,12 @@ incidentsRoutes.put('/:id', async (c) => {
   return c.json(incident);
 });
 
-// PATCH /incidents/:id/status - Update incident status (company-scoped)
+// PATCH /incidents/:id/status - Update incident status (company-scoped, team-filtered for team leads)
 incidentsRoutes.patch('/:id/status', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const userId = c.get('userId');
+  const currentUser = c.get('user');
   const body = await c.req.json();
 
   // Verify incident belongs to company
@@ -539,6 +568,28 @@ incidentsRoutes.patch('/:id/status', async (c) => {
 
   if (!existing) {
     return c.json({ error: 'Incident not found' }, 404);
+  }
+
+  // Authorization check: Only reporter, assignee, or team lead+ can update status
+  const isReporter = existing.reportedBy === userId;
+  const isAssignee = existing.assignedTo === userId;
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR'].includes(currentUser.role);
+
+  // TEAM_LEAD: Can only update incidents from their own team
+  if (isTeamLead && existing.teamId) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam || existing.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only update incidents from your own team' }, 403);
+    }
+  }
+
+  if (!isReporter && !isAssignee && !hasElevatedRole && !isTeamLead) {
+    return c.json({ error: 'Forbidden: You do not have permission to update this incident' }, 403);
   }
 
   const updateData: any = { status: body.status };
@@ -592,11 +643,12 @@ incidentsRoutes.patch('/:id/status', async (c) => {
   return c.json(incident);
 });
 
-// PATCH /incidents/:id/assign - Assign incident (company-scoped)
+// PATCH /incidents/:id/assign - Assign incident (company-scoped, team-filtered for team leads)
 incidentsRoutes.patch('/:id/assign', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const userId = c.get('userId');
+  const currentUser = c.get('user');
   const body = await c.req.json();
 
   // Verify incident belongs to company
@@ -606,6 +658,28 @@ incidentsRoutes.patch('/:id/assign', async (c) => {
 
   if (!existing) {
     return c.json({ error: 'Incident not found' }, 404);
+  }
+
+  // Authorization check: Only reporter, assignee, or team lead+ can assign
+  const isReporter = existing.reportedBy === userId;
+  const isAssignee = existing.assignedTo === userId;
+  const isTeamLead = currentUser.role === 'TEAM_LEAD';
+  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR'].includes(currentUser.role);
+
+  // TEAM_LEAD: Can only assign incidents from their own team
+  if (isTeamLead && existing.teamId) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam || existing.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only assign incidents from your own team' }, 403);
+    }
+  }
+
+  if (!isReporter && !isAssignee && !hasElevatedRole && !isTeamLead) {
+    return c.json({ error: 'Forbidden: You do not have permission to assign this incident' }, 403);
   }
 
   // Verify assignee belongs to same company
@@ -677,11 +751,12 @@ incidentsRoutes.patch('/:id/assign', async (c) => {
   return c.json(incident);
 });
 
-// POST /incidents/:id/comments - Add comment to incident
+// POST /incidents/:id/comments - Add comment to incident (team-filtered for team leads)
 incidentsRoutes.post('/:id/comments', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const userId = c.get('userId');
+  const currentUser = c.get('user');
   const body = await c.req.json();
 
   // Verify incident belongs to company
@@ -691,6 +766,19 @@ incidentsRoutes.post('/:id/comments', async (c) => {
 
   if (!existing) {
     return c.json({ error: 'Incident not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only comment on incidents from their own team
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && existing.teamId) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam || existing.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only comment on incidents from your own team' }, 403);
+    }
   }
 
   if (!body.comment || body.comment.trim() === '') {
@@ -719,10 +807,12 @@ incidentsRoutes.post('/:id/comments', async (c) => {
   return c.json(activity, 201);
 });
 
-// GET /incidents/:id/activities - Get incident activities/timeline
+// GET /incidents/:id/activities - Get incident activities/timeline (team-filtered for team leads)
 incidentsRoutes.get('/:id/activities', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
+  const currentUserId = c.get('userId');
+  const currentUser = c.get('user');
 
   // Verify incident belongs to company
   const existing = await prisma.incident.findFirst({
@@ -731,6 +821,19 @@ incidentsRoutes.get('/:id/activities', async (c) => {
 
   if (!existing) {
     return c.json({ error: 'Incident not found' }, 404);
+  }
+
+  // TEAM_LEAD: Can only view activities from incidents in their own team
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead && existing.teamId) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: currentUserId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam || existing.teamId !== leaderTeam.id) {
+      return c.json({ error: 'You can only view activities from incidents in your own team' }, 403);
+    }
   }
 
   const activities = await prisma.incidentActivity.findMany({

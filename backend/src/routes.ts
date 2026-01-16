@@ -22,6 +22,7 @@ import { chatbotRoutes } from './modules/chatbot/index.js';
 import { holidaysRoutes } from './modules/holidays/index.js';
 import { calendarRoutes } from './modules/calendar/index.js';
 import { absencesRoutes } from './modules/absences/index.js';
+import { cronRoutes } from './cron/index.js';
 
 const api = new Hono();
 
@@ -50,5 +51,6 @@ api.route('/chatbot', chatbotRoutes);
 api.route('/holidays', holidaysRoutes);
 api.route('/calendar', calendarRoutes);
 api.route('/absences', absencesRoutes);
+api.route('/cron', cronRoutes);
 
 export { api };
