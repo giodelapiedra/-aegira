@@ -51,10 +51,9 @@ enum ExceptionStatus {
 }
 
 enum AttendanceStatus {
-  GREEN // On-time check-in (within grace period) - Score: 100
-  YELLOW // Late check-in (after grace period) - Score: 75
-  ABSENT // No check-in, no approved exception - Score: 0
-  EXCUSED // Has approved exception - Not counted in computation
+  GREEN   // Checked in within shift hours - Score: 100
+  ABSENT  // No check-in, no approved exception - Score: 0
+  EXCUSED // Has approved exception/absence - Not counted in computation
 }
 
 enum ExceptionType {
@@ -318,16 +317,14 @@ model DailyAttendance {
   date      DateTime @db.Date
 
   // Schedule info (snapshot from team at time of record)
-  scheduledStart  String // e.g., "09:00"
-  gracePeriodMins Int    @default(15)
+  scheduledStart String // e.g., "09:00"
 
   // Check-in info
   checkInTime DateTime? // Actual check-in time (null if ABSENT/EXCUSED)
-  minutesLate Int       @default(0) // 0 if on-time, positive if late
 
   // Attendance scoring
   status    AttendanceStatus
-  score     Int? // 100=GREEN, 75=YELLOW, 0=ABSENT, null=EXCUSED
+  score     Int? // 100=GREEN, 0=ABSENT, null=EXCUSED
   isCounted Boolean          @default(true) // false for EXCUSED
 
   // Exception link (if EXCUSED)
@@ -980,15 +977,19 @@ model DailyTeamSummary {
 
   // === MEMBER COUNTS ===
   totalMembers      Int // Active WORKER/MEMBER in team (snapshot)
-  onLeaveCount      Int // Members with APPROVED exemption covering this date
-  expectedToCheckIn Int // totalMembers - onLeaveCount (0 if !isWorkDay or isHoliday)
+  onLeaveCount      Int // Members with APPROVED Exception (planned leave only)
+  expectedToCheckIn Int // totalMembers - onLeaveCount - excusedCount (0 if !isWorkDay or isHoliday)
 
   // === CHECK-IN STATS ===
   checkedInCount    Int @default(0)
-  notCheckedInCount Int @default(0) // expectedToCheckIn - checkedInCount
+  notCheckedInCount Int @default(0) // Legacy: expectedToCheckIn - checkedInCount
   greenCount        Int @default(0)
   yellowCount       Int @default(0)
   redCount          Int @default(0)
+
+  // === ABSENCE BREAKDOWN (no duplication) ===
+  absentCount       Int @default(0) // DailyAttendance status='ABSENT' (penalized, 0 points)
+  excusedCount      Int @default(0) // DailyAttendance status='EXCUSED' (TL approved, not counted)
 
   // === SCORES ===
   avgReadinessScore Float? // Average of all check-in scores (null if no check-ins)
