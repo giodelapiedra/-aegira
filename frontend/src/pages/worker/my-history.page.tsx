@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/auth.store';
 import { Button } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
 import { Pagination } from '../../components/ui/Pagination';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonTable } from '../../components/ui/Skeleton';
 import { Calendar, FileText, X, ChevronDown } from 'lucide-react';
 import type { LowScoreReason, Checkin } from '../../types/user';
 
@@ -100,8 +100,8 @@ export function MyHistoryPage() {
 
   if (isLoading && !checkinsData) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
+      <div className="space-y-6">
+        <SkeletonTable rows={10} columns={5} />
       </div>
     );
   }

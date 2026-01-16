@@ -9,6 +9,7 @@
 import { Clock, CheckCircle2, Timer } from 'lucide-react';
 import { Card, CardContent } from '../../../../components/ui/Card';
 import { EmptyState } from '../../../../components/ui/EmptyState';
+import { SkeletonList } from '../../../../components/ui/Skeleton';
 import { PendingExemptionCard, ActiveExemptionCard } from '../../../../components/monitoring';
 import { useExemptions } from '../hooks/useExemptions';
 import type { Exemption } from '../../../../services/exemption.service';
@@ -41,11 +42,7 @@ export function ExemptionsTab({
   const activeExemptions = exemptions.filter((e) => e.status === 'APPROVED' && e.isActiveToday);
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
-      </div>
-    );
+    return <SkeletonList items={4} />;
   }
 
   // Convert to Exemption type for existing components

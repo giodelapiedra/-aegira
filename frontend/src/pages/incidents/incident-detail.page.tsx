@@ -31,7 +31,7 @@ import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonProfile } from '../../components/ui/Skeleton';
 import { cn } from '../../lib/utils';
 import { formatDisplayDateTime, formatDisplayDate } from '../../lib/date-utils';
 import { invalidateRelatedQueries } from '../../lib/query-utils';
@@ -273,14 +273,7 @@ export function IncidentDetailPage() {
   });
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <LoadingSpinner size="lg" className="mx-auto mb-4" />
-          <p className="text-gray-500">Loading incident details...</p>
-        </div>
-      </div>
-    );
+    return <SkeletonProfile />;
   }
 
   if (error || !incident) {

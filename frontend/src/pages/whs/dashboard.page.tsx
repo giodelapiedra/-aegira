@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonDashboard } from '../../components/ui/Skeleton';
 import { cn } from '../../lib/utils';
 import { formatDisplayDateTime } from '../../lib/date-utils';
 import {
@@ -23,11 +23,7 @@ export function WHSDashboard() {
   });
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonDashboard />;
   }
 
   if (error) {

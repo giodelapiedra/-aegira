@@ -29,7 +29,7 @@ import api from '../../services/api';
 
 // Import reusable components
 import { StatsCard, StatsCardGrid } from '../../components/ui/StatsCard';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { Skeleton, SkeletonDashboard } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 
 // ============================================
@@ -292,9 +292,7 @@ function RecentActivityCard({ logs, isLoading }: { logs?: any[]; isLoading: bool
 
       <div className="flex-1">
         {isLoading ? (
-          <div className="flex items-center justify-center h-48">
-            <LoadingSpinner size="lg" />
-          </div>
+          <SkeletonDashboard />
         ) : logs && logs.length > 0 ? (
           <div className="space-y-3">
             {logs.map((log) => (
@@ -397,7 +395,7 @@ function CompanyOverviewCard({
               <span className="text-sm text-gray-600">{item.label}</span>
             </div>
             {isLoading ? (
-              <div className="h-5 w-10 bg-gray-200 rounded animate-pulse" />
+              <Skeleton className="h-5 w-10" />
             ) : (
               <span className="font-semibold text-gray-900">{item.value}</span>
             )}
@@ -423,7 +421,7 @@ function ReadinessDistributionCard({ stats }: { stats?: AdminStats }) {
           <div key={item.label}>
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-gray-700">
-                {item.label === 'Green' ? 'Ready (Green)' : item.label === 'Yellow' ? 'Limited (Yellow)' : 'Not Ready (Red)'}
+                {item.label === 'Green' ? 'Ready (Green)' : item.label === 'Yellow' ? 'Caution (Yellow)' : 'Not Ready (Red)'}
               </span>
               <span className="text-sm text-gray-500">
                 {item.count} personnel
@@ -465,9 +463,7 @@ function RecentCheckinsCard({ checkins, isLoading }: { checkins?: any[]; isLoadi
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <LoadingSpinner size="lg" />
-        </div>
+        <SkeletonDashboard />
       ) : checkins && checkins.length > 0 ? (
         <div className="space-y-4">
           {checkins.map((checkin) => (

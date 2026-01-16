@@ -13,7 +13,7 @@ import {
 import { Calendar, type DayStatus } from '../../components/calendar';
 import { getMyCalendar } from '../../services/calendar.service';
 import { useAuthStore } from '../../store/auth.store';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonDashboard } from '../../components/ui/Skeleton';
 import type { DayInfo } from '../../types/calendar';
 
 // Constants
@@ -284,9 +284,7 @@ export default function WorkerCalendarPage() {
       </div>
 
       {isLoading && !calendarData ? (
-        <div className="flex items-center justify-center h-64">
-          <LoadingSpinner size="lg" />
-        </div>
+        <SkeletonDashboard />
       ) : (
         <div className="relative">
           {/* Info Cards */}

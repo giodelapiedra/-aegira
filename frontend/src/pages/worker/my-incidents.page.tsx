@@ -29,7 +29,7 @@ import { incidentService } from '../../services/incident.service';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatsCard, StatsCardGrid } from '../../components/ui/StatsCard';
 import { SeverityBadge, IncidentStatusBadge } from '../../components/ui/StatusBadge';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonTable } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -114,8 +114,8 @@ export function MyIncidentsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
+      <div className="space-y-6">
+        <SkeletonTable rows={8} columns={4} />
       </div>
     );
   }

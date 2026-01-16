@@ -219,7 +219,7 @@ export function PreviewLayoutPage() {
             </div>
             <div className="bg-white rounded-lg p-2 text-center border border-gray-100">
               <p className="text-lg font-bold text-amber-600">6</p>
-              <p className="text-xs text-gray-500">Limited</p>
+              <p className="text-xs text-gray-500">Caution</p>
             </div>
           </div>
         </div>
@@ -330,7 +330,7 @@ export function PreviewLayoutPage() {
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusStyle(item.status)}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${getStatusDot(item.status)}`}></span>
-                          {item.status === 'ready' ? 'Ready' : item.status === 'limited' ? 'Limited' : 'Not Ready'}
+                          {item.status === 'ready' ? 'Ready' : item.status === 'limited' ? 'Caution' : 'Not Ready'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">
@@ -380,7 +380,7 @@ export function PreviewLayoutPage() {
                     </div>
                     <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusStyle(item.status)}`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${getStatusDot(item.status)}`}></span>
-                      {item.status === 'ready' ? 'Ready' : item.status === 'limited' ? 'Limited' : 'Not Ready'}
+                      {item.status === 'ready' ? 'Ready' : item.status === 'limited' ? 'Caution' : 'Not Ready'}
                     </span>
                   </div>
                   <h3 className="font-semibold text-gray-900">{item.name}</h3>
@@ -538,7 +538,7 @@ export function PreviewLayoutPage() {
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-              <span className="text-gray-600">Limited: 4</span>
+              <span className="text-gray-600">Caution: 4</span>
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-red-500"></span>

@@ -9,7 +9,7 @@ import api from '../../services/api';
 import { Pagination } from '../../components/ui/Pagination';
 import { Avatar } from '../../components/ui/Avatar';
 import { MetricsRow } from '../../components/monitoring/MetricsBadge';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonProfile, SkeletonTable } from '../../components/ui/Skeleton';
 import { formatDisplayDate, formatTime } from '../../lib/date-utils';
 import {
   History,
@@ -65,7 +65,7 @@ type TrendType = 'up' | 'down' | 'same' | null;
 
 const STATUS_CONFIG = {
   GREEN: { label: 'Ready', bg: 'bg-success-100', text: 'text-success-700' },
-  YELLOW: { label: 'Limited', bg: 'bg-warning-100', text: 'text-warning-700' },
+  YELLOW: { label: 'Caution', bg: 'bg-warning-100', text: 'text-warning-700' },
   RED: { label: 'Not Ready', bg: 'bg-danger-100', text: 'text-danger-700' },
 } as const;
 
@@ -267,11 +267,7 @@ export function TeamMemberHistoryPage() {
 
   // Loading state
   if (teamLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonProfile />;
   }
 
   // No team state
@@ -390,9 +386,7 @@ export function TeamMemberHistoryPage() {
       {/* Content */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         {checkinsLoading ? (
-          <div className="flex items-center justify-center py-16">
-            <LoadingSpinner size="md" />
-          </div>
+          <SkeletonTable rows={8} columns={6} />
         ) : checkins.length === 0 ? (
           <div className="text-center py-16">
             <History className="h-10 w-10 text-gray-300 mx-auto mb-3" />
@@ -484,6 +478,8 @@ export function TeamMemberHistoryPage() {
     </div>
   );
 }
+
+
 
 
 

@@ -24,7 +24,7 @@ import { analyticsService, type AISummaryHistoryItem } from '../../services/anal
 import { Pagination, usePagination } from '../../components/ui/Pagination';
 import { useUser } from '../../hooks/useUser';
 import { Button } from '../../components/ui/Button';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonList } from '../../components/ui/Skeleton';
 import {
   formatDateTime,
   formatPeriod,
@@ -338,9 +338,7 @@ export function AIInsightsHistoryPage() {
     return (
       <div className="relative min-h-[calc(100vh-120px)]">
         <GradientBackground />
-        <div className="flex items-center justify-center min-h-[400px]">
-          <LoadingSpinner size="lg" />
-        </div>
+        <SkeletonList items={5} />
       </div>
     );
   }

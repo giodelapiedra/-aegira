@@ -8,7 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { useToast } from '../../components/ui/Toast';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonProfile } from '../../components/ui/Skeleton';
 import type { Gender } from '../../types/user';
 import {
   User,
@@ -208,11 +208,7 @@ export function ProfilePage() {
   };
 
   if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonProfile />;
   }
 
   const roleConfig = getRoleBadge(user.role);

@@ -4,7 +4,7 @@
  * Displays aggregated statistics for a period.
  */
 
-import { TrendingUp, Users, CheckCircle2, AlertTriangle, XCircle, Calendar } from 'lucide-react';
+import { TrendingUp, Users, CheckCircle2, AlertTriangle, XCircle, Calendar, CheckCheck, Ban } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 
 interface AggregateData {
@@ -16,6 +16,8 @@ interface AggregateData {
   totalGreen: number;
   totalYellow: number;
   totalRed: number;
+  totalAbsent: number;   // Penalized absences
+  totalExcused: number;  // TL-approved absences
 }
 
 interface SummaryAggregateCardProps {
@@ -130,6 +132,32 @@ export function SummaryAggregateCard({ aggregate, periodLabel }: SummaryAggregat
             <div>
               <p className="text-lg font-bold text-red-600">{aggregate.totalRed}</p>
               <p className="text-xs text-gray-500">At Risk</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Absence Breakdown */}
+      <div className="border-t border-gray-200 pt-4">
+        <h4 className="text-sm font-medium text-gray-500 mb-3">Absence Breakdown</h4>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-full bg-primary-100 flex items-center justify-center">
+              <CheckCheck className="h-4 w-4 text-primary-600" />
+            </div>
+            <div>
+              <p className="text-lg font-bold text-primary-600">{aggregate.totalExcused}</p>
+              <p className="text-xs text-gray-500">Excused</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
+              <Ban className="h-4 w-4 text-red-600" />
+            </div>
+            <div>
+              <p className="text-lg font-bold text-red-600">{aggregate.totalAbsent}</p>
+              <p className="text-xs text-gray-500">Absent</p>
             </div>
           </div>
         </div>

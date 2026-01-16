@@ -20,7 +20,7 @@ import {
 } from '../../utils/date-helpers.js';
 import { calculatePerformanceScore } from '../../utils/attendance.js';
 import { MIN_CHECKIN_DAYS_THRESHOLD } from '../../utils/team-grades-optimized.js';
-import { recalculateTodaySummary, generateWorkerHealthReport, getWorkerHistoryAroundDate } from '../../utils/daily-summary.js';
+import { generateWorkerHealthReport, getWorkerHistoryAroundDate } from '../../utils/daily-summary.js';
 
 const teamsRoutes = new Hono<AppContext>();
 
@@ -699,13 +699,8 @@ teamsRoutes.put('/:id', async (c) => {
     metadata: { updatedFields: Object.keys(body) },
   });
 
-  // If workDays changed, recalculate today's summary (isWorkDay flag affected)
-  if (workDaysChanged) {
-    const timezone = c.get('timezone');
-    recalculateTodaySummary(id, timezone).catch(err => {
-      console.error('Failed to recalculate summary after workDays change:', err);
-    });
-  }
+  // Note: DailyTeamSummary is only created when check-ins happen or cron runs
+  // No need to recalculate here - schedule changes will be reflected on next check-in/cron
 
   return c.json(team);
 });
@@ -801,10 +796,7 @@ teamsRoutes.post('/:id/deactivate', async (c) => {
     },
   });
 
-  // Recalculate today's summary (workers now on exemption)
-  recalculateTodaySummary(id, timezone).catch(err => {
-    console.error('Failed to recalculate summary after team deactivation:', err);
-  });
+  // Note: DailyTeamSummary is only created when check-ins happen or cron runs
 
   return c.json({
     success: true,
@@ -895,10 +887,7 @@ teamsRoutes.post('/:id/reactivate', async (c) => {
     },
   });
 
-  // Recalculate today's summary (workers no longer on exemption)
-  recalculateTodaySummary(id, timezone).catch(err => {
-    console.error('Failed to recalculate summary after team reactivation:', err);
-  });
+  // Note: DailyTeamSummary is only created when check-ins happen or cron runs
 
   return c.json({
     success: true,
@@ -1026,19 +1015,7 @@ teamsRoutes.post('/:id/members', async (c) => {
     metadata: { teamName: team.name, memberId: body.userId, memberName: `${user.firstName} ${user.lastName}` },
   });
 
-  // Recalculate daily team summary (member count changed)
-  // Get company timezone from context (no DB query needed!)
-  const timezone = c.get('timezone');
-  recalculateTodaySummary(id, timezone).catch(err => {
-    console.error('Failed to recalculate summary after member added:', err);
-  });
-
-  // If member was transferred from another team, recalculate old team's summary too
-  if (user.teamId && user.teamId !== id) {
-    recalculateTodaySummary(user.teamId, timezone).catch(err => {
-      console.error('Failed to recalculate old team summary after member transfer:', err);
-    });
-  }
+  // Note: DailyTeamSummary is only created when check-ins happen or cron runs
 
   return c.json({ success: true });
 });
@@ -1500,12 +1477,7 @@ teamsRoutes.delete('/:id/members/:userId', async (c) => {
     metadata: { teamName: team.name, memberId, memberName: `${user.firstName} ${user.lastName}` },
   });
 
-  // Recalculate daily team summary (member count changed)
-  // Get company timezone from context (no DB query needed!)
-  const timezone = c.get('timezone');
-  recalculateTodaySummary(id, timezone).catch(err => {
-    console.error('Failed to recalculate summary after member removed:', err);
-  });
+  // Note: DailyTeamSummary is only created when check-ins happen or cron runs
 
   return c.json({ success: true });
 });

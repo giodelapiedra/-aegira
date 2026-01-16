@@ -122,6 +122,8 @@ export interface TeamAnalytics {
     activeMembers: number;
     onLeave: number;
     notCheckedIn: number;
+    absentCount: number;   // Penalized absences (DailyAttendance ABSENT)
+    excusedCount: number;  // TL-approved absences (DailyAttendance EXCUSED)
   };
   statusDistribution: {
     green: number;

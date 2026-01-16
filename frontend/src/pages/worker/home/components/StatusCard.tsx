@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 import { Clock, ArrowRight, AlertCircle } from 'lucide-react';
 import { Card, CardContent } from '../../../../components/ui/Card';
 import { Badge } from '../../../../components/ui/Badge';
+import { Skeleton } from '../../../../components/ui/Skeleton';
 import { formatDisplayDateTime } from '../../../../lib/date-utils';
 import { STATUS_CONFIG } from '../../../../components/worker/StatusConfig';
 import type { Checkin } from '../../../../types/user';
@@ -28,13 +29,13 @@ export function StatusCard({ isLoading, todayCheckin, timezone }: StatusCardProp
         <CardContent className="py-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="h-14 w-14 rounded-2xl bg-gray-200 animate-pulse" />
-              <div>
-                <div className="h-6 bg-gray-200 rounded w-32 mb-2 animate-pulse" />
-                <div className="h-4 bg-gray-200 rounded w-48 animate-pulse" />
+              <Skeleton className="h-14 w-14 rounded-2xl" />
+              <div className="space-y-2">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-4 w-48" />
               </div>
             </div>
-            <div className="h-6 bg-gray-200 rounded w-24 animate-pulse" />
+            <Skeleton className="h-6 w-24 rounded-full" variant="primary" />
           </div>
         </CardContent>
       </Card>

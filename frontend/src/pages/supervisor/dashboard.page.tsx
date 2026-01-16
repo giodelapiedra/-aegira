@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Avatar } from '../../components/ui/Avatar';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonDashboard } from '../../components/ui/Skeleton';
 import { cn } from '../../lib/utils';
 import { formatDisplayDateTime } from '../../lib/date-utils';
 import {
@@ -33,11 +33,7 @@ export function SupervisorDashboard() {
   });
 
   if (statsLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonDashboard />;
   }
 
   if (statsError) {
@@ -209,7 +205,7 @@ export function SupervisorDashboard() {
               {/* Yellow */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Limited (Yellow)</span>
+                  <span className="text-sm font-medium text-gray-700">Caution (Yellow)</span>
                   <span className="text-sm text-gray-500">
                     {stats?.yellowCount || 0} personnel
                   </span>

@@ -54,7 +54,7 @@ export function CheckinForm({ leaveStatus }: CheckinFormProps) {
     onSuccess: (data: CheckinWithAttendance) => {
       invalidateRelatedQueries(queryClient, 'checkins');
       const attendanceMsg = data.attendance
-        ? ` | Attendance: ${data.attendance.status}${data.attendance.minutesLate > 0 ? ` (${data.attendance.minutesLate} mins late)` : ''}`
+        ? ` | Attendance: ${data.attendance.status}`
         : '';
       toast.success('Check-in Submitted!', `Readiness: ${data.readinessScore}%${attendanceMsg}`);
     },

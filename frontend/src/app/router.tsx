@@ -3,7 +3,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from '../components/layout/AppLayout';
 import { ProtectedRoute } from './protected-route';
 import { RoleGuard } from './role-guard';
-import { LoadingSpinner } from '../components/ui/LoadingSpinner';
+import { SkeletonDashboard } from '../components/ui/Skeleton';
 
 // ============================================
 // LAZY PAGE WRAPPER
@@ -12,8 +12,8 @@ function LazyPage({ children }: { children: React.ReactNode }) {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center min-h-[400px]">
-          <LoadingSpinner size="lg" />
+        <div className="container mx-auto py-6 px-4">
+          <SkeletonDashboard />
         </div>
       }
     >

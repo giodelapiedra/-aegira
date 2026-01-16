@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { analyticsService, type TeamGradeSummary, type TeamsOverviewParams } from '../../services/analytics.service';
 import { Avatar } from '../../components/ui/Avatar';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonDashboard } from '../../components/ui/Skeleton';
 
 // ===========================================
 // CONSTANTS
@@ -356,14 +356,7 @@ export function TeamsOverviewPage() {
       </div>
 
       {/* Loading State */}
-      {isLoading && (
-        <div className="flex items-center justify-center py-20">
-          <div className="text-center">
-            <LoadingSpinner size="lg" className="mx-auto" />
-            <p className="text-gray-500 mt-4">Loading teams...</p>
-          </div>
-        </div>
-      )}
+      {isLoading && <SkeletonDashboard />}
 
       {/* Error State */}
       {error && (

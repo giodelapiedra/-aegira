@@ -62,7 +62,7 @@ export const CheckinRow = memo(({ checkin, onCreateExemption }: CheckinItemProps
           {checkin.readinessStatus === 'GREEN'
             ? 'Ready'
             : checkin.readinessStatus === 'YELLOW'
-            ? 'Limited'
+            ? 'Caution'
             : 'Not Ready'}
         </span>
       </td>

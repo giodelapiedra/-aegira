@@ -20,11 +20,11 @@ const TEST_COMPANY_SLUG = 'test-company-aegira';
 
 // Configuration
 const CONFIG = {
-  daysOfHistory: 400, // How many days of check-in history to generate (back to Jan 2025)
+  daysOfHistory: 60, // 2 months of check-in history (Nov 2025 - Jan 2026)
   teamsCount: 4,
-  workersPerTeam: { min: 4, max: 7 },
+  workersPerTeam: { min: 3, max: 5 }, // Reduced for faster seeding
   checkinProbability: 0.85, // 85% chance of checking in on work days
-  lateProbability: 0.15, // 15% of check-ins are late
+  // lateProbability removed - no more late penalty
   exceptionProbability: 0.05, // 5% chance of having an exception on a work day
 };
 
@@ -127,11 +127,11 @@ const teamConfigs = [
 // Worker profiles (determines their check-in patterns)
 type WorkerProfile = 'excellent' | 'good' | 'average' | 'poor';
 
-const profileWeights: Record<WorkerProfile, { checkinProb: number; lateProb: number; moodRange: [number, number]; stressRange: [number, number] }> = {
-  excellent: { checkinProb: 0.98, lateProb: 0.02, moodRange: [7, 10], stressRange: [1, 4] },
-  good: { checkinProb: 0.90, lateProb: 0.10, moodRange: [6, 9], stressRange: [2, 5] },
-  average: { checkinProb: 0.75, lateProb: 0.20, moodRange: [4, 8], stressRange: [3, 7] },
-  poor: { checkinProb: 0.50, lateProb: 0.35, moodRange: [2, 6], stressRange: [5, 9] },
+const profileWeights: Record<WorkerProfile, { checkinProb: number; moodRange: [number, number]; stressRange: [number, number] }> = {
+  excellent: { checkinProb: 0.98, moodRange: [7, 10], stressRange: [1, 4] },
+  good: { checkinProb: 0.90, moodRange: [6, 9], stressRange: [2, 5] },
+  average: { checkinProb: 0.75, moodRange: [4, 8], stressRange: [3, 7] },
+  poor: { checkinProb: 0.50, moodRange: [2, 6], stressRange: [5, 9] },
 };
 
 // ============================================
@@ -336,7 +336,6 @@ async function seed() {
             teamId: team.id,
             date: currentDate,
             scheduledStart: teamConfig.shiftStart,
-            gracePeriodMins: 30,
             status: AttendanceStatus.EXCUSED,
             score: null,
             isCounted: false,
@@ -379,16 +378,12 @@ async function seed() {
 
         const { score, status } = calculateReadiness(mood, stress, sleep, physical);
 
-        // Determine if late
-        const isLate = Math.random() < profileConfig.lateProb;
-        const minutesLate = isLate ? randomInt(5, 60) : 0;
-
         // Parse shift start time
         const [shiftHour, shiftMin] = teamConfig.shiftStart.split(':').map(Number);
 
-        // Calculate check-in time
+        // Calculate check-in time (random time within shift, no more late logic)
         const checkinTime = new Date(currentDate);
-        checkinTime.setHours(shiftHour, shiftMin + minutesLate - (isLate ? 0 : randomInt(0, 25)), randomInt(0, 59), 0);
+        checkinTime.setHours(shiftHour, shiftMin + randomInt(0, 30), randomInt(0, 59), 0);
 
         // Check if check-in already exists for this user on this date (prevent duplicates)
         const dayStart = new Date(currentDate);
@@ -426,10 +421,7 @@ async function seed() {
           }
         });
 
-        // Create attendance record
-        const attendanceStatus = isLate ? AttendanceStatus.YELLOW : AttendanceStatus.GREEN;
-        const attendanceScore = isLate ? 75 : 100;
-
+        // Create attendance record - always GREEN (no more late penalty)
         await prisma.dailyAttendance.create({
           data: {
             userId: user.id,
@@ -437,11 +429,9 @@ async function seed() {
             teamId: team.id,
             date: currentDate,
             scheduledStart: teamConfig.shiftStart,
-            gracePeriodMins: 30,
             checkInTime: checkinTime,
-            minutesLate,
-            status: attendanceStatus,
-            score: attendanceScore,
+            status: AttendanceStatus.GREEN,
+            score: 100,
             isCounted: true,
           }
         });
@@ -463,7 +453,6 @@ async function seed() {
             teamId: team.id,
             date: currentDate,
             scheduledStart: teamConfig.shiftStart,
-            gracePeriodMins: 30,
             status: AttendanceStatus.ABSENT,
             score: 0,
             isCounted: true,
@@ -490,7 +479,148 @@ async function seed() {
   console.log(`   ✓ Attendance records: ${totalAttendance}`);
   console.log(`   ✓ Exceptions (approved): ${totalExceptions}\n`);
 
-  // 7. Create some incidents
+  // 7. Generate DailyTeamSummary records for each team and day
+  // We recalculate from the actual data to ensure consistency
+  console.log('📊 Generating DailyTeamSummary records...');
+  let totalSummaries = 0;
+
+  for (const { team, config } of teams) {
+    // Get team members
+    const teamMembers = allWorkers.filter(w => w.team.id === team.id);
+    const memberIds = teamMembers.map(w => w.user.id);
+    const totalMembers = memberIds.length;
+
+    // Generate summary for each day in history
+    const historyStart = new Date(today);
+    historyStart.setDate(historyStart.getDate() - CONFIG.daysOfHistory);
+
+    for (let d = new Date(historyStart); d <= today; d.setDate(d.getDate() + 1)) {
+      // Use noon UTC for consistent date storage
+      const summaryDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0));
+
+      const dayOfWeek = d.getDay();
+      const dayMap: Record<number, string> = {
+        0: 'SUN', 1: 'MON', 2: 'TUE', 3: 'WED', 4: 'THU', 5: 'FRI', 6: 'SAT'
+      };
+      const dayStr = dayMap[dayOfWeek];
+      const isWorkDayFlag = config.workDays.split(',').map((s: string) => s.trim()).includes(dayStr);
+
+      if (!isWorkDayFlag) {
+        // Create summary for non-work day
+        await prisma.dailyTeamSummary.create({
+          data: {
+            teamId: team.id,
+            companyId: company.id,
+            date: summaryDate,
+            isWorkDay: false,
+            isHoliday: false,
+            totalMembers,
+            onLeaveCount: 0,
+            expectedToCheckIn: 0,
+            checkedInCount: 0,
+            notCheckedInCount: 0,
+            greenCount: 0,
+            yellowCount: 0,
+            redCount: 0,
+            absentCount: 0,
+            excusedCount: 0,
+            avgReadinessScore: null,
+            complianceRate: null,
+          }
+        });
+        totalSummaries++;
+        continue;
+      }
+
+      // Query using the SAME date format as stored in DailyAttendance
+      // DailyAttendance.date is stored at start of day local time
+      const queryDate = new Date(d);
+      queryDate.setHours(0, 0, 0, 0);
+
+      // Get attendance records - match exactly on date
+      const attendanceRecords = await prisma.dailyAttendance.findMany({
+        where: {
+          teamId: team.id,
+          date: queryDate, // Exact match
+        },
+      });
+
+      // Calculate counts from attendance (source of truth)
+      const greenAttendance = attendanceRecords.filter(a => a.status === 'GREEN');
+      const absentAttendance = attendanceRecords.filter(a => a.status === 'ABSENT');
+      const excusedWithException = attendanceRecords.filter(a => a.status === 'EXCUSED' && a.exceptionId);
+      const excusedWithoutException = attendanceRecords.filter(a => a.status === 'EXCUSED' && !a.exceptionId);
+
+      const onLeaveCount = excusedWithException.length;
+      const excusedCount = excusedWithoutException.length;
+      const absentCount = absentAttendance.length;
+      const checkedInCount = greenAttendance.length;
+
+      // Get readiness scores from check-ins
+      const checkedInUserIds = greenAttendance.map(a => a.userId);
+      let greenCount = 0;
+      let yellowCount = 0;
+      let redCount = 0;
+      let totalScore = 0;
+      let scoreCount = 0;
+
+      if (checkedInUserIds.length > 0) {
+        const dayStart = new Date(d);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(d);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        const dayCheckins = await prisma.checkin.findMany({
+          where: {
+            userId: { in: checkedInUserIds },
+            createdAt: { gte: dayStart, lte: dayEnd },
+          },
+        });
+
+        for (const c of dayCheckins) {
+          if (c.readinessStatus === 'GREEN') greenCount++;
+          else if (c.readinessStatus === 'YELLOW') yellowCount++;
+          else if (c.readinessStatus === 'RED') redCount++;
+          totalScore += c.readinessScore;
+          scoreCount++;
+        }
+      }
+
+      const expectedToCheckIn = totalMembers - onLeaveCount - excusedCount;
+      const notCheckedInCount = Math.max(0, expectedToCheckIn - checkedInCount);
+      const avgReadinessScore = scoreCount > 0 ? Math.round(totalScore / scoreCount) : null;
+      const complianceRate = expectedToCheckIn > 0
+        ? Math.round((checkedInCount / expectedToCheckIn) * 100)
+        : null;
+
+      await prisma.dailyTeamSummary.create({
+        data: {
+          teamId: team.id,
+          companyId: company.id,
+          date: summaryDate,
+          isWorkDay: true,
+          isHoliday: false,
+          totalMembers,
+          onLeaveCount,
+          expectedToCheckIn,
+          checkedInCount,
+          notCheckedInCount,
+          greenCount,
+          yellowCount,
+          redCount,
+          absentCount,
+          excusedCount,
+          avgReadinessScore,
+          complianceRate,
+        }
+      });
+      totalSummaries++;
+    }
+  }
+
+  console.log(`   ✓ DailyTeamSummary records: ${totalSummaries}\n`);
+
+  // 8. Create some incidents
   console.log('🚨 Creating sample incidents...');
   const incidentCount = randomInt(5, 10);
 
@@ -536,6 +666,7 @@ async function seed() {
   console.log(`   • Workers: ${allWorkers.length}`);
   console.log(`   • Check-ins: ${totalCheckins}`);
   console.log(`   • Attendance Records: ${totalAttendance}`);
+  console.log(`   • DailyTeamSummary: ${totalSummaries}`);
   console.log(`   • Exceptions: ${totalExceptions}`);
   console.log(`   • Incidents: ${incidentCount}`);
   console.log('');
@@ -581,6 +712,11 @@ async function clean() {
     where: { companyId: company.id }
   });
   console.log(`   ✓ Deleted ${deletedAttendance.count} attendance records`);
+
+  const deletedSummaries = await prisma.dailyTeamSummary.deleteMany({
+    where: { companyId: company.id }
+  });
+  console.log(`   ✓ Deleted ${deletedSummaries.count} daily team summaries`);
 
   const deletedIncidentActivities = await prisma.incidentActivity.deleteMany({
     where: { incident: { companyId: company.id } }

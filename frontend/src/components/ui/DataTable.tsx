@@ -26,7 +26,8 @@ import {
   Check,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { LoadingSpinner, SkeletonTableRow } from './LoadingSpinner';
+import { LoadingSpinner } from './LoadingSpinner';
+import { SkeletonTableRow } from './Skeleton';
 import { EmptyState } from './EmptyState';
 
 // ============================================

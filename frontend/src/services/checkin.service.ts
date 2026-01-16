@@ -35,7 +35,6 @@ export interface AttendanceRecord {
   score: number | null;
   isCounted: boolean;
   checkInTime?: string | null;
-  minutesLate?: number;
   exceptionType?: string | null;
 }
 
@@ -43,7 +42,6 @@ export interface CheckinWithAttendance extends Checkin {
   attendance?: {
     status: AttendanceStatus;
     score: number;
-    minutesLate: number;
   };
   isReturning?: boolean;
 }

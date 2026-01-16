@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/Button';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { Skeleton, SkeletonDashboard } from '../../components/ui/Skeleton';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { useToast } from '../../components/ui/Toast';
 import { Avatar } from '../../components/ui/Avatar';
@@ -214,11 +214,7 @@ export function TeamOverviewPage() {
   };
 
   if (teamLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonDashboard />;
   }
 
   if (!team) {
@@ -599,7 +595,7 @@ function StatCard({
         </div>
         <div>
           {isLoading ? (
-            <div className="h-7 w-12 bg-gray-200 rounded animate-pulse" />
+            <Skeleton className="h-7 w-12" />
           ) : (
             <p className="text-2xl font-bold text-gray-900">{value}</p>
           )}

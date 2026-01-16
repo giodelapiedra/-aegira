@@ -26,7 +26,7 @@ export function WelcomeState({ effectiveStartDate, teamName }: WelcomeStateProps
               Welcome to the Team!
             </h2>
             <p className="text-gray-500 mb-6 max-w-md mx-auto">
-              You've just been added to your team. Your daily check-in will start tomorrow.
+              You've just been added to your team. Your daily check-in will start on your next scheduled work day.
               Take today to get familiar with your schedule.
             </p>
             <div className="p-4 bg-primary-50 rounded-lg inline-block text-left">

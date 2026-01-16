@@ -15,7 +15,7 @@ import {
   getEndOfDay,
   formatLocalDate,
   getDayName,
-  getStartOfNextDay,
+  getFirstWorkDayAfter,
   DEFAULT_TIMEZONE,
 } from '../../utils/date-helpers.js';
 
@@ -66,14 +66,15 @@ calendarRoutes.get('/my', async (c) => {
   }
 
   // Determine the effective start date for this user's check-in requirement
-  // Check-in requirement starts the DAY AFTER joining (not same day)
+  // Check-in requirement starts the FIRST WORK DAY after joining (considering team schedule)
   // This gives members time to prepare after being added to a team
   const userJoinDate = user.teamJoinedAt || user.createdAt;
   const teamCreateDate = user.team?.createdAt || user.createdAt;
   // The join date is the later of the two (user must have joined AND team must exist)
   const joinDate = userJoinDate > teamCreateDate ? userJoinDate : teamCreateDate;
-  // Effective start is NEXT DAY after joining
-  const effectiveStartDate = getStartOfNextDay(joinDate, timezone);
+  // Effective start is FIRST WORK DAY after joining (considering team schedule)
+  const teamWorkDays = user.team?.workDays || undefined;
+  const effectiveStartDate = getFirstWorkDayAfter(joinDate, timezone, teamWorkDays);
   const effectiveStartStr = formatLocalDate(effectiveStartDate, timezone);
 
   // Calculate date range for the month (timezone-aware)
@@ -327,7 +328,13 @@ calendarRoutes.get('/team', async (c) => {
         isActive: true,
         leaderId: userId, // Must be the leader
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        workDays: true,
+        shiftStart: true,
+        shiftEnd: true,
+        createdAt: true,
         members: {
           where: { isActive: true },
           select: {
@@ -356,7 +363,13 @@ calendarRoutes.get('/team', async (c) => {
           { members: { some: { id: userId } } },
         ],
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        workDays: true,
+        shiftStart: true,
+        shiftEnd: true,
+        createdAt: true,
         members: {
           where: { isActive: true },
           select: {
@@ -376,19 +389,20 @@ calendarRoutes.get('/team', async (c) => {
     }
   }
 
-  // Team start date (check-ins start NEXT DAY after team was created)
-  const teamEffectiveStart = getStartOfNextDay(team.createdAt, timezone);
+  // Team start date (check-ins start FIRST WORK DAY after team was created)
+  const teamWorkDays = team.workDays || undefined;
+  const teamEffectiveStart = getFirstWorkDayAfter(team.createdAt, timezone, teamWorkDays);
   const teamStartStr = formatLocalDate(teamEffectiveStart, timezone);
 
   // Build member start date map (when each member started requiring check-ins)
-  // Check-in requirement starts the DAY AFTER joining
+  // Check-in requirement starts the FIRST WORK DAY after joining
   const memberStartDates = new Map<string, string>();
   for (const member of team.members) {
     const memberJoinDate = member.teamJoinedAt || member.createdAt;
     // Join date is the later of team creation or member join
     const joinDate = memberJoinDate > team.createdAt ? memberJoinDate : team.createdAt;
-    // Effective start is NEXT DAY after joining
-    const effectiveStart = getStartOfNextDay(joinDate, timezone);
+    // Effective start is FIRST WORK DAY after joining
+    const effectiveStart = getFirstWorkDayAfter(joinDate, timezone, teamWorkDays);
     memberStartDates.set(member.id, formatLocalDate(effectiveStart, timezone));
   }
 

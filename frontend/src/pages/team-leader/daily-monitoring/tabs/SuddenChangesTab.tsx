@@ -10,6 +10,7 @@ import { Card, CardContent } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { EmptyState } from '../../../../components/ui/EmptyState';
 import { Pagination } from '../../../../components/ui/Pagination';
+import { SkeletonList } from '../../../../components/ui/Skeleton';
 import { SuddenChangeCard } from '../../../../components/monitoring';
 import { useSuddenChanges } from '../hooks/useSuddenChanges';
 
@@ -28,11 +29,7 @@ export function SuddenChangesTab({ teamId }: SuddenChangesTabProps) {
   const summary = data?.summary;
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
-      </div>
-    );
+    return <SkeletonList items={4} />;
   }
 
   if (changes.length === 0) {

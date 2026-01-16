@@ -1,1123 +1,895 @@
-# Aegira System Flow Chart - Komprehensibong Dokumentasyon
+# Aegira System Flow Chart - Complete Documentation
 
-> Kompletong system flow chart para sa Aegira Attendance Management System
+> Complete system flow chart para sa Aegira Attendance & Wellness Management System
 
-**Huling Update:** Enero 2026  
-**Bersyon:** 2.0
+**Last Updated:** January 2026
+**Version:** 3.0
 
 ---
 
 ## Table of Contents
 
-1. [System Architecture Overview](#1-system-architecture-overview)
-2. [Authentication & Authorization Flow](#2-authentication--authorization-flow)
-3. [Worker Daily Flow](#3-worker-daily-flow)
-4. [Team Lead Daily Flow](#4-team-lead-daily-flow)
-5. [Executive Management Flow](#5-executive-management-flow)
-6. [Data Flow & Processing](#6-data-flow--processing)
-7. [Complete System Interaction Diagram](#7-complete-system-interaction-diagram)
+1. [System Overview](#1-system-overview)
+2. [Worker Check-in Flow](#2-worker-check-in-flow)
+3. [Attendance & Scoring System](#3-attendance--scoring-system)
+4. [Cron Jobs - Automated Processing](#4-cron-jobs---automated-processing)
+5. [Absence Justification Flow](#5-absence-justification-flow)
+6. [Exception/Leave Request Flow](#6-exceptionleave-request-flow)
+7. [Team Lead Daily Monitoring](#7-team-lead-daily-monitoring)
+8. [Performance Score Calculation](#8-performance-score-calculation)
+9. [Complete Daily Timeline](#9-complete-daily-timeline)
 
 ---
 
-## 1. System Architecture Overview
+## 1. System Overview
 
-### 1.1 High-Level Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         AEGIRA SYSTEM ARCHITECTURE                          │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CLIENT LAYER                                   │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  React Frontend (TypeScript + Tailwind CSS)                          │  │
-│  │  - Worker Pages (Check-in, History, Incidents)                       │  │
-│  │  - Team Lead Pages (Monitoring, Analytics, Approvals)                │  │
-│  │  - Executive Pages (Users, Teams, Settings)                          │  │
-│  │  - Admin Pages (Templates, System Logs)                              │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ HTTPS/REST API
-                                    │
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              API LAYER                                      │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  Hono.js Backend (TypeScript)                                        │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │  │
-│  │  │ Auth         │  │ Checkins      │  │ Analytics     │            │  │
-│  │  │ Users        │  │ Exceptions    │  │ Teams         │            │  │
-│  │  │ Incidents    │  │ Monitoring    │  │ AI/Chatbot    │            │  │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘            │  │
-│  │                                                                      │  │
-│  │  Middlewares:                                                        │  │
-│  │  - Authentication (JWT)                                            │  │
-│  │  - Authorization (Role-based)                                       │  │
-│  │  - Company Scoping                                                   │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ Prisma ORM
-                                    │
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              DATA LAYER                                     │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  PostgreSQL Database (via Supabase)                                  │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐            │  │
-│  │  │ Users        │  │ Checkins      │  │ Daily        │            │  │
-│  │  │ Teams        │  │ Exceptions    │  │ Attendance    │            │  │
-│  │  │ Companies    │  │ Incidents     │  │ Analytics    │            │  │
-│  │  └──────────────┘  └──────────────┘  └──────────────┘            │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    │ External APIs
-                                    │
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          EXTERNAL SERVICES                                   │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  Supabase Auth (JWT Tokens)                                          │  │
-│  │  OpenAI GPT-4 (AI Insights & Chatbot)                               │  │
-│  │  Cloudflare R2 (File Storage)                                        │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### 1.2 Role Hierarchy & Access Levels
+### 1.1 Core Concepts
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ROLE HIERARCHY                                      │
+│                         AEGIRA CORE CONCEPTS                                │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-    ADMIN (Level 6)
-    │   └─ System-wide access, all companies
-    │
-    ▼
-    EXECUTIVE (Level 5)
-    │   └─ Company-wide control
-    │       • User management
-    │       • Team management
-    │       • Company settings
-    │       • Holiday management
-    │
-    ▼
-    SUPERVISOR (Level 4)
-    │   └─ View all teams & analytics
-    │       • Personnel overview
-    │       • Company analytics
-    │       • Cross-team monitoring
-    │
-    ▼
-    TEAM_LEAD (Level 3)
-    │   └─ Own team management
-    │       • Daily monitoring
-    │       • Approve exemptions
-    │       • Team analytics
-    │       • AI insights
-    │
-    ▼
-    WORKER (Level 2)
-        └─ Own data only
-            • Daily check-in
-            • View own history
-            • Report incidents
-            • Request exemptions
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  CHECK-IN (Wellness)           │  ATTENDANCE (Presence)                     │
+│  ────────────────────────────  │  ────────────────────────────────────────  │
+│  • Mood (1-10)                 │  • GREEN = Checked in (100 pts)            │
+│  • Stress (1-10, inverted)     │  • ABSENT = No check-in (0 pts)            │
+│  • Sleep (1-10)                │  • EXCUSED = On approved leave (not counted)│
+│  • Physical (1-10)             │                                            │
+│                                │                                            │
+│  Readiness Score:              │  NO LATE PENALTY!                          │
+│  • GREEN ≥ 70%                 │  Basta within shift = GREEN                │
+│  • CAUTION 40-69%              │                                            │
+│  • RED < 40%                   │                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.2 Role Hierarchy
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            ROLE HIERARCHY                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ADMIN (Level 6) ─────────────────────────────────────────────────────────┐
+    │   System-wide access                                                    │
+    │                                                                         │
+    EXECUTIVE (Level 5) ─────────────────────────────────────────────────────┤
+    │   Company-wide control                                                  │
+    │   • User management                                                     │
+    │   • Team management                                                     │
+    │   • Company settings                                                    │
+    │                                                                         │
+    SUPERVISOR (Level 4) ────────────────────────────────────────────────────┤
+    │   View all teams                                                        │
+    │   • Cross-team analytics                                                │
+    │                                                                         │
+    TEAM_LEAD (Level 3) ─────────────────────────────────────────────────────┤
+    │   Own team only                                                         │
+    │   • Daily monitoring                                                    │
+    │   • Approve leave/absences                                              │
+    │   • AI insights                                                         │
+    │                                                                         │
+    WORKER/MEMBER (Level 2) ─────────────────────────────────────────────────┘
+        Own data only
+        • Daily check-in
+        • Request leave
+        • Justify absences
 ```
 
 ---
 
-## 2. Authentication & Authorization Flow
+## 2. Worker Check-in Flow
 
-### 2.1 Complete Authentication Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                      AUTHENTICATION FLOW                                    │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        1. USER LOGIN                                         │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  User enters credentials      │
-                    │  - Email                      │
-                    │  - Password                   │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  POST /api/auth/login          │
-                    │  Frontend → Backend            │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Supabase Auth Verification   │
-                    │  - Validate credentials        │
-                    │  - Generate JWT tokens         │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Backend: Fetch User Data      │
-                    │  - Check user.isActive         │
-                    │  - Check companyId exists      │
-                    │  - Load company & team info    │
-                    └───────────────┬───────────────┘
-                                    │
-                    ┌────────────────┴────────────────┐
-                    │                                 │
-                    ▼                                 ▼
-        ┌───────────────────────┐      ┌───────────────────────┐
-        │   SUCCESS             │      │   ERROR               │
-        │   - Return user data  │      │   - Invalid creds     │
-        │   - Return JWT tokens │      │   - Account inactive   │
-        │   - Return company    │      │   - No company        │
-        └───────────────────────┘      └───────────────────────┘
-                    │
-                    ▼
-        ┌───────────────────────────────┐
-        │  Frontend: Store tokens        │
-        │  - Access token (memory)      │
-        │  - Refresh token (localStorage)│
-        │  - User data (Zustand store)  │
-        └───────────────┬───────────────┘
-                        │
-                        ▼
-        ┌───────────────────────────────┐
-        │  Redirect to Dashboard        │
-        │  Based on user role            │
-        └───────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        2. API REQUEST FLOW                                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Frontend makes API request    │
-                    │  Headers:                      │
-                    │  Authorization: Bearer <token>│
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  authMiddleware                │
-                    │  1. Extract token              │
-                    │  2. Check token blacklist      │
-                    │  3. Verify JWT signature       │
-                    │  4. Fetch user from DB         │
-                    │  5. Check user.isActive         │
-                    │  6. Set context.user           │
-                    │  7. Set context.companyId       │
-                    └───────────────┬───────────────┘
-                                    │
-                    ┌────────────────┴────────────────┐
-                    │                                 │
-                    ▼                                 ▼
-        ┌───────────────────────┐      ┌───────────────────────┐
-        │   AUTHORIZED          │      │   UNAUTHORIZED        │
-        │   Continue to route   │      │   Return 401          │
-        └───────────────────────┘      └───────────────────────┘
-                    │
-                    ▼
-        ┌───────────────────────────────┐
-        │  roleMiddleware (if needed)   │
-        │  - Check user.role            │
-        │  - Check permissions          │
-        │  - Enforce company scoping    │
-        └───────────────┬───────────────┘
-                        │
-                        ▼
-        ┌───────────────────────────────┐
-        │  Route Handler                │
-        │  - Process request            │
-        │  - Return response            │
-        └───────────────────────────────┘
-```
-
-### 2.2 Registration Flow
+### 2.1 Check-in Eligibility Validation
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      REGISTRATION FLOW                                      │
+│                    WORKER OPENS APP - CHECK-IN PAGE                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+        ┌───────────────────────────────────────────────────────────────────┐
+        │                    ELIGIBILITY CHECKS                              │
+        │  ──────────────────────────────────────────────────────────────── │
+        │  1. Role = WORKER or MEMBER?                                       │
+        │  2. Has team assigned?                                             │
+        │  3. Today is a work day? (based on team schedule)                  │
+        │  4. Not a company holiday?                                         │
+        │  5. Not on approved leave?                                         │
+        │  6. Within shift window? (shiftStart - 15min → shiftEnd)          │
+        │  7. Not already checked in today?                                  │
+        └───────────────────────────────────────────────────────────────────┘
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        │                           │                           │
+        ▼                           ▼                           ▼
+┌───────────────┐        ┌───────────────┐           ┌───────────────┐
+│  ON_LEAVE     │        │  ELIGIBLE     │           │  BLOCKED      │
+│               │        │               │           │               │
+│  "You are on  │        │  Show check-  │           │  TOO_EARLY    │
+│  approved     │        │  in form      │           │  TOO_LATE     │
+│  sick leave"  │        │               │           │  HOLIDAY      │
+│               │        │               │           │  NOT_WORK_DAY │
+│  ✓ No action  │        │  ┌─────────┐  │           │  ALREADY_IN   │
+│    needed     │        │  │ SUBMIT  │  │           │  NO_TEAM      │
+└───────────────┘        │  └─────────┘  │           └───────────────┘
+                         └───────┬───────┘
+                                 │
+                                 ▼
+```
+
+### 2.2 Check-in Form Submission
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         CHECK-IN FORM                                       │
 └─────────────────────────────────────────────────────────────────────────────┘
 
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  How are you feeling today?                                          │
+    │                                                                      │
+    │  Mood:        [1]────────────────────[10]     (Higher = Better)     │
+    │  Stress:      [1]────────────────────[10]     (Higher = More Stress)│
+    │  Sleep:       [1]────────────────────[10]     (Higher = Better)     │
+    │  Physical:    [1]────────────────────[10]     (Higher = Better)     │
+    │                                                                      │
+    │  Notes:       [________________________________]  (Optional)         │
+    │                                                                      │
+    │                     [ SUBMIT CHECK-IN ]                              │
+    └─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    NEW COMPANY REGISTRATION                                  │
+│                    BACKEND PROCESSING                                       │
+│  ─────────────────────────────────────────────────────────────────────────  │
+│                                                                             │
+│  1. RE-VALIDATE eligibility (security - don't trust frontend)              │
+│                                                                             │
+│  2. CALCULATE Readiness Score:                                              │
+│     ┌─────────────────────────────────────────────────────────────────┐   │
+│     │  invertedStress = 11 - stress                                    │   │
+│     │  rawScore = (mood + invertedStress + sleep + physical) / 4      │   │
+│     │  readinessScore = rawScore × 10                                  │   │
+│     │                                                                  │   │
+│     │  Example: mood=7, stress=3, sleep=8, physical=7                  │   │
+│     │           invStress = 11-3 = 8                                   │   │
+│     │           raw = (7+8+8+7)/4 = 7.5                                │   │
+│     │           score = 7.5 × 10 = 75%                                 │   │
+│     └─────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  3. DETERMINE Readiness Status:                                            │
+│     • score ≥ 70  →  GREEN (Ready for Duty)                               │
+│     • score 40-69 →  YELLOW (Caution)                                     │
+│     • score < 40  →  RED (Not Ready)                                      │
+│                                                                             │
+│  4. CALCULATE Attendance Status:                                           │
+│     • Within shift hours = GREEN (100 pts)                                 │
+│     • NO LATE PENALTY - basta nag-check-in = GREEN                        │
+│                                                                             │
+│  5. CREATE Records (Transaction):                                          │
+│     • Checkin record (wellness data)                                       │
+│     • DailyAttendance record (attendance status)                          │
+│                                                                             │
+│  6. UPDATE User Stats:                                                     │
+│     • currentStreak++                                                      │
+│     • totalCheckins++                                                      │
+│     • avgReadinessScore (running average)                                  │
+│     • lastReadinessStatus                                                  │
+│                                                                             │
+│  7. RECALCULATE Daily Team Summary (for analytics)                         │
+│                                                                             │
+│  8. LOG to SystemLog (audit trail)                                         │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
                                     │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  POST /api/auth/register      │
-                    │  Data:                        │
-                    │  - Company info               │
-                    │  - Executive user info        │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Backend Processing:           │
-                    │  1. Create Company record      │
-                    │  2. Create Executive user      │
-                    │  3. Create Supabase auth user   │
-                    │  4. Generate JWT tokens         │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Return:                       │
-                    │  - User data                   │
-                    │  - Company data                │
-                    │  - JWT tokens                  │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Frontend: Auto-login          │
-                    │  Redirect to Executive Dashboard│
-                    └───────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    JOIN EXISTING COMPANY                                    │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  POST /api/auth/register-with-invite│
-                    │  Data:                        │
-                    │  - Invitation token            │
-                    │  - User info                   │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Backend:                      │
-                    │  1. Validate invitation        │
-                    │  2. Create user                │
-                    │  3. Assign to company          │
-                    │  4. Assign to team (if any)    │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Auto-login & redirect         │
-                    └───────────────────────────────┘
+        ┌───────────────────────────┼───────────────────────────┐
+        │                           │                           │
+        ▼                           ▼                           ▼
+┌───────────────┐        ┌───────────────┐           ┌───────────────────────┐
+│    GREEN      │        │    YELLOW     │           │         RED           │
+│   (≥ 70%)     │        │   (40-69%)    │           │        (< 40%)        │
+│               │        │               │           │                       │
+│  Show success │        │  Show low     │           │  REQUIRE low score    │
+│  → Dashboard  │        │  score modal  │           │  reason (MANDATORY)   │
+│               │        │  (optional    │           │                       │
+│               │        │   reason)     │           │  Options:             │
+│               │        │  → Dashboard  │           │  • Physical Injury    │
+│               │        │               │           │  • Illness/Sickness   │
+└───────────────┘        └───────────────┘           │  • Poor Sleep         │
+                                                     │  • High Stress        │
+                                                     │  • Personal Issues    │
+                                                     │  • Family Emergency   │
+                                                     │  • Work-Related       │
+                                                     │  • Other              │
+                                                     │                       │
+                                                     │  → Notify Team Lead   │
+                                                     └───────────────────────┘
 ```
 
 ---
 
-## 3. Worker Daily Flow
+## 3. Attendance & Scoring System
 
-### 3.1 Complete Worker Daily Check-in Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    WORKER DAILY CHECK-IN FLOW                               │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    MORNING: Worker Opens App                                │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Navigate to /checkin          │
-                    │  Frontend checks eligibility    │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │              ELIGIBILITY VALIDATION (Frontend)            │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │ 1. User role = WORKER/MEMBER?                      │  │
-        │  │ 2. User has team?                                   │  │
-        │  │ 3. Today is work day? (Mon-Fri)                     │  │
-        │  │ 4. Not a company holiday?                           │  │
-        │  │ 5. Within shift window?                              │  │
-        │  │    (Shift Start - 15min) → Shift End                │  │
-        │  │ 6. Not already checked in today?                     │  │
-        │  │ 7. Not on approved leave?                           │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-        │  NOT ELIGIBLE │  │   ELIGIBLE    │  │   ON LEAVE    │
-        │  Show error   │  │   Show form   │  │   Show msg    │
-        │  message      │  │               │  │   "On leave"  │
-        └───────────────┘  └───────┬───────┘  └───────────────┘
-                                    │
-                                    ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │                    CHECK-IN FORM                          │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │ Mood:        [1]──────────────[10]  (Slider)         │  │
-        │  │ Stress:      [1]──────────────[10]  (Slider)         │  │
-        │  │ Sleep:       [1]──────────────[10]  (Slider)         │  │
-        │  │ Physical:    [1]──────────────[10]  (Slider)         │  │
-        │  │ Notes:       [___________________]  (Optional)       │  │
-        │  │                                                       │  │
-        │  │              [ SUBMIT CHECK-IN ]                     │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  POST /api/checkins            │
-                    │  Backend processing            │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │              BACKEND VALIDATION & PROCESSING              │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │ 1. Re-validate eligibility (server-side)            │  │
-        │  │ 2. Validate input (Zod schema)                      │  │
-        │  │ 3. Calculate Readiness Score:                       │  │
-        │  │    score = (mood + (11-stress) + sleep + physical)  │  │
-        │  │            / 4 × 10                                  │  │
-        │  │ 4. Determine Status:                                │  │
-        │  │    ≥70 → GREEN                                       │  │
-        │  │    50-69 → YELLOW                                    │  │
-        │  │    <50 → RED                                         │  │
-        │  │ 5. Calculate Attendance:                           │  │
-        │  │    On-time (≤grace) → GREEN (100 pts)                │  │
-        │  │    Late (>grace) → YELLOW (75 pts)                  │  │
-        │  │ 6. Create Checkin record                            │  │
-        │  │ 7. Create/Update DailyAttendance                    │  │
-        │  │ 8. Update User stats:                               │  │
-        │  │    - currentStreak++                                │  │
-        │  │    - totalCheckins++                                │  │
-        │  │    - avgReadinessScore                              │  │
-        │  │    - lastReadinessStatus                            │  │
-        │  │ 9. Create SystemLog (audit)                         │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-        │    GREEN      │  │    YELLOW      │  │      RED      │
-        │   (≥70)       │  │   (50-69)      │  │     (<50)     │
-        └───────┬───────┘  └───────┬───────┘  └───────┬───────┘
-                │                   │                   │
-                ▼                   ▼                   ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────────────┐
-        │ Show Success  │  │ Show Low Score│  │ Require Low Score     │
-        │ → Dashboard   │  │ Reason Modal  │  │ Reason (REQUIRED)     │
-        │               │  │ (Optional)    │  │                       │
-        │               │  │ → Dashboard   │  │ Then offer:           │
-        │               │  │               │  │ - Request Exemption?   │
-        │               │  │               │  │ - Continue Anyway?    │
-        └───────────────┘  └───────────────┘  └───────────┬───────────┘
-                                                            │
-                                            ┌───────────────┴───────────────┐
-                                            │                               │
-                                            ▼                               ▼
-                                ┌───────────────────┐          ┌───────────────────┐
-                                │ Request Exemption│          │ Continue Anyway    │
-                                │ → Exemption Flow │          │ → Dashboard        │
-                                └───────────────────┘          └───────────────────┘
-```
-
-### 3.2 Worker Dashboard Flow
+### 3.1 Attendance Status Types
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    WORKER DASHBOARD (/home)                                  │
+│                    ATTENDANCE STATUS TYPES                                  │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  GET /api/checkins/today       │
-                    │  GET /api/checkins/week-stats  │
-                    │  GET /api/checkins/leave-status│
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │                    DASHBOARD DISPLAY                       │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │ TODAY'S STATUS                                       │  │
-        │  │ ┌───────────────────────────────────────────────┐  │  │
-        │  │ │ Readiness Score: ████████░░ 78%                │  │  │
-        │  │ │ Status: 🟢 Ready                                │  │  │
-        │  │ │ Mood: 7  Stress: 3  Sleep: 8  Physical: 7        │  │  │
-        │  │ └───────────────────────────────────────────────┘  │  │  │
-        │  ├─────────────────────────────────────────────────────┤  │
-        │  │ WEEK STATS                                           │  │
-        │  │ Mon  Tue  Wed  Thu  Fri  Sat  Sun                  │  │  │
-        │  │  🟢   🟢   🟡   🟢   ⬜   ─    ─                    │  │  │
-        │  │  82   78   65   80   ─                             │  │  │
-        │  │ Average: 76%    Check-ins: 4/4                      │  │  │
-        │  ├─────────────────────────────────────────────────────┤  │
-        │  │ STREAK                                               │  │
-        │  │ 🔥 Current: 15 days                                 │  │
-        │  │ 🏆 Best: 32 days                                     │  │
-        │  ├─────────────────────────────────────────────────────┤  │
-        │  │ NEXT CHECK-IN                                        │  │
-        │  │ Tomorrow, 8:00 AM                                    │  │
-        │  │ [ Go to Check-in ]                                   │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-        │ Check-in       │  │ View History  │  │ Report        │
-        │                │  │               │  │ Incident      │
-        └───────────────┘  └───────────────┘  └───────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STATUS      │  SCORE  │  COUNTED?  │  DESCRIPTION                         │
+│──────────────│─────────│────────────│─────────────────────────────────────  │
+│  GREEN       │  100    │  YES       │  Nag-check-in within shift hours     │
+│  ABSENT      │  0      │  YES       │  Hindi nag-check-in (cron created)   │
+│  EXCUSED     │  null   │  NO        │  On approved leave (not counted)     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+IMPORTANT: Walang LATE/YELLOW sa attendance!
+           Basta nag-check-in within shift = GREEN = 100 pts
+```
+
+### 3.2 Attendance Scoring Logic
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    ATTENDANCE SCORING LOGIC                                 │
+│                    (backend/src/utils/attendance.ts)                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Team Schedule: shiftStart = "08:00", shiftEnd = "17:00"
+    Grace Period: 15 minutes before shift start
+
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                                                                      │
+    │   07:45        08:00                                      17:00     │
+    │     │            │                                          │       │
+    │     ▼            ▼                                          ▼       │
+    │  ───┼────────────┼──────────────────────────────────────────┼───   │
+    │     │◄─ GRACE ─►│◄────────── SHIFT HOURS ─────────────────►│       │
+    │     │   (15min)  │                                          │       │
+    │                                                                      │
+    │  Before 07:45 → TOO_EARLY (cannot check in)                         │
+    │  07:45 - 17:00 → GREEN (100 pts)                                    │
+    │  After 17:00   → TOO_LATE (cannot check in, marked ABSENT by cron) │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. Team Lead Daily Flow
+## 4. Cron Jobs - Automated Processing
 
-### 4.1 Daily Monitoring Flow
+### 4.1 Cron Schedule Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│              TEAM LEAD DAILY MONITORING FLOW                                │
+│                    CRON JOBS SCHEDULE                                       │
+│                    (backend/src/cron/attendance-finalizer.ts)               │
 └─────────────────────────────────────────────────────────────────────────────┘
 
+    HOURLY CRON (runs at minute 0 of every hour)
+    ├── 5 AM Check (per company timezone)
+    │   └── Process YESTERDAY's absences (safety net)
+    │
+    └── Shift-End Check (per team)
+        └── Process TODAY's absences for teams whose shift just ended
+```
+
+### 4.2 5 AM Yesterday Check Flow
+
+```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    MORNING: Team Lead Opens Dashboard                        │
+│                    5 AM YESTERDAY CHECK                                     │
+│                    (Safety net - catches any missed)                        │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
+
                     ┌───────────────────────────────┐
-                    │  GET /api/daily-monitoring    │
-                    │  Backend fetches:              │
-                    │  - Today's check-ins           │
-                    │  - Sudden changes              │
-                    │  - Pending exemptions          │
-                    │  - Not checked in yet          │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │              DAILY MONITORING DASHBOARD                    │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │ TODAY'S OVERVIEW                                    │  │
-        │  │ Check-in Rate: 8/10 (80%)                           │  │
-        │  │ 🟢 5 Ready  🟡 2 Limited  🔴 1 Not Ready  ⬜ 1 Leave│  │
-        │  ├─────────────────────────────────────────────────────┤  │
-        │  │ ⚠️ SUDDEN CHANGES                                    │  │
-        │  │ 🔴 CRITICAL: Juan dela Cruz                          │  │
-        │  │    Today: 35 → 7-Day Avg: 78 (Drop: -43)            │  │
-        │  │ 🟠 SIGNIFICANT: Maria Santos                        │  │
-        │  │    Today: 55 → 7-Day Avg: 80 (Drop: -25)            │  │
-        │  ├─────────────────────────────────────────────────────┤  │
-        │  │ 📋 PENDING EXEMPTIONS                               │  │
-        │  │ Juan dela Cruz - Sick Leave                         │  │
-        │  │ [ REVIEW & APPROVE/REJECT ]                        │  │
-        │  ├─────────────────────────────────────────────────────┤  │
-        │  │ ❓ NOT YET CHECKED IN                                │  │
-        │  │ ⏳ Pedro Reyes - Expected by 9:00 AM               │  │
-        │  │ ⏳ Ana Garcia - Expected by 9:00 AM                │  │
-        │  ├─────────────────────────────────────────────────────┤  │
-        │  │ ✅ TODAY'S CHECK-INS                                │  │
-        │  │ Name          Time    Score  Mood Stress Sleep Phys │  │
-        │  │ ───────────────────────────────────────────────────│  │
-        │  │ Carlos Santos 8:02 AM 🟢 85  8    2      8     8  │  │
-        │  │ Lisa Reyes    8:05 AM 🟢 78  7    3      7     7  │  │
-        │  │ Juan dela Cruz 8:15 AM 🔴 35  3    8      2     3  │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-        │ Review        │  │ View Member   │  │ Generate      │
-        │ Exemption     │  │ Profile       │  │ AI Insights   │
-        └───────┬───────┘  └───────────────┘  └───────┬───────┘
-                │                                       │
-                ▼                                       ▼
-        ┌───────────────┐                  ┌───────────────────────┐
-        │ Approve/Reject│                  │ POST /api/analytics/  │
-        │ Exemption     │                  │ team/:id/ai-summary   │
-        └───────────────┘                  └───────────┬───────────┘
-                                                        │
-                                                        ▼
-                                        ┌───────────────────────────────┐
-                                        │ AI Processing (OpenAI GPT-4)  │
-                                        │ - Analyze team data           │
-                                        │ - Generate insights           │
-                                        │ - Return recommendations       │
-                                        └───────────┬───────────────────┘
-                                                    │
-                                                    ▼
-                                        ┌───────────────────────────────┐
-                                        │ Display AI Summary            │
-                                        │ - Member analysis             │
-                                        │ - Highlights                  │
-                                        │ - Concerns                    │
-                                        │ - Recommendations             │
-                                        └───────────────────────────────┘
-```
-
-### 4.2 Exemption Approval Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    EXEMPTION APPROVAL FLOW                                   │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Team Lead clicks "Review"    │
-                    │  on pending exemption          │
+                    │  CRON runs at 5:00 AM         │
+                    │  (company local time)         │
                     └───────────────┬───────────────┘
                                     │
                                     ▼
                     ┌───────────────────────────────┐
-                    │  GET /api/exemptions/:id       │
-                    │  Display exemption details      │
+                    │  Get all active companies     │
+                    │  where local time = 5 AM      │
                     └───────────────┬───────────────┘
                                     │
                                     ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │              EXEMPTION REVIEW MODAL                        │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │ Worker: Juan dela Cruz                               │  │
-        │  │ Type: Sick Leave                                     │  │
-        │  │ Today's Score: 35 (🔴 RED)                          │  │
-        │  │ Low Score Reason: Illness/Sickness                    │  │
-        │  │                                                       │  │
-        │  │ Worker's Reason:                                     │  │
-        │  │ "Lagnat at sipon po. Hindi kaya magtrabaho."         │  │
-        │  │                                                       │  │
-        │  │ Return Date: [ Jan 15, 2024 ]                        │  │
-        │  │ Notes: [________________________]                    │  │
-        │  │                                                       │  │
-        │  │       [ ✓ APPROVE ]    [ ✗ REJECT ]                 │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
+            FOR EACH COMPANY (where hour = 5):
                                     │
-                    ┌───────────────┴───────────────┐
-                    │                                 │
-                    ▼                                 ▼
-        ┌───────────────────┐          ┌───────────────────┐
-        │   APPROVE         │          │   REJECT          │
-        │   PUT /api/       │          │   PUT /api/       │
-        │   exemptions/:id/ │          │   exemptions/:id/ │
-        │   approve         │          │   reject          │
-        └───────────┬───────┘          └───────────┬───────┘
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  Calculate "yesterday" in     │
+                    │  company's timezone           │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  Is yesterday a holiday?      │
+                    │  ─────────────────────────    │
+                    │  YES → Skip company           │
+                    │  NO  → Continue               │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  Get all WORKER/MEMBER users  │
+                    │  with active teams            │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+            FOR EACH WORKER:
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        │                           │                           │
+        ▼                           ▼                           ▼
+┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐
+│  SKIP CONDITIONS  │    │  CHECK #1:        │    │  CHECK #2:        │
+│  ─────────────────│    │  Already has      │    │  On approved      │
+│  • Team inactive  │    │  attendance?      │    │  leave?           │
+│  • Not work day   │    │  ───────────────  │    │  ───────────────  │
+│  • Before baseline│    │  YES → Skip       │    │  YES → Skip       │
+│                   │    │  (already GREEN)  │    │  (will be EXCUSED)│
+└───────────────────┘    └───────────────────┘    └───────────────────┘
+                                    │
+                                    │ All checks passed = ABSENT
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  CREATE (Transaction):        │
+                    │  ────────────────────────     │
+                    │  1. DailyAttendance           │
+                    │     • status: ABSENT          │
+                    │     • score: 0                │
+                    │     • isCounted: true         │
                     │                               │
-                    ▼                               ▼
-        ┌───────────────────┐          ┌───────────────────┐
-        │ Backend:          │          │ Backend:          │
-        │ 1. Set status =   │          │ 1. Set status =  │
-        │    APPROVED       │          │    REJECTED       │
-        │ 2. Set endDate    │          │ 2. Notify worker  │
-        │ 3. Create EXCUSED │          │                   │
-        │    attendance for │          │                   │
-        │    each day       │          │                   │
-        │ 4. Block check-ins│          │                   │
-        │    until endDate+1│          │                   │
-        │ 5. Notify worker  │          │                   │
-        └───────────────────┘          └───────────────────┘
-```
-
----
-
-## 5. Executive Management Flow
-
-### 5.1 User Management Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    EXECUTIVE USER MANAGEMENT FLOW                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Navigate to /executive/users │
-                    │  GET /api/users               │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │              USERS MANAGEMENT PAGE                         │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │ [ + Create New User ]                                │  │
-        │  │                                                       │  │
-        │  │ Search: [________________]  Filter: [All Roles ▼]  │  │
-        │  │                                                       │  │
-        │  │ Name          Email          Role      Team    Status│  │
-        │  │ ────────────────────────────────────────────────────│  │
-        │  │ Juan dela Cruz juan@...     WORKER    Alpha   Active│  │
-        │  │ Maria Santos   maria@...    TEAM_LEAD Beta    Active │  │
-        │  │ ...                                                      │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-        │ Create User   │  │ Edit User      │  │ Deactivate    │
-        │               │  │                │  │ User          │
-        └───────┬───────┘  └───────┬───────┘  └───────┬───────┘
-                │                   │                   │
-                ▼                   ▼                   ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────────┐
-        │ POST /api/    │  │ PUT /api/     │  │ DELETE /api/     │
-        │ users         │  │ users/:id     │  │ users/:id       │
-        │               │  │               │  │ (soft delete)    │
-        │ - Create      │  │ - Update role │  │                  │
-        │   Supabase    │  │ - Update team │  │ Set isActive =   │
-        │   auth user   │  │ - Update info │  │ false            │
-        │ - Create DB   │  │               │  │                  │
-        │   user        │  │               │  │                  │
-        │ - Send invite │  │               │  │                  │
-        └───────────────┘  └───────────────┘  └───────────────────┘
-```
-
-### 5.2 Team Management Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    EXECUTIVE TEAM MANAGEMENT FLOW                           │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Navigate to /executive/teams  │
-                    │  GET /api/teams                │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │              TEAMS MANAGEMENT PAGE                         │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │ [ + Create New Team ]                               │  │
-        │  │                                                       │  │
-        │  │ Team Name    Leader      Members  Status  Grade     │  │
-        │  │ ────────────────────────────────────────────────────│  │
-        │  │ Alpha Team   Maria Santos 12      Active   A         │  │
-        │  │ Beta Team    Pedro Reyes  10      Active   B         │  │
-        │  │ ...                                                      │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-        │ Create Team   │  │ Edit Team      │  │ Deactivate    │
-        │               │  │                │  │ Team          │
-        └───────┬───────┘  └───────┬───────┘  └───────┬───────┘
-                │                   │                   │
-                ▼                   ▼                   ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────────┐
-        │ POST /api/    │  │ PUT /api/     │  │ PUT /api/teams/   │
-        │ teams         │  │ teams/:id     │  │ :id/deactivate    │
-        │               │  │               │  │                   │
-        │ - Create team │  │ - Update      │  │ - Set isActive =  │
-        │ - Set leader  │  │   schedule    │  │   false           │
-        │ - Set schedule│  │ - Update info │  │ - Create          │
-        │               │  │               │  │   TEAM_INACTIVE   │
-        │               │  │               │  │   exceptions for   │
-        │               │  │               │  │   all members      │
-        └───────────────┘  └───────────────┘  └───────────────────┘
-```
-
----
-
-## 6. Data Flow & Processing
-
-### 6.1 Check-in Data Processing Flow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    CHECK-IN DATA PROCESSING FLOW                            │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    INPUT: Worker submits check-in                          │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Raw Input Data:               │
-                    │  - mood: 7                     │
-                    │  - stress: 3                    │
-                    │  - sleep: 8                    │
-                    │  - physical: 7                 │
-                    │  - notes: "..."                │
+                    │  2. Absence                   │
+                    │     • status: PENDING_        │
+                    │       JUSTIFICATION           │
+                    │     • (Worker must justify)   │
                     └───────────────┬───────────────┘
                                     │
                                     ▼
                     ┌───────────────────────────────┐
-                    │  Calculate Readiness Score     │
-                    │  invertedStress = 11 - 3 = 8  │
-                    │  rawScore = (7+8+8+7)/4 = 7.5  │
-                    │  score = 7.5 × 10 = 75        │
-                    │  status = YELLOW (50-69)      │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Calculate Attendance          │
-                    │  checkInTime: 8:15 AM         │
-                    │  shiftStart: 8:00 AM          │
-                    │  gracePeriod: 15 min          │
-                    │  minutesLate: 15              │
-                    │  attendanceStatus: YELLOW     │
-                    │  attendanceScore: 75           │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Database Operations           │
-                    │  (Transaction)                 │
-                    │  1. Create Checkin record      │
-                    │  2. Create/Update              │
-                    │     DailyAttendance            │
-                    │  3. Update User stats:         │
-                    │     - currentStreak++         │
-                    │     - totalCheckins++         │
-                    │     - avgReadinessScore        │
-                    │     - lastReadinessStatus      │
-                    │  4. Create SystemLog           │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Output:                       │
-                    │  - Checkin record              │
-                    │  - Attendance record           │
-                    │  - Updated user stats          │
-                    │  - Audit log                   │
-                    └───────────────┬───────────────┘
-                                    │
-                                    ▼
-                    ┌───────────────────────────────┐
-                    │  Trigger Events:               │
-                    │  - Notification to Team Lead   │
-                    │    (if RED status)              │
-                    │  - Update analytics cache       │
-                    │  - Update team summary          │
+                    │  Recalculate Team Summary     │
+                    │  (for analytics)              │
                     └───────────────────────────────┘
 ```
 
-### 6.2 Analytics Data Flow
+### 4.3 Shift-End Check Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    ANALYTICS DATA FLOW                                      │
+│                    SHIFT-END CHECK                                          │
+│                    (Same-day absence detection)                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 
+                    ┌───────────────────────────────┐
+                    │  CRON runs every hour         │
+                    │  (at minute 0)                │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  Get teams where              │
+                    │  shiftEnd hour = current hour │
+                    │                               │
+                    │  Example: shiftEnd = "17:00"  │
+                    │  Current = 17:00 → Process    │
+                    └───────────────┬───────────────┘
+                                    │
+                                    ▼
+            FOR EACH TEAM (shift just ended):
+                                    │
+                    ┌───────────────────────────────┐
+                    │  Same checks as 5 AM:         │
+                    │  • Is today a work day?       │
+                    │  • Is today a holiday?        │
+                    │  • Worker has attendance?     │
+                    │  • Worker on leave?           │
+                    │  • Worker before baseline?    │
+                    └───────────────┬───────────────┘
+                                    │
+                                    │ No check-in = ABSENT
+                                    ▼
+                    ┌───────────────────────────────┐
+                    │  CREATE DailyAttendance +     │
+                    │  Absence (same as 5 AM)       │
+                    │                               │
+                    │  Benefit: Same-day detection! │
+                    │  Worker sees absence TODAY,   │
+                    │  not tomorrow.                │
+                    └───────────────────────────────┘
+```
+
+### 4.4 Baseline Date Logic
+
+```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    DATA SOURCES                                              │
+│                    BASELINE DATE LOGIC                                      │
+│                    (When does check-in requirement start?)                  │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-        │ Checkins      │  │ Daily         │  │ Exceptions    │
-        │ Table         │  │ Attendance     │  │ Table         │
-        │               │  │ Table          │  │               │
-        │ - Readiness   │  │ - Attendance   │  │ - Leave days  │
-        │   scores      │  │   status       │  │ - Types       │
-        │ - Status      │  │ - Scores       │  │ - Status      │
-        │ - Dates       │  │ - Dates        │  │               │
-        └───────┬───────┘  └───────┬───────┘  └───────┬───────┘
-                │                   │                   │
-                └───────────┬───────┴───────┬───────────┘
-                            │               │
-                            ▼               ▼
-        ┌───────────────────────────────────────────────────────────┐
-        │              ANALYTICS ENGINE                              │
-        │  ┌─────────────────────────────────────────────────────┐  │
-        │  │ Prisma Queries:                                      │  │
-        │  │ - Aggregate check-ins by status                      │  │
-        │  │ - Calculate averages                                  │  │
-        │  │ - Count attendance records                            │  │
-        │  │ - Compute compliance rates                            │  │
-        │  │ - Calculate team grades                              │  │
-        │  │ - Detect trends                                      │  │
-        │  │ - Identify sudden changes                             │  │
-        │  └─────────────────────────────────────────────────────┘  │
-        └───────────────────────────────────────────────────────────┘
-                                    │
-                    ┌───────────────┼───────────────┐
-                    │               │               │
-                    ▼               ▼               ▼
-        ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-        │ Dashboard     │  │ Team          │  │ AI Summary     │
-        │ Analytics     │  │ Analytics      │  │ Generation     │
-        │               │  │               │  │                │
-        │ - Company     │  │ - Team stats   │  │ - Send to      │
-        │   overview    │  │ - Member       │  │   OpenAI       │
-        │ - Trends      │  │   breakdown   │  │ - Generate     │
-        │ - Rates       │  │ - Grades       │  │   insights     │
-        └───────────────┘  └───────────────┘  └───────────────┘
+
+    PRIORITY ORDER:
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                                                                      │
+    │  1. First check-in date (if exists)                                 │
+    │     └── Worker who already checked in once = requirement started    │
+    │                                                                      │
+    │  2. Next day after teamJoinedAt                                     │
+    │     └── Give worker 1 day to settle before requiring check-in       │
+    │                                                                      │
+    │  3. Next day after createdAt (fallback)                             │
+    │     └── Account creation date + 1 day                               │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+
+    EXAMPLE:
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  Worker joins team on Jan 15, 2026                                  │
+    │  Baseline = Jan 16, 2026                                            │
+    │  Jan 15 absence → SKIPPED (before baseline)                         │
+    │  Jan 16 absence → CREATED (baseline met)                            │
+    └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 7. Complete System Interaction Diagram
+## 5. Absence Justification Flow
 
-### 7.1 End-to-End Daily Workflow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    COMPLETE DAILY WORKFLOW                                  │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              MORNING (8:00 AM)                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-    ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
-    │   WORKER     │              │  TEAM LEAD   │              │  EXECUTIVE   │
-    └──────┬───────┘              └──────┬───────┘              └──────┬───────┘
-           │                             │                             │
-           ▼                             ▼                             ▼
-    ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
-    │ Opens App    │              │ Opens        │              │ Reviews      │
-    │ Checks in    │              │ Daily        │              │ Company      │
-    │ Wellness     │              │ Monitoring   │              │ Overview     │
-    └──────┬───────┘              └──────┬───────┘              └──────┬───────┘
-           │                             │                             │
-           ▼                             ▼                             ▼
-    ┌──────────────┐              ┌──────────────┐              ┌──────────────┐
-    │ Submit       │              │ Reviews      │              │ Views        │
-    │ Check-in     │              │ Team Status  │              │ All Teams    │
-    │              │              │              │              │              │
-    │ Status:      │              │ - Check-ins  │              │ - Grades     │
-    │ GREEN/YELLOW │              │ - Alerts     │              │ - Analytics  │
-    │ /RED         │              │ - Pending    │              │ - Trends     │
-    └──────┬───────┘              │   Requests   │              └──────┬───────┘
-           │                      └──────┬───────┘                      │
-           │                             │                             │
-           └─────────────────────────────┼─────────────────────────────┘
-                                        │
-                                        ▼
-                            ┌───────────────────────┐
-                            │   DATABASE UPDATES     │
-                            │   - Checkin records   │
-                            │   - Attendance records│
-                            │   - User stats        │
-                            │   - Team summaries    │
-                            └───────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            MIDDAY (12:00 PM)                                │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-    ┌──────────────┐              ┌──────────────┐
-    │  TEAM LEAD   │              │   WORKER     │
-    └──────┬───────┘              └──────┬───────┘
-           │                             │
-           ▼                             ▼
-    ┌──────────────┐              ┌──────────────┐
-    │ Reviews      │              │ Reports      │
-    │ Exemptions   │              │ Incident     │
-    │              │              │ (if needed)  │
-    │ Approve/    │              │              │
-    │ Reject       │              │              │
-    └──────┬───────┘              └──────┬───────┘
-           │                             │
-           └─────────────┬───────────────┘
-                         │
-                         ▼
-            ┌───────────────────────┐
-            │   DATABASE UPDATES     │
-            │   - Exception status   │
-            │   - Attendance records │
-            │   - Incident records   │
-            └───────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          AFTERNOON (3:00 PM)                                │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-    ┌──────────────┐
-    │  TEAM LEAD   │
-    └──────┬───────┘
-           │
-           ▼
-    ┌──────────────┐
-    │ Generates    │
-    │ AI Insights  │
-    │              │
-    │ - Team       │
-    │   analysis   │
-    │ - Member     │
-    │   assessment │
-    │ - Trends     │
-    │ - Recomms    │
-    └──────┬───────┘
-           │
-           ▼
-    ┌───────────────────────┐
-    │   AI PROCESSING        │
-    │   (OpenAI GPT-4)      │
-    │                        │
-    │ - Analyze data         │
-    │ - Generate insights    │
-    │ - Return summary       │
-    └───────────────────────┘
-           │
-           ▼
-    ┌───────────────────────┐
-    │   SAVE AI SUMMARY      │
-    │   - Store in DB        │
-    │   - Display to TL      │
-    └───────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          END OF DAY (6:00 PM)                               │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-                            ┌───────────────────────┐
-                            │   BATCH PROCESSING     │
-                            │                        │
-                            │ - Calculate daily      │
-                            │   summaries            │
-                            │ - Update team grades   │
-                            │ - Generate reports     │
-                            │ - Send notifications   │
-                            └───────────────────────┘
-```
-
-### 7.2 System Components Interaction
+### 5.1 Complete Absence Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    SYSTEM COMPONENTS INTERACTION                            │
+│                    ABSENCE JUSTIFICATION FLOW                               │
+│                    (backend/src/modules/absences/index.ts)                  │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-┌──────────────┐
-│   FRONTEND   │
-│   (React)    │
-└──────┬───────┘
-       │
-       │ HTTP Requests
-       │ (with JWT)
-       │
-       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         BACKEND API (Hono)                                   │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │  │
-│  │  │ Auth        │  │ Checkins     │  │ Analytics    │              │  │
-│  │  │ Module      │  │ Module       │  │ Module       │              │  │
-│  │  │             │  │              │  │              │              │  │
-│  │  │ - Login     │  │ - Submit     │  │ - Dashboard  │              │  │
-│  │  │ - Register  │  │ - Get today  │  │ - Team stats │              │  │
-│  │  │ - Refresh   │  │ - History    │  │ - AI summary │              │  │
-│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘              │  │
-│  │         │                 │                 │                      │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │  │
-│  │  │ Exceptions   │  │ Teams        │  │ Monitoring   │          │  │
-│  │  │ Module       │  │ Module       │  │ Module        │          │  │
-│  │  │             │  │              │  │               │          │  │
-│  │  │ - Request   │  │ - List       │  │ - Daily       │          │  │
-│  │  │ - Approve   │  │ - Create     │  │   monitoring  │          │  │
-│  │  │ - Reject    │  │ - Update     │  │ - Sudden      │          │  │
-│  │  └──────┬──────┘  └──────┬──────┘  │   changes     │          │  │
-│  │         │                 │          └──────┬─────────┘          │  │
-│  │         └─────────────────┴─────────────────┘                    │  │
-│  │                           │                                      │  │
-│  └───────────────────────────┼──────────────────────────────────────┘  │
-│                              │                                         │
-│                              │ Prisma ORM                              │
-│                              │                                         │
-└──────────────────────────────┼─────────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         DATABASE (PostgreSQL)                                │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │  │
-│  │  │ Users       │  │ Checkins     │  │ Daily        │              │  │
-│  │  │             │  │              │  │ Attendance   │              │  │
-│  │  │ - id       │  │ - id         │  │ - id         │              │  │
-│  │  │ - email    │  │ - userId     │  │ - userId     │              │  │
-│  │  │ - role     │  │ - score      │  │ - status     │              │  │
-│  │  │ - teamId   │  │ - status     │  │ - score      │              │  │
-│  │  └────────────┘  └──────────────┘  └──────────────┘              │  │
-│  │                                                                      │  │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐              │  │
-│  │  │ Teams       │  │ Exceptions   │  │ Incidents    │              │  │
-│  │  │             │  │              │  │              │              │  │
-│  │  │ - id       │  │ - id         │  │ - id         │              │  │
-│  │  │ - name     │  │ - userId     │  │ - reporterId │              │  │
-│  │  │ - leaderId │  │ - status     │  │ - type       │              │  │
-│  │  └────────────┘  └──────────────┘  └──────────────┘              │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
+│  STEP 1: CRON CREATES ABSENCE                                               │
 └─────────────────────────────────────────────────────────────────────────────┘
-                               │
-                               │ External API Calls
-                               │
-                               ▼
+                                    │
+        5 AM or Shift-End cron      │
+        creates Absence record      │
+        status: PENDING_JUSTIFICATION
+                                    │
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      EXTERNAL SERVICES                                       │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                                                                      │  │
-│  │  ┌──────────────┐              ┌──────────────┐                     │  │
-│  │  │ Supabase    │              │ OpenAI GPT-4 │                     │  │
-│  │  │ Auth        │              │              │                     │  │
-│  │  │             │              │ - AI Insights│                     │  │
-│  │  │ - JWT       │              │ - Chatbot     │                     │  │
-│  │  │ - Tokens    │              │ - Analysis    │                     │  │
-│  │  └──────────────┘              └──────────────┘                     │  │
-│  │                                                                      │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
+│  STEP 2: WORKER SEES PENDING ABSENCES                                       │
 └─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                    WORKER APP - BLOCKING POPUP                       │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │                                                                      │
+    │  ⚠️  You have 2 pending absences to justify                         │
+    │                                                                      │
+    │  ┌─────────────────────────────────────────────────────────────┐   │
+    │  │  Jan 14, 2026 (Tuesday)                                      │   │
+    │  │  Reason: [ Select reason ▼ ]                                 │   │
+    │  │          • Sick                                              │   │
+    │  │          • Emergency                                         │   │
+    │  │          • Personal                                          │   │
+    │  │          • Forgot to check in                                │   │
+    │  │          • Technical issue                                   │   │
+    │  │          • Other                                             │   │
+    │  │  Explanation: [_________________________________]            │   │
+    │  └─────────────────────────────────────────────────────────────┘   │
+    │                                                                      │
+    │  ┌─────────────────────────────────────────────────────────────┐   │
+    │  │  Jan 13, 2026 (Monday)                                       │   │
+    │  │  Reason: [ Select reason ▼ ]                                 │   │
+    │  │  Explanation: [_________________________________]            │   │
+    │  └─────────────────────────────────────────────────────────────┘   │
+    │                                                                      │
+    │                     [ SUBMIT JUSTIFICATIONS ]                        │
+    └─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │  POST /api/absences/justify
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STEP 3: JUSTIFICATION SUBMITTED                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+    • Absence.justifiedAt = NOW     │
+    • Absence.reasonCategory = ...  │
+    • Absence.explanation = ...     │
+    • Status remains PENDING_JUSTIFICATION (waiting for TL review)
+    • Notify Team Lead              │
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STEP 4: TEAM LEAD REVIEWS                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                    TEAM LEAD - PENDING REVIEWS                       │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │                                                                      │
+    │  Juan dela Cruz - Jan 14, 2026                                      │
+    │  Reason: Sick                                                        │
+    │  Explanation: "Lagnat at sipon, hindi makaalis ng bahay"            │
+    │                                                                      │
+    │       [ ✓ EXCUSE ]                    [ ✗ UNEXCUSE ]                │
+    │       (No penalty)                    (0 points)                    │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+                                    │
+        ┌───────────────────────────┴───────────────────────────┐
+        │                                                       │
+        ▼                                                       ▼
+┌───────────────────────┐                       ┌───────────────────────┐
+│  EXCUSED              │                       │  UNEXCUSED            │
+│  ─────────────────────│                       │  ─────────────────────│
+│  • Absence.status =   │                       │  • Absence.status =   │
+│    EXCUSED            │                       │    UNEXCUSED          │
+│                       │                       │                       │
+│  • DailyAttendance:   │                       │  • DailyAttendance:   │
+│    status = EXCUSED   │                       │    status = ABSENT    │
+│    score = null       │                       │    score = 0          │
+│    isCounted = false  │                       │    isCounted = true   │
+│                       │                       │                       │
+│  • NOT counted in     │                       │  • COUNTED in         │
+│    performance score  │                       │    performance score  │
+│                       │                       │                       │
+│  • Notify worker:     │                       │  • Notify worker:     │
+│    "Excused"          │                       │    "Unexcused"        │
+└───────────────────────┘                       └───────────────────────┘
+```
+
+---
+
+## 6. Exception/Leave Request Flow
+
+### 6.1 Leave Request Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    EXCEPTION/LEAVE REQUEST FLOW                             │
+│                    (backend/src/modules/exceptions/index.ts)                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STEP 1: WORKER REQUESTS LEAVE                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                    REQUEST EXCEPTION FORM                            │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │                                                                      │
+    │  Type: [ Select type ▼ ]                                            │
+    │        • Sick Leave                                                  │
+    │        • Personal Leave                                              │
+    │        • Medical Appointment                                         │
+    │        • Family Emergency                                            │
+    │        • Other                                                       │
+    │                                                                      │
+    │  Start Date: [ Jan 15, 2026 ]                                       │
+    │  End Date:   [ Jan 17, 2026 ]                                       │
+    │                                                                      │
+    │  Reason: [_________________________________________________]        │
+    │                                                                      │
+    │                     [ SUBMIT REQUEST ]                               │
+    └─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │  POST /api/exceptions
+                                    │  status: PENDING
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  STEP 2: TEAM LEAD REVIEWS                                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+        ┌───────────────────────────┴───────────────────────────┐
+        │                                                       │
+        ▼                                                       ▼
+┌───────────────────────┐                       ┌───────────────────────┐
+│  APPROVE              │                       │  REJECT               │
+│  ─────────────────────│                       │  ─────────────────────│
+│  PUT /api/exceptions/ │                       │  PUT /api/exceptions/ │
+│  :id/approve          │                       │  :id/reject           │
+└───────────────────────┘                       └───────────────────────┘
+        │                                                       │
+        ▼                                                       ▼
+┌───────────────────────────────────────┐       ┌───────────────────────┐
+│  ON APPROVAL:                         │       │  ON REJECTION:        │
+│  ─────────────────────────────────────│       │  ─────────────────────│
+│  1. Exception.status = APPROVED       │       │  • Exception.status = │
+│                                       │       │    REJECTED           │
+│  2. For EACH day in leave range:      │       │                       │
+│     CREATE DailyAttendance            │       │  • Notify worker      │
+│     • status: EXCUSED                 │       │                       │
+│     • score: null                     │       │  • Worker must work   │
+│     • isCounted: false                │       │    or will be ABSENT  │
+│                                       │       │                       │
+│  3. Block check-ins during leave      │       │                       │
+│     (check-in returns ON_LEAVE code)  │       │                       │
+│                                       │       │                       │
+│  4. Notify worker                     │       │                       │
+└───────────────────────────────────────┘       └───────────────────────┘
+```
+
+### 6.2 Leave Impact on Check-in
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    LEAVE IMPACT ON CHECK-IN                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    Worker with approved leave (Jan 15-17):
+
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                                                                      │
+    │  Jan 14        Jan 15         Jan 16         Jan 17        Jan 18  │
+    │    │             │              │              │              │     │
+    │    ▼             ▼              ▼              ▼              ▼     │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │  Normal     │◄─────────── ON LEAVE ────────────►│    Normal     │
+    │  Check-in   │         Check-in BLOCKED          │    Check-in   │
+    │             │         (EXCUSED status)          │    Required   │
+    │             │                                   │               │
+    │  GREEN/     │         Shows: "You are on        │    GREEN/     │
+    │  ABSENT     │         approved sick leave"      │    ABSENT     │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+
+    DailyAttendance records:
+    • Jan 14 → GREEN (checked in) or ABSENT (missed)
+    • Jan 15 → EXCUSED (leave day 1)
+    • Jan 16 → EXCUSED (leave day 2)
+    • Jan 17 → EXCUSED (leave day 3)
+    • Jan 18 → GREEN (checked in) or ABSENT (missed)
+```
+
+---
+
+## 7. Team Lead Daily Monitoring
+
+### 7.1 Daily Monitoring Dashboard
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    TEAM LEAD DAILY MONITORING                               │
+│                    (GET /api/daily-monitoring)                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                    TODAY'S OVERVIEW                                  │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │                                                                      │
+    │  Check-in Rate: ████████░░ 8/10 (80%)                              │
+    │                                                                      │
+    │  🟢 Ready: 5     🟡 Caution: 2     🔴 Not Ready: 1     ⬜ Leave: 1  │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+    │
+    │
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  ⚠️  SUDDEN CHANGES (Alert!)                                        │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │                                                                      │
+    │  🔴 CRITICAL: Juan dela Cruz                                        │
+    │     Today: 35%  →  7-Day Avg: 78%  (Drop: -43%)                    │
+    │     Reason: Illness/Sickness                                        │
+    │     [ View Profile ] [ Send Message ]                               │
+    │                                                                      │
+    │  🟠 SIGNIFICANT: Maria Santos                                       │
+    │     Today: 55%  →  7-Day Avg: 80%  (Drop: -25%)                    │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+    │
+    │
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  📋 PENDING REVIEWS                                                  │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │                                                                      │
+    │  Leave Requests:                                                     │
+    │  • Pedro Reyes - Sick Leave (Jan 20-22)  [ Review ]                │
+    │                                                                      │
+    │  Absence Justifications:                                             │
+    │  • Ana Garcia - Jan 19 (Forgot to check in)  [ Review ]            │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+    │
+    │
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  ❓ NOT YET CHECKED IN                                               │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │                                                                      │
+    │  ⏳ Carlos Reyes - Expected by 17:00                                │
+    │     [ Send Reminder ]                                                │
+    │                                                                      │
+    │  ⏳ Lisa Santos - Expected by 17:00                                 │
+    │     [ Send Reminder ]                                                │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+    │
+    │
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  ✅ TODAY'S CHECK-INS                                                │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │                                                                      │
+    │  Name             Time      Status    Score  Mood Stress Sleep Phys │
+    │  ────────────────────────────────────────────────────────────────── │
+    │  Juan dela Cruz   8:02 AM   🟢 Ready   85%    8    2      8     8  │
+    │  Maria Santos     8:05 AM   🟡 Caution 58%    5    6      5     6  │
+    │  Pedro Reyes      8:15 AM   🔴 Not     35%    3    8      2     3  │
+    │                                Ready                                 │
+    │  (Click row to view details or send message)                        │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 8. Performance Score Calculation
+
+### 8.1 Performance Score Formula
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    PERFORMANCE SCORE CALCULATION                            │
+│                    (backend/src/utils/attendance.ts)                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                                                                      │
+    │  FORMULA:                                                            │
+    │  ─────────────────────────────────────────────────────────────────  │
+    │                                                                      │
+    │                    Total GREEN Points                                │
+    │  Performance = ─────────────────────────── × 100%                   │
+    │                Total Counted Days × 100                              │
+    │                                                                      │
+    │                                                                      │
+    │  WHERE:                                                              │
+    │  • GREEN = 100 points (checked in)                                  │
+    │  • ABSENT = 0 points (missed)                                       │
+    │  • EXCUSED = NOT COUNTED (on leave)                                 │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+
+    EXAMPLE:
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │                                                                      │
+    │  Last 10 work days:                                                 │
+    │  • 7 days GREEN (checked in)  = 7 × 100 = 700 points               │
+    │  • 2 days ABSENT (missed)     = 2 × 0   = 0 points                 │
+    │  • 1 day EXCUSED (sick leave) = NOT COUNTED                        │
+    │                                                                      │
+    │  Total Points = 700                                                  │
+    │  Counted Days = 9 (excluding 1 excused)                             │
+    │  Max Possible = 9 × 100 = 900                                       │
+    │                                                                      │
+    │  Performance = 700 / 900 × 100% = 77.8%                            │
+    │                                                                      │
+    └─────────────────────────────────────────────────────────────────────┘
+```
+
+### 8.2 Performance Grades
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    PERFORMANCE GRADES                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  GRADE  │  SCORE RANGE  │  LABEL                                    │
+    │─────────│───────────────│─────────────────────────────────────────  │
+    │    A    │   ≥ 90%       │  Excellent                                │
+    │    B    │   80% - 89%   │  Good                                     │
+    │    C    │   70% - 79%   │  Satisfactory                             │
+    │    D    │   < 70%       │  Needs Improvement                        │
+    └─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 9. Complete Daily Timeline
+
+### 9.1 Full Day Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    COMPLETE DAILY TIMELINE                                  │
+│                    (Example: Team shift 08:00 - 17:00)                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+    05:00 ──────────────────────────────────────────────────────────────────
+           │
+           │  CRON: 5 AM Check
+           │  • Process YESTERDAY's absences
+           │  • Create Absence records for workers who didn't check in
+           │  • Workers will see pending justifications when they open app
+           │
+    07:45 ──────────────────────────────────────────────────────────────────
+           │
+           │  CHECK-IN WINDOW OPENS (15 min grace period)
+           │  • Workers can start checking in
+           │
+    08:00 ──────────────────────────────────────────────────────────────────
+           │
+           │  SHIFT STARTS
+           │  • Team Lead opens Daily Monitoring dashboard
+           │  • Views yesterday's summary
+           │  • Sees who hasn't checked in yet
+           │
+    08:00 - 17:00 ─────────────────────────────────────────────────────────
+           │
+           │  THROUGHOUT THE DAY:
+           │
+           │  WORKERS:
+           │  • Check in (anytime during shift = GREEN)
+           │  • Justify pending absences
+           │  • Request leave
+           │
+           │  TEAM LEAD:
+           │  • Monitor check-ins in real-time
+           │  • Review leave requests → Approve/Reject
+           │  • Review absence justifications → Excuse/Unexcuse
+           │  • Send reminders to workers who haven't checked in
+           │  • View sudden changes (score drops)
+           │  • Generate AI insights
+           │
+    17:00 ──────────────────────────────────────────────────────────────────
+           │
+           │  SHIFT ENDS
+           │  • Check-in window closes
+           │  • Workers who didn't check in → TOO_LATE error
+           │
+           │  CRON: Shift-End Check
+           │  • Immediately mark ABSENT for workers who didn't check in
+           │  • Create Absence records (same-day detection!)
+           │  • Workers will see pending justifications right away
+           │
+    17:00+ ─────────────────────────────────────────────────────────────────
+           │
+           │  END OF DAY:
+           │  • Daily team summaries finalized
+           │  • Analytics updated
+           │  • Ready for next day
+           │
+    ────────────────────────────────────────────────────────────────────────
 ```
 
 ---
 
 ## Summary
 
-Ang Aegira System ay isang comprehensive attendance at wellness management system na may sumusunod na key flows:
+### Key Points:
 
-### Core Flows:
-1. **Authentication Flow** - Login, registration, token management
-2. **Worker Check-in Flow** - Daily wellness assessment, scoring, attendance tracking
-3. **Team Lead Monitoring Flow** - Daily monitoring, exemption approval, AI insights
-4. **Executive Management Flow** - User management, team management, company settings
-5. **Data Processing Flow** - Real-time calculations, analytics, AI processing
+1. **Check-in = Wellness Assessment**
+   - 4 metrics: Mood, Stress, Sleep, Physical
+   - Score: GREEN (≥70%), CAUTION (40-69%), RED (<40%)
 
-### Key Features:
-- ✅ Multi-tenant architecture (company-scoped)
-- ✅ Role-based access control (6-level hierarchy)
-- ✅ Real-time wellness monitoring
-- ✅ Automated scoring & grading
-- ✅ AI-powered insights (OpenAI GPT-4)
-- ✅ Leave/exemption management
-- ✅ Incident reporting
-- ✅ Comprehensive analytics
+2. **Attendance = Simple**
+   - GREEN = Checked in (100 pts)
+   - ABSENT = Missed (0 pts)
+   - EXCUSED = On leave (not counted)
+   - **NO LATE PENALTY** - basta within shift = GREEN
 
-### Technology Stack:
-- **Frontend:** React + TypeScript + Tailwind CSS
-- **Backend:** Hono.js + TypeScript + Prisma
-- **Database:** PostgreSQL (Supabase)
-- **Auth:** Supabase Auth + JWT
-- **AI:** OpenAI GPT-4
-- **Storage:** Cloudflare R2
+3. **Cron Jobs = Automated**
+   - 5 AM: Process yesterday's absences
+   - Hourly: Process shift-end absences (same-day detection)
+
+4. **Absence Justification = Required**
+   - Worker must justify why they were absent
+   - Team Lead reviews: Excuse (no penalty) or Unexcuse (0 pts)
+
+5. **Leave Request = Pre-approved**
+   - Worker requests leave before the date
+   - Team Lead approves → Creates EXCUSED attendance for each day
+
+6. **Performance Score = Fair**
+   - Only counts GREEN and ABSENT days
+   - EXCUSED days not counted (fair to those on leave)
 
 ---
 
-*Dokumentasyon para sa Aegira Attendance Management System*  
-*Bersyon 2.0 - Enero 2026*
-
+*Documentation para sa Aegira Attendance & Wellness Management System*
+*Version 3.0 - January 2026*

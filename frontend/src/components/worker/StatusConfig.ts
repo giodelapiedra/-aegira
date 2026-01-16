@@ -21,7 +21,7 @@ export const STATUS_CONFIG = {
     variant: 'success' as const,
   },
   YELLOW: {
-    label: 'Limited Readiness',
+    label: 'Caution',
     emoji: '😐',
     color: 'bg-warning-500',
     bgColor: 'bg-warning-50',

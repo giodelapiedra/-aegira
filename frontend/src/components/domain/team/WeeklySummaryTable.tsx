@@ -5,7 +5,7 @@
  */
 
 import { useMemo } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Minus, Shield } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Minus, Shield, CheckCheck, Ban } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import type { DailyTeamSummary } from '../../../types/summary';
 import { getDayStatus, dayStatusColors } from '../../../types/summary';
@@ -40,7 +40,7 @@ export function WeeklySummaryTable({ summaries, onRowClick }: WeeklySummaryTable
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
-      <table className="w-full text-sm min-w-[700px]">
+      <table className="w-full text-sm min-w-[900px]">
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
@@ -49,7 +49,19 @@ export function WeeklySummaryTable({ summaries, onRowClick }: WeeklySummaryTable
             <th className="text-center px-4 py-3 font-medium text-gray-600">
               <span className="inline-flex items-center gap-1">
                 <Shield className="h-3.5 w-3.5 text-blue-500" />
-                Exempted
+                On Leave
+              </span>
+            </th>
+            <th className="text-center px-4 py-3 font-medium text-gray-600">
+              <span className="inline-flex items-center gap-1" title="TL-approved absences (not penalized)">
+                <CheckCheck className="h-3.5 w-3.5 text-primary-500" />
+                Excused
+              </span>
+            </th>
+            <th className="text-center px-4 py-3 font-medium text-gray-600">
+              <span className="inline-flex items-center gap-1" title="Penalized absences (0 points)">
+                <Ban className="h-3.5 w-3.5 text-red-500" />
+                Absent
               </span>
             </th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">
@@ -157,7 +169,7 @@ export function WeeklySummaryTable({ summaries, onRowClick }: WeeklySummaryTable
                   )}
                 </td>
 
-                {/* Exempted */}
+                {/* On Leave */}
                 <td className="px-4 py-3 text-center">
                   {summary.isWorkDay && !summary.isHoliday ? (
                     <span className={cn(
@@ -165,6 +177,34 @@ export function WeeklySummaryTable({ summaries, onRowClick }: WeeklySummaryTable
                       summary.onLeaveCount > 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-400'
                     )}>
                       {summary.onLeaveCount}
+                    </span>
+                  ) : (
+                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
+                  )}
+                </td>
+
+                {/* Excused */}
+                <td className="px-4 py-3 text-center">
+                  {summary.isWorkDay && !summary.isHoliday ? (
+                    <span className={cn(
+                      'inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded text-sm font-medium',
+                      summary.excusedCount > 0 ? 'bg-primary-100 text-primary-700' : 'text-gray-400'
+                    )}>
+                      {summary.excusedCount}
+                    </span>
+                  ) : (
+                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
+                  )}
+                </td>
+
+                {/* Absent */}
+                <td className="px-4 py-3 text-center">
+                  {summary.isWorkDay && !summary.isHoliday ? (
+                    <span className={cn(
+                      'inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded text-sm font-medium',
+                      summary.absentCount > 0 ? 'bg-red-100 text-red-700' : 'text-gray-400'
+                    )}>
+                      {summary.absentCount}
                     </span>
                   ) : (
                     <Minus className="h-4 w-4 text-gray-300 mx-auto" />

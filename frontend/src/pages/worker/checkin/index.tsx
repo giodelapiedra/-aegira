@@ -14,7 +14,7 @@
 
 import { useEffect } from 'react';
 import { useAuthStore } from '../../../store/auth.store';
-import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
+import { SkeletonDashboard } from '../../../components/ui/Skeleton';
 
 // Hooks
 import { useCheckinQueries } from './hooks';
@@ -43,8 +43,8 @@ export function CheckinPage() {
     team,
     leaveStatus,
     todayCheckin,
-    recentCheckins,
-    weekStats,
+    recentCheckins: _recentCheckins,
+    weekStats: _weekStats,
     isLoading,
   } = useCheckinQueries();
 
@@ -57,8 +57,8 @@ export function CheckinPage() {
 
   // Re-fetch exemption queries with today's check-in data
   const {
-    exemptionStatus: exemptionStatusWithId,
-    pendingExemption: pendingExemptionWithId,
+    exemptionStatus: _exemptionStatusWithId,
+    pendingExemption: _pendingExemptionWithId,
   } = useCheckinQueries({
     todayCheckinId: todayCheckin.data?.id,
     todayCheckinStatus: todayCheckin.data?.readinessStatus,
@@ -67,8 +67,8 @@ export function CheckinPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
+      <div className="min-h-[400px]">
+        <SkeletonDashboard />
       </div>
     );
   }

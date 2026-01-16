@@ -9,60 +9,23 @@ import {
   Download,
   Printer,
   User,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Users,
   FileWarning,
-  Activity,
   CheckCircle2,
-  AlertTriangle,
   Sparkles,
-  Smile,
-  Brain,
-  Moon,
-  Lightbulb,
-  Heart,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import api from '../../services/api';
 import { analyticsService, type AISummaryDetail } from '../../services/analytics.service';
 import { useUser } from '../../hooks/useUser';
 import { Button } from '../../components/ui/Button';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonProfile } from '../../components/ui/Skeleton';
 import {
   formatDateTimeFull,
   formatPeriod,
   STATUS_CONFIG,
   type StatusType,
 } from './ai-insights.utils';
-
-// =============================================================================
-// TYPES
-// =============================================================================
-
-interface PeriodMetrics {
-  periodStart: string;
-  periodEnd: string;
-  checkinRate: number;
-  avgScore: number;
-  atRiskCount: number;
-  totalCheckins: number;
-  greenCount: number;
-  yellowCount: number;
-  redCount: number;
-}
-
-interface PeriodComparison {
-  current: PeriodMetrics;
-  previous: PeriodMetrics;
-  changes: {
-    checkinRate: number;
-    avgScore: number;
-    atRiskCount: number;
-    totalCheckins: number;
-  };
-}
 
 // =============================================================================
 // SUB-COMPONENTS
@@ -77,13 +40,9 @@ const GradientBackground = memo(function GradientBackground() {
   );
 });
 
-// Loading spinner wrapper
-const PageLoadingSpinner = memo(function PageLoadingSpinner() {
-  return (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <LoadingSpinner size="lg" />
-    </div>
-  );
+// Loading skeleton wrapper
+const PageLoadingSkeleton = memo(function PageLoadingSkeleton() {
+  return <SkeletonProfile />;
 });
 
 // Status badge
@@ -110,35 +69,6 @@ const StatusBadge = memo(function StatusBadge({ status, size = 'md' }: StatusBad
   );
 });
 
-// Change indicator
-interface ChangeIndicatorProps {
-  value: number;
-  inverted?: boolean;
-  suffix?: string;
-}
-
-const ChangeIndicator = memo(function ChangeIndicator({ value, inverted = false, suffix = '' }: ChangeIndicatorProps) {
-  const isPositive = inverted ? value < 0 : value > 0;
-  const isNegative = inverted ? value > 0 : value < 0;
-  const displayValue = Math.abs(value);
-
-  if (value === 0) {
-    return (
-      <span className="flex items-center gap-1 text-gray-500 text-sm">
-        <Minus className="h-3 w-3" />
-        <span>No change</span>
-      </span>
-    );
-  }
-
-  return (
-    <span className={cn('flex items-center gap-1 text-sm font-medium', isPositive && 'text-emerald-600', isNegative && 'text-rose-600')}>
-      {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-      <span>{isPositive ? '+' : '-'}{displayValue}{suffix}</span>
-    </span>
-  );
-});
-
 // Section header
 interface SectionHeaderProps {
   icon: typeof CheckCircle2;
@@ -155,419 +85,6 @@ const SectionHeader = memo(function SectionHeader({ icon: Icon, title, iconColor
   );
 });
 
-// Metric card
-interface MetricCardProps {
-  icon: typeof Activity;
-  label: string;
-  value: string | number;
-  subtext?: string;
-  gradient: string;
-  iconColor: string;
-  progress?: { value: number; color: string };
-  children?: React.ReactNode;
-}
-
-const MetricCard = memo(function MetricCard({ icon: Icon, label, value, subtext, gradient, iconColor, progress, children }: MetricCardProps) {
-  return (
-    <div className={cn('rounded-xl p-6 border', gradient)}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-gray-900">{label}</h3>
-        <Icon className={cn('h-5 w-5', iconColor)} />
-      </div>
-      <div className="flex items-end gap-2">
-        <span className="text-4xl font-bold text-gray-900">{value}</span>
-        {subtext && <span className="text-xl text-gray-400 mb-1">{subtext}</span>}
-      </div>
-      {progress && (
-        <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
-          <div className={cn('h-full rounded-full transition-all', progress.color)} style={{ width: `${progress.value}%` }} />
-        </div>
-      )}
-      {children}
-    </div>
-  );
-});
-
-// List item
-interface ListItemProps {
-  text: string;
-  index?: number;
-  variant: 'highlight' | 'concern' | 'recommendation';
-}
-
-const ListItem = memo(function ListItem({ text, index, variant }: ListItemProps) {
-  const config = {
-    highlight: {
-      bg: 'bg-emerald-50',
-      border: 'border-emerald-100',
-      iconBg: 'bg-emerald-100',
-      iconColor: 'text-emerald-600',
-      textColor: 'text-emerald-800',
-      Icon: CheckCircle2,
-    },
-    concern: {
-      bg: 'bg-amber-50',
-      border: 'border-amber-100',
-      iconBg: 'bg-amber-100',
-      iconColor: 'text-amber-600',
-      textColor: 'text-amber-800',
-      Icon: AlertTriangle,
-    },
-    recommendation: {
-      bg: 'bg-violet-50',
-      border: 'border-violet-100',
-      iconBg: 'bg-violet-100',
-      iconColor: 'text-violet-600',
-      textColor: 'text-violet-800',
-      Icon: TrendingUp,
-    },
-  };
-
-  const { bg, border, iconBg, iconColor, textColor, Icon } = config[variant];
-
-  return (
-    <div className={cn('flex items-start gap-4 p-4 rounded-xl border', bg, border)}>
-      <div className={cn('h-6 w-6 rounded-full flex items-center justify-center flex-shrink-0', iconBg)}>
-        {index !== undefined ? (
-          <span className={cn('text-sm font-semibold', iconColor)}>{index}</span>
-        ) : (
-          <Icon className={cn('h-4 w-4', iconColor)} />
-        )}
-      </div>
-      <p className={textColor}>{text}</p>
-    </div>
-  );
-});
-
-// =============================================================================
-// WELLNESS COMPONENTS
-// =============================================================================
-
-interface WellnessMetricsCardProps {
-  avgMood: number;
-  avgStress: number;
-  avgSleep: number;
-  avgPhysicalHealth: number;
-}
-
-// Metric configuration for DRY approach
-const METRIC_CONFIG = {
-  mood: {
-    label: 'Mood',
-    icon: Smile,
-    getStatus: (v: number) => v >= 7 ? 'good' : v >= 5 ? 'warning' : 'danger',
-    getLabel: (v: number) => v >= 7 ? 'Good' : v >= 5 ? 'Moderate' : 'Low',
-  },
-  stress: {
-    label: 'Stress',
-    icon: Brain,
-    getStatus: (v: number) => v <= 4 ? 'good' : v <= 6 ? 'warning' : 'danger',
-    getLabel: (v: number) => v <= 4 ? 'Low' : v <= 6 ? 'Moderate' : 'High',
-  },
-  sleep: {
-    label: 'Sleep',
-    icon: Moon,
-    getStatus: (v: number) => v >= 7 ? 'good' : v >= 5 ? 'warning' : 'danger',
-    getLabel: (v: number) => v >= 7 ? 'Good' : v >= 5 ? 'Fair' : 'Poor',
-  },
-  physical: {
-    label: 'Physical',
-    icon: Heart,
-    getStatus: (v: number) => v >= 7 ? 'good' : v >= 5 ? 'warning' : 'danger',
-    getLabel: (v: number) => v >= 7 ? 'Good' : v >= 5 ? 'Fair' : 'Poor',
-  },
-} as const;
-
-const STATUS_STYLES = {
-  good: { text: 'text-emerald-600', bg: 'bg-emerald-100' },
-  warning: { text: 'text-amber-600', bg: 'bg-amber-100' },
-  danger: { text: 'text-rose-600', bg: 'bg-rose-100' },
-} as const;
-
-// Wellness Status Card - Extracted as proper component
-interface WellnessStatusCardProps {
-  mood: number;
-  stress: number;
-  sleep: number;
-  physical: number;
-}
-
-const WellnessStatusCard = memo(function WellnessStatusCard({ mood, stress, sleep, physical }: WellnessStatusCardProps) {
-  const moodOk = mood >= 6;
-  const stressOk = stress <= 5;
-  const sleepOk = sleep >= 6;
-  const physicalOk = physical >= 6;
-  const goodCount = [moodOk, stressOk, sleepOk, physicalOk].filter(Boolean).length;
-
-  const statusConfig = goodCount >= 3
-    ? { status: 'Healthy', color: 'text-emerald-600', bg: 'bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200', dot: 'bg-emerald-500', desc: 'Team wellness metrics are within healthy ranges.' }
-    : goodCount >= 2
-    ? { status: 'Needs Attention', color: 'text-amber-600', bg: 'bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200', dot: 'bg-amber-500', desc: 'Some wellness metrics need monitoring.' }
-    : { status: 'Critical', color: 'text-rose-600', bg: 'bg-gradient-to-br from-rose-50 to-red-50 border-rose-200', dot: 'bg-rose-500', desc: 'Multiple wellness metrics require immediate attention.' };
-
-  return (
-    <div className={cn('rounded-xl p-6 border', statusConfig.bg)}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-gray-900">Team Wellness Status</h3>
-        <Heart className={cn('h-5 w-5', statusConfig.color)} />
-      </div>
-      <div className="flex items-center gap-3">
-        <div className={cn('h-3 w-3 rounded-full', statusConfig.dot)} />
-        <span className={cn('text-2xl font-bold', statusConfig.color)}>{statusConfig.status}</span>
-      </div>
-      <p className="text-sm text-gray-600 mt-3">{statusConfig.desc}</p>
-    </div>
-  );
-});
-
-// Single metric card component
-interface MetricItemProps {
-  type: keyof typeof METRIC_CONFIG;
-  value: number;
-}
-
-const MetricItem = memo(function MetricItem({ type, value }: MetricItemProps) {
-  const config = METRIC_CONFIG[type];
-  const status = config.getStatus(value);
-  const styles = STATUS_STYLES[status];
-  const Icon = config.icon;
-
-  return (
-    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-      <div className="flex items-center gap-2 mb-3">
-        <div className={cn('h-9 w-9 rounded-xl flex items-center justify-center', styles.bg)}>
-          <Icon className={cn('h-5 w-5', styles.text)} />
-        </div>
-        <span className="text-sm font-medium text-gray-700">{config.label}</span>
-      </div>
-      <div className="flex items-baseline gap-1">
-        <span className={cn('text-3xl font-bold', styles.text)}>{value}</span>
-        <span className="text-gray-400 text-sm">/10</span>
-      </div>
-      <p className={cn('text-xs font-medium mt-1', styles.text)}>{config.getLabel(value)}</p>
-    </div>
-  );
-});
-
-// AI Predictions generator
-function getWellnessPredictions(mood: number, stress: number, sleep: number, physical: number) {
-  const predictions: { type: 'success' | 'warning' | 'danger'; message: string }[] = [];
-
-  // Individual metric predictions
-  const addPrediction = (
-    value: number,
-    thresholds: { good: number; warning: number },
-    messages: { good: string; warning: string; danger: string },
-    inverted = false
-  ) => {
-    const isGood = inverted ? value <= thresholds.good : value >= thresholds.good;
-    const isWarning = inverted ? value <= thresholds.warning : value >= thresholds.warning;
-
-    if (isGood) predictions.push({ type: 'success', message: messages.good });
-    else if (isWarning) predictions.push({ type: 'warning', message: messages.warning });
-    else predictions.push({ type: 'danger', message: messages.danger });
-  };
-
-  addPrediction(mood, { good: 7, warning: 5 }, {
-    good: 'Team morale is high. Maintain current engagement activities.',
-    warning: 'Team mood is moderate. Consider team-building activities to boost morale.',
-    danger: 'Low team mood detected. Immediate intervention recommended.',
-  });
-
-  addPrediction(stress, { good: 4, warning: 6 }, {
-    good: 'Stress levels are well-managed. Current workload appears sustainable.',
-    warning: 'Moderate stress detected. Monitor workload distribution.',
-    danger: 'High stress levels across the team. Risk of burnout is elevated.',
-  }, true);
-
-  addPrediction(sleep, { good: 7, warning: 5 }, {
-    good: 'Team is well-rested. Good sleep quality supports optimal performance.',
-    warning: 'Sleep quality is below optimal. Encourage better work-life balance.',
-    danger: 'Poor sleep quality detected. This may impact productivity and safety.',
-  });
-
-  addPrediction(physical, { good: 7, warning: 5 }, {
-    good: 'Team physical health is excellent. Continue promoting healthy practices.',
-    warning: 'Physical health is moderate. Consider wellness programs.',
-    danger: 'Low physical health reported. Review workplace safety measures.',
-  });
-
-  // Combined risk analysis
-  if (stress > 6 && sleep < 5) {
-    predictions.push({ type: 'danger', message: 'Critical: High stress with poor sleep. Immediate action needed to prevent burnout.' });
-  } else if (mood >= 7 && stress <= 4 && sleep >= 7 && physical >= 7) {
-    predictions.push({ type: 'success', message: 'Excellent overall wellness! Team is in optimal condition.' });
-  }
-
-  return predictions;
-}
-
-// Prediction item component
-const PREDICTION_STYLES = {
-  success: { bg: 'bg-emerald-50', border: 'border-emerald-200', iconBg: 'bg-emerald-200', iconColor: 'text-emerald-700', text: 'text-emerald-800' },
-  warning: { bg: 'bg-amber-50', border: 'border-amber-200', iconBg: 'bg-amber-200', iconColor: 'text-amber-700', text: 'text-amber-800' },
-  danger: { bg: 'bg-rose-50', border: 'border-rose-200', iconBg: 'bg-rose-200', iconColor: 'text-rose-700', text: 'text-rose-800' },
-} as const;
-
-const PredictionItem = memo(function PredictionItem({ type, message }: { type: 'success' | 'warning' | 'danger'; message: string }) {
-  const styles = PREDICTION_STYLES[type];
-  const Icon = type === 'success' ? CheckCircle2 : AlertTriangle;
-
-  return (
-    <div className={cn('flex items-start gap-3 p-3 rounded-xl border', styles.bg, styles.border)}>
-      <div className={cn('h-5 w-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5', styles.iconBg)}>
-        <Icon className={cn('h-3 w-3', styles.iconColor)} />
-      </div>
-      <p className={cn('text-sm leading-relaxed', styles.text)}>{message}</p>
-    </div>
-  );
-});
-
-// Main Wellness Metrics Card
-const WellnessMetricsCard = memo(function WellnessMetricsCard({ avgMood, avgStress, avgSleep, avgPhysicalHealth }: WellnessMetricsCardProps) {
-  const predictions = getWellnessPredictions(avgMood, avgStress, avgSleep, avgPhysicalHealth);
-
-  return (
-    <div className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
-          <Activity className="h-6 w-6 text-white" />
-        </div>
-        <div>
-          <h3 className="font-semibold text-gray-900">Team Wellness Metrics</h3>
-          <p className="text-sm text-gray-500">Average metrics with AI predictions</p>
-        </div>
-      </div>
-
-      {/* Metrics Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        <MetricItem type="mood" value={avgMood} />
-        <MetricItem type="stress" value={avgStress} />
-        <MetricItem type="sleep" value={avgSleep} />
-        <MetricItem type="physical" value={avgPhysicalHealth} />
-      </div>
-
-      {/* AI Predictions */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="h-8 w-8 rounded-lg bg-violet-100 flex items-center justify-center">
-            <Lightbulb className="h-4 w-4 text-violet-600" />
-          </div>
-          <span className="text-sm font-semibold text-gray-700">AI Predictions & Suggestions</span>
-        </div>
-        <div className="space-y-2">
-          {predictions.map((prediction, i) => (
-            <PredictionItem key={i} type={prediction.type} message={prediction.message} />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-});
-
-// Period comparison card
-interface PeriodComparisonCardProps {
-  comparison: PeriodComparison;
-}
-
-const PeriodComparisonCard = memo(function PeriodComparisonCard({ comparison }: PeriodComparisonCardProps) {
-  const formatShort = (start: string, end: string) => {
-    const s = new Date(start);
-    const e = new Date(end);
-    return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-  };
-
-  return (
-    <div className="bg-gradient-to-r from-violet-50 via-purple-50 to-pink-50 rounded-xl border border-violet-100 p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="h-10 w-10 rounded-xl bg-violet-100 flex items-center justify-center">
-          <Activity className="h-5 w-5 text-violet-600" />
-        </div>
-        <div>
-          <h3 className="font-semibold text-gray-900">Period Comparison</h3>
-          <p className="text-sm text-gray-500">
-            {formatShort(comparison.current.periodStart, comparison.current.periodEnd)} vs {formatShort(comparison.previous.periodStart, comparison.previous.periodEnd)}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-lg p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-500">Check-in Rate</span>
-            <ChangeIndicator value={comparison.changes.checkinRate} suffix="%" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-gray-900">{comparison.current.checkinRate}%</span>
-            <span className="text-sm text-gray-400">from {comparison.previous.checkinRate}%</span>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-500">Avg Readiness</span>
-            <ChangeIndicator value={comparison.changes.avgScore} suffix="%" />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-gray-900">{comparison.current.avgScore}%</span>
-            <span className="text-sm text-gray-400">from {comparison.previous.avgScore}%</span>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-500">At-Risk Members</span>
-            <ChangeIndicator value={comparison.changes.atRiskCount} inverted />
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-gray-900">{comparison.current.atRiskCount}</span>
-            <span className="text-sm text-gray-400">from {comparison.previous.atRiskCount}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Status Distribution */}
-      <div className="mt-4 pt-4 border-t border-violet-100">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-xs font-medium text-gray-500 mb-2">Current Period</p>
-            <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1 text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                <span className="text-emerald-700 font-medium">{comparison.current.greenCount}</span>
-              </span>
-              <span className="flex items-center gap-1 text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                <span className="text-amber-700 font-medium">{comparison.current.yellowCount}</span>
-              </span>
-              <span className="flex items-center gap-1 text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
-                <span className="text-rose-700 font-medium">{comparison.current.redCount}</span>
-              </span>
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-gray-500 mb-2">Previous Period</p>
-            <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1 text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
-                <span className="text-emerald-600">{comparison.previous.greenCount}</span>
-              </span>
-              <span className="flex items-center gap-1 text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-300" />
-                <span className="text-amber-600">{comparison.previous.yellowCount}</span>
-              </span>
-              <span className="flex items-center gap-1 text-sm">
-                <span className="h-2.5 w-2.5 rounded-full bg-rose-300" />
-                <span className="text-rose-600">{comparison.previous.redCount}</span>
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
 
 // =============================================================================
 // PRINT HANDLER
@@ -742,7 +259,7 @@ export function AIInsightsDetailPage() {
     return (
       <div className="relative min-h-[calc(100vh-120px)]">
         <GradientBackground />
-        <PageLoadingSpinner />
+        <PageLoadingSkeleton />
       </div>
     );
   }
@@ -852,10 +369,11 @@ export function AIInsightsDetailPage() {
                   critical: { label: 'Critical', icon: '🔴', bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', desc: 'Immediate attention required' },
                 };
                 const config = statusConfig[status] || statusConfig.healthy;
-                const avgScore = summary.aggregateData?.memberAnalytics?.length > 0
-                  ? Math.round(summary.aggregateData.memberAnalytics.reduce((sum: number, m: any) => sum + m.avgScore, 0) / summary.aggregateData.memberAnalytics.length)
+                const memberData = summary.aggregateData?.memberAnalytics || [];
+                const avgScore = memberData.length > 0
+                  ? Math.round(memberData.reduce((sum: number, m: any) => sum + m.avgScore, 0) / memberData.length)
                   : 0;
-                const totalCheckins = summary.aggregateData?.memberAnalytics?.reduce((sum: number, m: any) => sum + m.checkinCount, 0) || 0;
+                const totalCheckins = memberData.reduce((sum: number, m: any) => sum + m.checkinCount, 0);
                 return (
                   <div className={cn('rounded-xl border p-6', config.bg, config.border)}>
                     <div className="flex items-center gap-3 mb-3">

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { Input } from '../../components/ui/Input';
 import { Avatar } from '../../components/ui/Avatar';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonTable } from '../../components/ui/Skeleton';
 import { cn } from '../../lib/utils';
 import api from '../../services/api';
 import type { User } from '../../types/user';
@@ -183,10 +183,7 @@ export function PersonnelPage() {
       {/* Personnel Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {usersLoading ? (
-          <div className="p-8 text-center">
-            <LoadingSpinner size="lg" className="mx-auto" />
-            <p className="text-gray-500 mt-4">Loading personnel...</p>
-          </div>
+          <SkeletonTable rows={8} columns={5} />
         ) : filteredUsers.length === 0 ? (
           <div className="p-8 text-center">
             <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />

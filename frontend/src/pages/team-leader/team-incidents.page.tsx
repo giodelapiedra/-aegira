@@ -19,7 +19,7 @@ import { cn } from '../../lib/utils';
 import { formatDisplayDateTime } from '../../lib/date-utils';
 import api from '../../services/api';
 import { Pagination, usePagination } from '../../components/ui/Pagination';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonTable } from '../../components/ui/Skeleton';
 import type { Incident } from '../../types/user';
 
 // Status configuration with colors and icons
@@ -128,11 +128,7 @@ export function TeamIncidentsPage() {
   };
 
   if (teamLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonTable rows={5} columns={5} />;
   }
 
   if (!team) {
@@ -272,10 +268,7 @@ export function TeamIncidentsPage() {
       {/* Incidents List */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {isLoading ? (
-          <div className="p-12 text-center">
-            <LoadingSpinner size="lg" className="mx-auto" />
-            <p className="text-gray-500 mt-4">Loading incidents...</p>
-          </div>
+          <SkeletonTable rows={5} columns={5} />
         ) : filteredIncidents.length === 0 ? (
           <div className="p-12 text-center">
             <div className="h-16 w-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">

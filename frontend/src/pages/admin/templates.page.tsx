@@ -16,7 +16,7 @@ import {
   Hash,
 } from 'lucide-react';
 import { pdfTemplateService, type PDFTemplate, type DetectedField } from '../../services/pdf-template.service';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonTable } from '../../components/ui/Skeleton';
 import { cn } from '../../lib/utils';
 
 const fieldTypeIcons: Record<string, any> = {
@@ -87,8 +87,8 @@ export function TemplatesPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner size="lg" />
+      <div className="space-y-6 p-6">
+        <SkeletonTable rows={6} columns={4} />
       </div>
     );
   }

@@ -27,6 +27,10 @@ export interface DailyTeamSummary {
   yellowCount: number;
   redCount: number;
 
+  // Absence breakdown (from DailyAttendance)
+  absentCount: number;   // Penalized absences (DailyAttendance ABSENT)
+  excusedCount: number;  // TL-approved absences (DailyAttendance EXCUSED)
+
   // Scores
   avgReadinessScore: number | null;
   complianceRate: number | null;
@@ -81,6 +85,8 @@ export interface WeeklySummaryResponse {
     totalGreen: number;
     totalYellow: number;
     totalRed: number;
+    totalAbsent: number;   // Total penalized absences
+    totalExcused: number;  // Total TL-approved absences
   };
 }
 

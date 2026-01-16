@@ -128,6 +128,50 @@ export function getStartOfNextDay(date: Date, timezone: string = DEFAULT_TIMEZON
 }
 
 /**
+ * Get the first work day AFTER a given date (considering team's work schedule)
+ * Always starts from the NEXT day (not the same day).
+ * If workDays is not provided, returns the next calendar day (backwards compatible)
+ *
+ * @param date - Starting date (will look for work days AFTER this date)
+ * @param timezone - Company timezone
+ * @param workDays - Team work days (e.g., "MON,TUE,WED,THU,FRI")
+ * @returns The first work day after the given date
+ *
+ * Example:
+ * - Join date: Friday Jan 16
+ * - Work days: MON,TUE,WED,THU,FRI
+ * - Returns: Monday Jan 19 (skips Saturday and Sunday)
+ */
+export function getFirstWorkDayAfter(
+  date: Date,
+  timezone: string = DEFAULT_TIMEZONE,
+  workDays?: string
+): Date {
+  // If no work days provided, just return next calendar day (backwards compatible)
+  if (!workDays) {
+    return getStartOfNextDay(date, timezone);
+  }
+
+  const workDayList = parseWorkDays(workDays);
+  let current = toDateTime(date, timezone).plus({ days: 1 }).startOf('day');
+
+  // Find the next work day (max 7 iterations to handle edge cases)
+  for (let i = 0; i < 7; i++) {
+    const dayIndex = luxonWeekdayToJS(current.weekday);
+    const dayName = DAY_NAMES[dayIndex];
+
+    if (workDayList.includes(dayName)) {
+      return current.toJSDate();
+    }
+
+    current = current.plus({ days: 1 });
+  }
+
+  // Fallback: if no work day found within 7 days, return next day
+  return getStartOfNextDay(date, timezone);
+}
+
+/**
  * Get today's date range for database queries
  */
 export function getTodayRange(timezone: string = DEFAULT_TIMEZONE): { start: Date; end: Date } {

@@ -3,6 +3,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Button } from '../../components/ui/Button';
+import { SkeletonForm } from '../../components/ui/Skeleton';
 import { cn } from '../../lib/utils';
 import {
   FileText,
@@ -275,11 +276,7 @@ export function VisualPDFFillPage() {
 
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
-      </div>
-    );
+    return <SkeletonForm />;
   }
 
   if (error || !template) {

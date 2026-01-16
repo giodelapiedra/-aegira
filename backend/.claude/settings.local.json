@@ -9,7 +9,10 @@
       "Bash(npx prisma studio)",
       "Bash(npx tsx:*)",
       "Bash(del check-duplicates.ts)",
-      "Bash(del \"D:\\\\Aegira\\\\backend\\\\cleanup-duplicate-checkins.ts\")"
+      "Bash(del \"D:\\\\Aegira\\\\backend\\\\cleanup-duplicate-checkins.ts\")",
+      "Bash(npm run build:*)",
+      "Bash(pushd:*)",
+      "Bash(vercel --prod)"
     ]
   }
 }

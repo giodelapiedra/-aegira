@@ -7,6 +7,7 @@ import { CalendarX, AlertTriangle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '../../../../components/ui/Card';
 import { EmptyState } from '../../../../components/ui/EmptyState';
+import { SkeletonList } from '../../../../components/ui/Skeleton';
 import { AbsenceReviewCard } from '../../../../components/absences/AbsenceReviewCard';
 import { absenceService } from '../../../../services/absence.service';
 
@@ -21,11 +22,7 @@ export function AbsencesTab() {
   });
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
-      </div>
-    );
+    return <SkeletonList items={4} />;
   }
 
   return (

@@ -35,7 +35,7 @@ export function StatusDistributionChart({
 
   const chartData = [
     { name: 'Ready', value: data.green, color: '#22c55e', icon: CheckCircle2 },
-    { name: 'Limited', value: data.yellow, color: '#f59e0b', icon: AlertCircle },
+    { name: 'Caution', value: data.yellow, color: '#f59e0b', icon: AlertCircle },
     { name: 'Not Ready', value: data.red, color: '#ef4444', icon: XCircle },
   ].filter((d) => d.value > 0);
 

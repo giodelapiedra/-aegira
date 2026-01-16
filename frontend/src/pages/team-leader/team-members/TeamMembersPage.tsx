@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Shield } from 'lucide-react';
-import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
+import { SkeletonTable } from '../../../components/ui/Skeleton';
 import { ConfirmModal } from '../../../components/ui/ConfirmModal';
 import { EmptyState, NoSearchResults } from '../../../components/ui/EmptyState';
 import { Pagination, usePagination } from '../../../components/ui/Pagination';
@@ -142,11 +142,7 @@ export function TeamMembersPage({
 
   // Loading state
   if (teamLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonTable rows={8} columns={5} />;
   }
 
   // No team state

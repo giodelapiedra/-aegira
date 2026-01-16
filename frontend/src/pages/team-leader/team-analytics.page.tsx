@@ -32,14 +32,15 @@ import {
   BrainCircuit,
   Gauge,
   Clock,
-  
+  XCircle,
+  CheckCheck,
   ChevronDown,
   CalendarDays,
   Shield,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { teamService, type TeamAnalytics } from '../../services/team.service';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonDashboard } from '../../components/ui/Skeleton';
 import { Avatar } from '../../components/ui/Avatar';
 import { getComplianceColorClasses, getComplianceGradientClasses } from '../../lib/status-config';
 
@@ -74,8 +75,8 @@ export function TeamAnalyticsPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
+      <div className="container mx-auto py-6 px-4">
+        <SkeletonDashboard />
       </div>
     );
   }
@@ -326,7 +327,7 @@ export function TeamAnalyticsPage() {
       )}
 
       {/* Compliance Breakdown */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard
           label="Checked In"
           value={analytics.complianceDetails?.checkedIn ?? 0}
@@ -349,7 +350,21 @@ export function TeamAnalyticsPage() {
           label="Not Checked In"
           value={analytics.complianceDetails?.notCheckedIn ?? 0}
           icon={Clock}
+          color="secondary"
+        />
+        <StatCard
+          label="Excused"
+          value={analytics.complianceDetails?.excusedCount ?? 0}
+          icon={CheckCheck}
+          color="primary"
+          tooltip="TL-approved absences (not penalized)"
+        />
+        <StatCard
+          label="Absent"
+          value={analytics.complianceDetails?.absentCount ?? 0}
+          icon={XCircle}
           color="danger"
+          tooltip="Penalized absences (0 points)"
         />
       </div>
 
@@ -609,21 +624,24 @@ function StatCard({
   value,
   icon: Icon,
   color,
+  tooltip,
 }: {
   label: string;
   value: number;
   icon: typeof Users;
-  color: 'primary' | 'success' | 'warning' | 'danger';
+  color: 'primary' | 'success' | 'warning' | 'danger' | 'secondary';
+  tooltip?: string;
 }) {
   const colorClasses = {
     primary: 'bg-primary-50 text-primary-600',
     success: 'bg-success-50 text-success-600',
     warning: 'bg-warning-50 text-warning-600',
     danger: 'bg-danger-50 text-danger-600',
+    secondary: 'bg-gray-100 text-gray-600',
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
+    <div className="bg-white rounded-xl border border-gray-200 p-4" title={tooltip}>
       <div className="flex items-center gap-3">
         <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center', colorClasses[color])}>
           <Icon className="h-5 w-5" />

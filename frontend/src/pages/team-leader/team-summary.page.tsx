@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Calendar, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonDashboard } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { WeeklySummaryTable, SummaryAggregateCard } from '../../components/domain/team';
 import { useTeamSummary, SUMMARY_PERIODS, type SummaryPeriod } from '../../hooks/useTeamSummary';
@@ -42,11 +42,7 @@ export function TeamSummaryPage() {
   const isLoading = teamLoading || summaryLoading;
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonDashboard />;
   }
 
   if (!team) {
@@ -170,9 +166,15 @@ export function TeamSummaryPage() {
               </div>
             </div>
           </div>
-          <div className="pt-2 border-t border-gray-200">
+          <div className="pt-2 border-t border-gray-200 space-y-1">
             <p className="text-xs text-gray-500">
-              <strong>Exempted</strong> = Members with approved leave requests or excused absences (not counted in expected check-ins)
+              <strong>On Leave</strong> = Members with approved leave requests (Exception APPROVED)
+            </p>
+            <p className="text-xs text-gray-500">
+              <strong>Excused</strong> = TL-approved absences (not penalized, not counted in expected check-ins)
+            </p>
+            <p className="text-xs text-gray-500">
+              <strong>Absent</strong> = Unexcused absences (penalized, 0 points)
             </p>
           </div>
         </div>

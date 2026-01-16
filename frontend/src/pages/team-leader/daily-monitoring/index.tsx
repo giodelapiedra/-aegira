@@ -19,7 +19,7 @@ import { RefreshCw, Users, AlertTriangle } from 'lucide-react';
 
 // UI Components
 import { Button } from '../../../components/ui/Button';
-import { LoadingSpinner } from '../../../components/ui/LoadingSpinner';
+import { SkeletonDashboard } from '../../../components/ui/Skeleton';
 import { useToast } from '../../../components/ui/Toast';
 import { ConfirmModal } from '../../../components/ui/ConfirmModal';
 
@@ -145,11 +145,7 @@ export function DailyMonitoringPage() {
 
   // Loading state
   if (statsLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonDashboard />;
   }
 
   // Error state

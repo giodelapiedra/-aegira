@@ -5,6 +5,7 @@
 
 import { type LucideIcon } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { Skeleton } from './Skeleton';
 
 // ============================================
 // TYPES
@@ -103,7 +104,7 @@ export function StatsCard({
       {/* Value */}
       <div>
         {isLoading ? (
-          <div className="h-8 w-20 bg-gray-200 rounded animate-pulse" />
+          <Skeleton className="h-8 w-20" />
         ) : (
           <p className="text-2xl font-bold text-gray-900">
             {typeof value === 'number' ? value.toLocaleString() : value}

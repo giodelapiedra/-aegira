@@ -44,7 +44,7 @@ export const readinessStatusConfig: Record<string, StatusConfig> = {
     dotColor: 'bg-success-500',
   },
   YELLOW: {
-    label: 'Limited Readiness',
+    label: 'Caution',
     variant: 'warning',
     icon: AlertCircle,
     bgColor: 'bg-warning-50',

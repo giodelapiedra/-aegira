@@ -315,9 +315,7 @@ async function seedMockData() {
             teamId: worker.teamId!,
             date: checkDate,
             scheduledStart: teamInfo.shiftStart,
-            gracePeriodMins: 15,
             checkInTime: null,
-            minutesLate: 0,
             status: AttendanceStatus.ABSENT,
             score: 0,
             isCounted: true,
@@ -325,10 +323,10 @@ async function seedMockData() {
         });
         attendanceCount++;
       } else {
-        const isLate = rand >= 0.70;
-        const minutesLate = isLate ? Math.floor(Math.random() * 45) + 16 : Math.floor(Math.random() * 15);
-        const checkInHour = shiftHour + Math.floor(minutesLate / 60);
-        const checkInMinute = minutesLate % 60;
+        // Random check-in time within first 30 mins of shift (no more late logic)
+        const randomMinutes = Math.floor(Math.random() * 30);
+        const checkInHour = shiftHour;
+        const checkInMinute = randomMinutes;
         const checkInTime = date(daysAgo, checkInHour, checkInMinute);
 
         let mood = Math.floor(Math.random() * 3) + 3;
@@ -377,9 +375,7 @@ async function seedMockData() {
           checkinCount++;
         }
 
-        const attendanceStatus = isLate ? AttendanceStatus.YELLOW : AttendanceStatus.GREEN;
-        const attendanceScore = isLate ? 75 : 100;
-
+        // Always GREEN - no more late penalty
         await prisma.dailyAttendance.create({
           data: {
             userId: worker.id,
@@ -387,11 +383,9 @@ async function seedMockData() {
             teamId: worker.teamId!,
             date: checkDate,
             scheduledStart: teamInfo.shiftStart,
-            gracePeriodMins: 15,
             checkInTime,
-            minutesLate: isLate ? minutesLate : 0,
-            status: attendanceStatus,
-            score: attendanceScore,
+            status: AttendanceStatus.GREEN,
+            score: 100,
             isCounted: true,
           },
         });

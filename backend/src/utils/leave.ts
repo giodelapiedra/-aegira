@@ -13,6 +13,7 @@ import {
   getDateStringInTimezone,
   getDayOfWeekInTimezone,
   getStartOfNextDay,
+  getFirstWorkDayAfter,
   formatLocalDate,
   DEFAULT_TIMEZONE,
   DAY_NAMES,
@@ -76,7 +77,7 @@ export async function getUserLeaveStatus(
     select: {
       teamJoinedAt: true,
       createdAt: true,
-      team: { select: { createdAt: true } },
+      team: { select: { createdAt: true, workDays: true } },
     },
   });
 
@@ -84,8 +85,9 @@ export async function getUserLeaveStatus(
     const userJoinDate = user.teamJoinedAt || user.createdAt;
     const teamCreateDate = user.team?.createdAt || user.createdAt;
     const joinDate = userJoinDate > teamCreateDate ? userJoinDate : teamCreateDate;
-    // Effective start is NEXT DAY after joining
-    const effectiveStartDate = getStartOfNextDay(joinDate, timezone);
+    // Effective start is FIRST WORK DAY after joining (considering team schedule)
+    const teamWorkDays = user.team?.workDays || undefined;
+    const effectiveStartDate = getFirstWorkDayAfter(joinDate, timezone, teamWorkDays);
     const effectiveStartStr = formatLocalDate(effectiveStartDate, timezone);
     const todayStr = formatLocalDate(todayStart.toJSDate(), timezone);
 

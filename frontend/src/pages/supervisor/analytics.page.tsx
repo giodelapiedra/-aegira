@@ -9,6 +9,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { analyticsService } from '../../services/analytics.service';
 
 export function AnalyticsPage() {
@@ -238,7 +239,7 @@ function StatCard({
       </div>
       <div>
         {isLoading ? (
-          <div className="h-8 w-16 bg-gray-200 rounded animate-pulse" />
+          <Skeleton className="h-8 w-16" />
         ) : (
           <p className="text-2xl font-bold text-gray-900">{value}</p>
         )}

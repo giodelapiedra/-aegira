@@ -85,7 +85,7 @@ export function ReadinessTrendChart({
             {data.score}%
           </p>
           <p className="text-xs text-gray-500 capitalize">
-            {data.status === 'GREEN' ? 'Ready' : data.status === 'YELLOW' ? 'Limited' : 'Not Ready'}
+            {data.status === 'GREEN' ? 'Ready' : data.status === 'YELLOW' ? 'Caution' : 'Not Ready'}
           </p>
         </div>
       );
@@ -198,7 +198,7 @@ export function ReadinessTrendChart({
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-full bg-warning-500" />
-          <span>Limited (40-69%)</span>
+          <span>Caution (40-69%)</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-3 h-3 rounded-full bg-danger-500" />

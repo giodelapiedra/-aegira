@@ -18,7 +18,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Pagination } from '../../components/ui/Pagination';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { useToast } from '../../components/ui/Toast';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { SkeletonProfile, SkeletonChart, SkeletonList } from '../../components/ui/Skeleton';
 import { formatDisplayDate, formatTime, formatDisplayDateTime } from '../../lib/date-utils';
 import { cn } from '../../lib/utils';
 import { getExceptionTypeLabel } from '../../services/exemption.service';
@@ -164,7 +164,7 @@ export function MemberProfilePage() {
         };
       case 'YELLOW':
         return {
-          label: 'Limited',
+          label: 'Caution',
           emoji: '😐',
           icon: AlertCircle,
           bg: 'bg-warning-50',
@@ -204,11 +204,7 @@ export function MemberProfilePage() {
   };
 
   if (profileLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <SkeletonProfile />;
   }
 
   if (profileError || !member) {
@@ -465,7 +461,7 @@ export function MemberProfilePage() {
             <div className="p-6">
               {analyticsLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <LoadingSpinner size="md" />
+                  <SkeletonChart height={150} />
                 </div>
               ) : analyticsData ? (
                 <div className="space-y-6">
@@ -573,7 +569,7 @@ export function MemberProfilePage() {
                           : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
                       )}
                     >
-                      {status === 'all' ? 'All' : status === 'GREEN' ? 'Ready' : status === 'YELLOW' ? 'Limited' : 'Not Ready'}
+                      {status === 'all' ? 'All' : status === 'GREEN' ? 'Ready' : status === 'YELLOW' ? 'Caution' : 'Not Ready'}
                     </button>
                   ))}
                 </div>
@@ -581,7 +577,7 @@ export function MemberProfilePage() {
 
               {checkinsLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <LoadingSpinner size="md" />
+                  <SkeletonChart height={150} />
                 </div>
               ) : checkinsData?.data && checkinsData.data.length > 0 ? (
                 <>
@@ -714,7 +710,7 @@ export function MemberProfilePage() {
                 </h3>
                 {exemptionsLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <LoadingSpinner size="sm" />
+                    <SkeletonList items={3} />
                   </div>
                 ) : exemptionsData?.data && exemptionsData.data.length > 0 ? (
                   <div className="space-y-2">
@@ -765,7 +761,7 @@ export function MemberProfilePage() {
                 </h3>
                 {absencesLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <LoadingSpinner size="sm" />
+                    <SkeletonList items={3} />
                   </div>
                 ) : absencesData?.data && absencesData.data.length > 0 ? (
                   <div className="space-y-2">
@@ -820,7 +816,7 @@ export function MemberProfilePage() {
             <div>
               {incidentsLoading ? (
                 <div className="flex items-center justify-center py-16">
-                  <LoadingSpinner size="md" />
+                  <SkeletonChart height={150} />
                 </div>
               ) : incidentsData?.data && incidentsData.data.length > 0 ? (
                 <div className="divide-y divide-gray-100">

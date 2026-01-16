@@ -163,7 +163,7 @@ export function WellnessInsightCard({
   stress,
   sleep,
   physicalHealth,
-  readinessStatus,
+  readinessStatus: _readinessStatus,
 }: WellnessInsightCardProps) {
   const concerningFactors = analyzeConcerningFactors(mood, stress, sleep, physicalHealth);
 
