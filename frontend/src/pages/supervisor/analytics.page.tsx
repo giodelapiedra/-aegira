@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   TrendingUp,
-  TrendingDown,
   Users,
   CheckCircle2,
   AlertTriangle,
@@ -9,8 +8,8 @@ import {
   Clock,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { Skeleton } from '../../components/ui/Skeleton';
 import { analyticsService } from '../../services/analytics.service';
+import { StatCard } from '../../components/ui/StatCard';
 
 export function AnalyticsPage() {
   // Get dashboard stats from analytics service
@@ -65,7 +64,7 @@ export function AnalyticsPage() {
           label="Pending Approvals"
           value={pendingExceptions}
           icon={Clock}
-          color="secondary"
+          color="gray"
           isLoading={isLoading}
         />
       </div>
@@ -189,61 +188,6 @@ export function AnalyticsPage() {
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  trend,
-  isLoading,
-}: {
-  label: string;
-  value: number | string;
-  icon: typeof Users;
-  color: 'primary' | 'secondary' | 'success' | 'warning' | 'danger';
-  trend?: 'up' | 'down' | 'neutral';
-  isLoading?: boolean;
-}) {
-  const colorClasses = {
-    primary: 'bg-primary-50 text-primary-600',
-    secondary: 'bg-secondary-50 text-secondary-600',
-    success: 'bg-success-50 text-success-600',
-    warning: 'bg-warning-50 text-warning-600',
-    danger: 'bg-danger-50 text-danger-600',
-  };
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center', colorClasses[color])}>
-          <Icon className="h-5 w-5" />
-        </div>
-        {trend && (
-          <div
-            className={cn(
-              'flex items-center gap-1 text-xs font-medium',
-              trend === 'up' && 'text-success-600',
-              trend === 'down' && 'text-danger-600',
-              trend === 'neutral' && 'text-gray-500'
-            )}
-          >
-            {trend === 'up' && <TrendingUp className="h-3 w-3" />}
-            {trend === 'down' && <TrendingDown className="h-3 w-3" />}
-          </div>
-        )}
-      </div>
-      <div>
-        {isLoading ? (
-          <Skeleton className="h-8 w-16" />
-        ) : (
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-        )}
-        <p className="text-sm text-gray-500 mt-1">{label}</p>
       </div>
     </div>
   );

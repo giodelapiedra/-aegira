@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useUser } from '../../hooks/useUser';
 import { cn } from '../../lib/utils';
-import { Skeleton } from '../../components/ui/Skeleton';
+import { StatCard } from '../../components/ui/StatCard';
 import { analyticsService } from '../../services/analytics.service';
 
 interface CompanyStats {
@@ -73,7 +73,7 @@ export function ExecutiveDashboard() {
       description: 'View and manage company users',
       icon: Users,
       href: '/executive/users',
-      color: 'bg-secondary-500',
+      color: 'bg-gray-500',
     },
     {
       label: 'View Dashboard',
@@ -115,35 +115,31 @@ export function ExecutiveDashboard() {
         </div>
       </div>
 
-      {/* Stats Grid */}
+      {/* Stats Grid - Using Centralized StatCard */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
-          label="Total Users"
-          value={stats?.totalUsers || 0}
           icon={Users}
+          value={isLoading ? '...' : stats?.totalUsers || 0}
+          label="Total Users"
           color="primary"
-          isLoading={isLoading}
         />
         <StatCard
-          label="Check-in Rate"
-          value={`${stats?.checkinRate || 0}%`}
           icon={TrendingUp}
+          value={isLoading ? '...' : `${stats?.checkinRate || 0}%`}
+          label="Check-in Rate"
           color="success"
-          isLoading={isLoading}
         />
         <StatCard
-          label="Open Incidents"
-          value={stats?.openIncidents || 0}
           icon={AlertTriangle}
+          value={isLoading ? '...' : stats?.openIncidents || 0}
+          label="Open Incidents"
           color="danger"
-          isLoading={isLoading}
         />
         <StatCard
-          label="Pending Approvals"
-          value={stats?.pendingExceptions || 0}
           icon={CheckCircle2}
-          color="secondary"
-          isLoading={isLoading}
+          value={isLoading ? '...' : stats?.pendingExceptions || 0}
+          label="Pending Approvals"
+          color="gray"
         />
       </div>
 
@@ -239,46 +235,6 @@ export function ExecutiveDashboard() {
             />
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  isLoading,
-}: {
-  label: string;
-  value: number | string;
-  icon: typeof Users;
-  color: 'primary' | 'secondary' | 'success' | 'warning' | 'danger';
-  isLoading?: boolean;
-}) {
-  const colorClasses = {
-    primary: 'bg-primary-50 text-primary-600',
-    secondary: 'bg-secondary-50 text-secondary-600',
-    success: 'bg-success-50 text-success-600',
-    warning: 'bg-warning-50 text-warning-600',
-    danger: 'bg-danger-50 text-danger-600',
-  };
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center', colorClasses[color])}>
-          <Icon className="h-5 w-5" />
-        </div>
-      </div>
-      <div>
-        {isLoading ? (
-          <Skeleton className="h-8 w-16" />
-        ) : (
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-        )}
-        <p className="text-sm text-gray-500 mt-1">{label}</p>
       </div>
     </div>
   );

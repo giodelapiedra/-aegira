@@ -50,7 +50,7 @@ systemLogsRoutes.get('/', async (c) => {
   }
 
   const page = parseInt(c.req.query('page') || '1');
-  const limit = parseInt(c.req.query('limit') || '50');
+  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 200);
   const action = c.req.query('action');
   const entityType = c.req.query('entityType');
   const userId = c.req.query('userId');

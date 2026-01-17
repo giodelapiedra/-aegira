@@ -2,4 +2,9 @@
  * Check-in Page Hooks
  */
 
-export { useCheckinQueries } from './useCheckinQueries';
+// Re-export consolidated dashboard hooks from shared worker hooks
+export {
+  useWorkerDashboard,
+  useInvalidateWorkerDashboard,
+  useDashboardHelpers,
+} from '../../hooks';

@@ -21,14 +21,20 @@ export function formatLocalDate(date: Date): string {
 
 /**
  * Format date to display format (e.g., "Dec 30, 2024")
+ * @param date - Date to format
+ * @param timezone - Optional timezone (defaults to browser timezone)
  */
-export function formatDisplayDate(date: Date | string): string {
+export function formatDisplayDate(date: Date | string, timezone?: string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('en-US', {
+  const options: Intl.DateTimeFormatOptions = {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-  });
+  };
+  if (timezone) {
+    options.timeZone = timezone;
+  }
+  return d.toLocaleDateString('en-US', options);
 }
 
 /**

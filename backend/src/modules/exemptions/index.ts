@@ -548,7 +548,7 @@ exemptionsRoutes.get('/', async (c) => {
   const userId = c.get('userId');
   const companyId = c.get('companyId');
   const page = parseInt(c.req.query('page') || '1');
-  const limit = parseInt(c.req.query('limit') || '20');
+  const limit = Math.min(parseInt(c.req.query('limit') || '20'), 500);
   const status = c.req.query('status');
 
   const user = await prisma.user.findUnique({
@@ -768,8 +768,16 @@ exemptionsRoutes.patch('/:id/approve', async (c) => {
   const body = approveExemptionSchema.parse(await c.req.json());
 
   // Get existing exemption with user's team info for work days
+  // Accept both isExemption: true OR linkedIncidentId (incident-linked exceptions)
   const existing = await prisma.exception.findFirst({
-    where: { id, companyId, isExemption: true },
+    where: {
+      id,
+      companyId,
+      OR: [
+        { isExemption: true },
+        { linkedIncidentId: { not: null } },
+      ],
+    },
     include: {
       user: {
         select: {
@@ -928,6 +936,18 @@ exemptionsRoutes.patch('/:id/approve', async (c) => {
     },
   });
 
+  // If linked to an incident, add activity record
+  if (existing.linkedIncidentId) {
+    await prisma.incidentActivity.create({
+      data: {
+        incidentId: existing.linkedIncidentId,
+        userId: reviewerId,
+        type: 'COMMENT',
+        comment: `Leave request approved by ${reviewer?.firstName} ${reviewer?.lastName}. Return date: ${endDateDisplay}${adjustmentNote}`,
+      },
+    });
+  }
+
   return c.json(exemption);
 });
 
@@ -941,8 +961,16 @@ exemptionsRoutes.patch('/:id/reject', async (c) => {
   const currentUser = c.get('user');
   const body = rejectExemptionSchema.parse(await c.req.json());
 
+  // Accept both isExemption: true OR linkedIncidentId (incident-linked exceptions)
   const existing = await prisma.exception.findFirst({
-    where: { id, companyId, isExemption: true },
+    where: {
+      id,
+      companyId,
+      OR: [
+        { isExemption: true },
+        { linkedIncidentId: { not: null } },
+      ],
+    },
     include: {
       user: {
         select: {
@@ -1025,6 +1053,18 @@ exemptionsRoutes.patch('/:id/reject', async (c) => {
       isExemption: true,
     },
   });
+
+  // If linked to an incident, add activity record
+  if (existing.linkedIncidentId) {
+    await prisma.incidentActivity.create({
+      data: {
+        incidentId: existing.linkedIncidentId,
+        userId: reviewerId,
+        type: 'COMMENT',
+        comment: `Leave request rejected by ${reviewer?.firstName} ${reviewer?.lastName}.${body.notes ? ` Reason: ${body.notes}` : ''}`,
+      },
+    });
+  }
 
   return c.json(exemption);
 });

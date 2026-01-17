@@ -83,7 +83,7 @@ export type CreateCheckinInput = z.infer<typeof createCheckinSchema>;
 // INCIDENT SCHEMAS
 // ============================================
 
-const incidentTypeEnum = z.enum(['INJURY', 'ILLNESS', 'MENTAL_HEALTH', 'EQUIPMENT', 'ENVIRONMENTAL', 'OTHER']);
+const incidentTypeEnum = z.enum(['INJURY', 'ILLNESS', 'MENTAL_HEALTH', 'MEDICAL_EMERGENCY', 'HEALTH_SAFETY', 'OTHER']);
 const incidentSeverityEnum = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 
 export const createIncidentSchema = z.object({

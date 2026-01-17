@@ -9,12 +9,17 @@ import type { CheckinAvailability } from './types';
 /**
  * Check if check-in is available based on team schedule and current time
  * Uses company timezone for all calculations
+ *
+ * @param team - Team details with schedule info
+ * @param timezone - Company timezone (IANA format) - REQUIRED, no fallback
  */
-export function checkCheckinAvailability(team: TeamDetails): CheckinAvailability {
+export function checkCheckinAvailability(
+  team: Pick<TeamDetails, 'workDays' | 'shiftStart' | 'shiftEnd'>,
+  timezone: string
+): CheckinAvailability {
   const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
-  // Use company timezone for all calculations (centralized)
-  const timezone = team.company?.timezone || 'Asia/Manila';
+  // Use provided timezone (centralized from company settings)
   const nowInTz = getNowInTimezone(timezone);
   const currentDay = dayNames[nowInTz.dayOfWeek];
   const workDays = team.workDays.split(',').map(d => d.trim().toUpperCase());
@@ -36,15 +41,12 @@ export function checkCheckinAvailability(team: TeamDetails): CheckinAvailability
   const shiftStartMinutes = shiftStartHour * 60 + shiftStartMin;
   const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
 
-  // Allow 30 minutes early check-in
-  const gracePeriod = 30;
-  const allowedStartMinutes = shiftStartMinutes - gracePeriod;
-
-  if (currentTimeMinutes < allowedStartMinutes) {
+  // Check-in only allowed from shift start time onwards (no early check-in)
+  if (currentTimeMinutes < shiftStartMinutes) {
     return {
       available: false,
       reason: 'TOO_EARLY',
-      message: `Check-in is not yet available. You can check in starting ${gracePeriod} minutes before your shift.`,
+      message: `Check-in is not yet available. Your shift starts at ${team.shiftStart}.`,
       shiftStart: team.shiftStart,
     };
   }

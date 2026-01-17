@@ -295,6 +295,12 @@ export const supervisorSections: NavSection[] = [
     title: 'Health & Safety',
     items: [
       {
+        id: 'incident-assignment',
+        label: 'Incident Assignment',
+        href: '/supervisor/incidents-assignment',
+        icon: ClipboardList,
+      },
+      {
         id: 'rehabilitation',
         label: 'Rehabilitation',
         href: '/rehabilitation',
@@ -479,6 +485,12 @@ export const whsControlSections: NavSection[] = [
         label: 'WHS Dashboard',
         href: '/whs',
         icon: Shield,
+      },
+      {
+        id: 'my-incidents',
+        label: 'My Assigned Cases',
+        href: '/whs/my-incidents',
+        icon: AlertTriangle,
       },
     ],
   },

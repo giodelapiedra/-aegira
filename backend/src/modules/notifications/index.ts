@@ -9,7 +9,7 @@ const notificationsRoutes = new Hono<AppContext>();
 notificationsRoutes.get('/', async (c) => {
   const userId = c.get('userId');
   const companyId = c.get('companyId');
-  const limit = parseInt(c.req.query('limit') || '100');
+  const limit = Math.min(parseInt(c.req.query('limit') || '100'), 500); // Cap at 500 max
   const filter = c.req.query('filter') || 'all'; // all, unread, read, archived
 
   // Build where clause based on filter

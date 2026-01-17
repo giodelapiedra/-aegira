@@ -27,15 +27,8 @@ import {
 import { recalculateTodaySummary } from '../../utils/daily-summary.js';
 
 // ===========================================
-// CONSTANTS
+// ROUTES
 // ===========================================
-
-/**
- * Grace period in minutes for early check-in
- * - Workers can check in this many minutes BEFORE their shift starts
- * - All check-ins within shift hours are GREEN (no late penalty)
- */
-const GRACE_PERIOD_MINUTES = 15;
 
 const checkinsRoutes = new Hono<AppContext>();
 
@@ -79,7 +72,7 @@ checkinsRoutes.get('/today', async (c) => {
 checkinsRoutes.get('/my', async (c) => {
   const userId = c.get('userId');
   const page = parseInt(c.req.query('page') || '1');
-  const limit = parseInt(c.req.query('limit') || '10');
+  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 500);
   const status = c.req.query('status');
   const startDate = c.req.query('startDate');
   const endDate = c.req.query('endDate');
@@ -145,7 +138,7 @@ checkinsRoutes.get('/', async (c) => {
   const user = c.get('user');
   const currentUserId = c.get('userId');
   const page = parseInt(c.req.query('page') || '1');
-  const limit = parseInt(c.req.query('limit') || '10');
+  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 500);
   const userId = c.req.query('userId');
   let teamId = c.req.query('teamId');
   const status = c.req.query('status');
@@ -320,12 +313,10 @@ checkinsRoutes.post('/', async (c) => {
   const shiftStartMinutes = shiftStartHour * 60 + shiftStartMin;
   const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
 
-  // Allow early check-in using the same grace period as attendance scoring
-  const allowedStartMinutes = shiftStartMinutes - GRACE_PERIOD_MINUTES;
-
-  if (currentTimeMinutes < allowedStartMinutes) {
+  // Check-in only allowed from shift start time onwards (no early check-in)
+  if (currentTimeMinutes < shiftStartMinutes) {
     return c.json({
-      error: `Check-in is not yet available. Your shift starts at ${team.shiftStart}. You can check in starting ${GRACE_PERIOD_MINUTES} minutes before.`,
+      error: `Check-in is not yet available. Your shift starts at ${team.shiftStart}.`,
       code: 'TOO_EARLY'
     }, 400);
   }

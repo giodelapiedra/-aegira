@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
+import { StatCard } from '../../components/ui/StatCard';
 import { SkeletonDashboard } from '../../components/ui/Skeleton';
 import { cn } from '../../lib/utils';
 import { formatDisplayDateTime } from '../../lib/date-utils';
@@ -10,7 +11,7 @@ import {
   FileText,
   AlertTriangle,
   CheckCircle2,
-  
+  Users,
   Activity,
 } from 'lucide-react';
 import { whsService } from '../../services/whs.service';
@@ -56,23 +57,20 @@ export function WHSDashboard() {
         </Link>
       </div>
 
-      {/* Quick Stats */}
+      {/* Quick Stats - Using Centralized StatCard */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="bg-gradient-to-br from-primary-50 to-white border-primary-200">
-          <div className="text-center py-4">
-            <FileText className="h-8 w-8 text-primary-600 mx-auto mb-2" />
-            <p className="text-3xl font-bold text-primary-700">{stats?.totalMembers || 0}</p>
-            <p className="text-sm text-primary-600">Total Members</p>
-          </div>
-        </Card>
-
-        <Card className="bg-gradient-to-br from-warning-50 to-white border-warning-200">
-          <div className="text-center py-4">
-            <AlertTriangle className="h-8 w-8 text-warning-600 mx-auto mb-2" />
-            <p className="text-3xl font-bold text-warning-700">{stats?.openIncidents || 0}</p>
-            <p className="text-sm text-warning-600">Open Incidents</p>
-          </div>
-        </Card>
+        <StatCard
+          icon={Users}
+          value={stats?.totalMembers || 0}
+          label="Total Members"
+          color="primary"
+        />
+        <StatCard
+          icon={AlertTriangle}
+          value={stats?.openIncidents || 0}
+          label="Open Incidents"
+          color="warning"
+        />
       </div>
 
       {/* Main Content Grid */}

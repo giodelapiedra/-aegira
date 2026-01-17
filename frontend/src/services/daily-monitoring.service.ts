@@ -476,7 +476,7 @@ export function getMetricColor(value: number, inverted = false): string {
  * @param dateString - ISO date string
  * @param timezone - Company timezone for display fallback
  */
-export function formatTimeAgo(dateString: string, timezone: string = 'Asia/Manila'): string {
+export function formatTimeAgo(dateString: string, timezone: string): string {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();

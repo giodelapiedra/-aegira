@@ -893,3 +893,6 @@ IMPORTANT: Walang LATE/YELLOW sa attendance!
 
 *Documentation para sa Aegira Attendance & Wellness Management System*
 *Version 3.0 - January 2026*
+
+
+

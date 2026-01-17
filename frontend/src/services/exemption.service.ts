@@ -216,7 +216,7 @@ export function getExceptionTypeLabel(type: ExceptionType): string {
  * @param endDate - End date string (YYYY-MM-DD or ISO string)
  * @param timezone - Company timezone (IANA format)
  */
-export function getDaysRemaining(endDate: string | null, timezone: string = 'Asia/Manila'): number {
+export function getDaysRemaining(endDate: string | null, timezone: string): number {
   if (!endDate) return 0;
 
   // Get today in company timezone (start of day)
@@ -337,7 +337,7 @@ export function getActualReturnWorkDay(
 export function getDaysRemainingToWorkDay(
   endDate: string | null,
   workDays: string = 'MON,TUE,WED,THU,FRI',
-  timezone: string = 'Asia/Manila'
+  timezone: string
 ): { days: number; actualReturnDate: Date | null; wasAdjusted: boolean } {
   if (!endDate) return { days: 0, actualReturnDate: null, wasAdjusted: false };
 

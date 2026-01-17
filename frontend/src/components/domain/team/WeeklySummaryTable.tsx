@@ -2,10 +2,11 @@
  * WeeklySummaryTable Component
  *
  * Displays a table of daily summaries for a week/period.
+ * Clean, minimal design - no colored icons in headers.
  */
 
 import { useMemo } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Minus, Shield, CheckCheck, Ban } from 'lucide-react';
+import { Minus } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import type { DailyTeamSummary } from '../../../types/summary';
 import { getDayStatus, dayStatusColors } from '../../../types/summary';
@@ -40,45 +41,18 @@ export function WeeklySummaryTable({ summaries, onRowClick }: WeeklySummaryTable
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
-      <table className="w-full text-sm min-w-[900px]">
+      <table className="w-full text-sm min-w-[800px]">
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">Status</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">Checked In</th>
-            <th className="text-center px-4 py-3 font-medium text-gray-600">
-              <span className="inline-flex items-center gap-1">
-                <Shield className="h-3.5 w-3.5 text-blue-500" />
-                On Leave
-              </span>
-            </th>
-            <th className="text-center px-4 py-3 font-medium text-gray-600">
-              <span className="inline-flex items-center gap-1" title="TL-approved absences (not penalized)">
-                <CheckCheck className="h-3.5 w-3.5 text-primary-500" />
-                Excused
-              </span>
-            </th>
-            <th className="text-center px-4 py-3 font-medium text-gray-600">
-              <span className="inline-flex items-center gap-1" title="Penalized absences (0 points)">
-                <Ban className="h-3.5 w-3.5 text-red-500" />
-                Absent
-              </span>
-            </th>
-            <th className="text-center px-4 py-3 font-medium text-gray-600">
-              <span className="inline-flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-              </span>
-            </th>
-            <th className="text-center px-4 py-3 font-medium text-gray-600">
-              <span className="inline-flex items-center gap-1">
-                <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />
-              </span>
-            </th>
-            <th className="text-center px-4 py-3 font-medium text-gray-600">
-              <span className="inline-flex items-center gap-1">
-                <XCircle className="h-3.5 w-3.5 text-red-500" />
-              </span>
-            </th>
+            <th className="text-center px-4 py-3 font-medium text-gray-600">On Leave</th>
+            <th className="text-center px-4 py-3 font-medium text-gray-600">Excused</th>
+            <th className="text-center px-4 py-3 font-medium text-gray-600">Absent</th>
+            <th className="text-center px-4 py-3 font-medium text-gray-600">Ready</th>
+            <th className="text-center px-4 py-3 font-medium text-gray-600">Caution</th>
+            <th className="text-center px-4 py-3 font-medium text-gray-600">At Risk</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">Compliance</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">Avg Score</th>
           </tr>

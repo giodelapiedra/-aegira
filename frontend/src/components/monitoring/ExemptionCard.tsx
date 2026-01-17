@@ -153,7 +153,7 @@ interface ActiveExemptionCardProps {
   onEndEarly?: (exemption: Exemption) => void;
   onViewDetails?: (exemption: Exemption) => void;
   className?: string;
-  timezone?: string;
+  timezone: string; // Company timezone - REQUIRED
 }
 
 export function ActiveExemptionCard({
@@ -161,7 +161,7 @@ export function ActiveExemptionCard({
   onEndEarly,
   onViewDetails: _onViewDetails,
   className,
-  timezone = 'Asia/Manila',
+  timezone,
 }: ActiveExemptionCardProps) {
   const daysRemaining = getDaysRemaining(exemption.endDate, timezone);
   const endDate = exemption.endDate ? new Date(exemption.endDate) : null;
@@ -252,6 +252,7 @@ interface ExemptionRowProps {
   variant: 'pending' | 'active';
   onClick?: () => void;
   className?: string;
+  timezone: string; // Company timezone - REQUIRED
 }
 
 export function ExemptionRow({
@@ -259,9 +260,10 @@ export function ExemptionRow({
   variant,
   onClick,
   className,
+  timezone,
 }: ExemptionRowProps) {
   const isPending = variant === 'pending';
-  const daysRemaining = getDaysRemaining(exemption.endDate);
+  const daysRemaining = getDaysRemaining(exemption.endDate, timezone);
 
   return (
     <div

@@ -4,7 +4,7 @@ import { CheckCircle2, AlertTriangle, AlertCircle, type LucideIcon } from 'lucid
 // DATE FORMATTING
 // =============================================================================
 
-export function formatDate(dateStr: string, timezone = 'Asia/Manila'): string {
+export function formatDate(dateStr: string, timezone: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
@@ -13,7 +13,7 @@ export function formatDate(dateStr: string, timezone = 'Asia/Manila'): string {
   });
 }
 
-export function formatDateTime(dateStr: string, timezone = 'Asia/Manila'): string {
+export function formatDateTime(dateStr: string, timezone: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -23,7 +23,7 @@ export function formatDateTime(dateStr: string, timezone = 'Asia/Manila'): strin
   });
 }
 
-export function formatDateTimeFull(dateStr: string, timezone = 'Asia/Manila'): string {
+export function formatDateTimeFull(dateStr: string, timezone: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -34,7 +34,7 @@ export function formatDateTimeFull(dateStr: string, timezone = 'Asia/Manila'): s
   });
 }
 
-export function formatPeriod(startDate: string, endDate: string, timezone = 'Asia/Manila'): string {
+export function formatPeriod(startDate: string, endDate: string, timezone: string): string {
   return `${formatDate(startDate, timezone)} - ${formatDate(endDate, timezone)}`;
 }
 

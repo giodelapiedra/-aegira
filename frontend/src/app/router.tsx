@@ -66,6 +66,7 @@ const TeamSummaryPage = lazy(() => import('../pages/team-leader/team-summary.pag
 // LAZY IMPORTS - Incident Pages
 // ============================================
 const IncidentDetailPage = lazy(() => import('../pages/incidents/incident-detail.page').then(m => ({ default: m.IncidentDetailPage })));
+const IncidentPrintPreview = lazy(() => import('../pages/incidents/incident-print-preview.page').then(m => ({ default: m.IncidentPrintPreview })));
 
 // ============================================
 // LAZY IMPORTS - Supervisor Pages
@@ -73,6 +74,7 @@ const IncidentDetailPage = lazy(() => import('../pages/incidents/incident-detail
 const SupervisorDashboard = lazy(() => import('../pages/supervisor/dashboard.page').then(m => ({ default: m.SupervisorDashboard })));
 const PersonnelPage = lazy(() => import('../pages/supervisor/personnel.page').then(m => ({ default: m.PersonnelPage })));
 const AnalyticsPage = lazy(() => import('../pages/supervisor/analytics.page').then(m => ({ default: m.AnalyticsPage })));
+const IncidentsAssignmentPage = lazy(() => import('../pages/supervisor/incidents-assignment.page').then(m => ({ default: m.IncidentsAssignmentPage })));
 
 // ============================================
 // LAZY IMPORTS - Executive Pages
@@ -103,6 +105,7 @@ const SystemLogsPage = lazy(() => import('../pages/shared/system-logs.page').the
 const WHSDashboard = lazy(() => import('../pages/whs/dashboard.page').then(m => ({ default: m.WHSDashboard })));
 const FillFormsPage = lazy(() => import('../pages/whs/fill-forms.page').then(m => ({ default: m.FillFormsPage })));
 const VisualPDFFillPage = lazy(() => import('../pages/whs/visual-pdf-fill.page').then(m => ({ default: m.VisualPDFFillPage })));
+const WHSMyIncidentsPage = lazy(() => import('../pages/whs/my-incidents.page').then(m => ({ default: m.WHSMyIncidentsPage })));
 
 // ============================================
 // ROUTER CONFIGURATION
@@ -149,6 +152,12 @@ export const router = createBrowserRouter([
       {
         path: 'incidents/:id',
         element: <LazyPage><IncidentDetailPage /></LazyPage>,
+      },
+
+      // Incident Print Preview (all users)
+      {
+        path: 'incidents/:id/print',
+        element: <LazyPage><IncidentPrintPreview /></LazyPage>,
       },
 
       // ==========================================
@@ -323,6 +332,14 @@ export const router = createBrowserRouter([
       // SUPERVISOR ROUTES (All lazy loaded)
       // ==========================================
       {
+        path: 'supervisor/incidents-assignment',
+        element: (
+          <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR']}>
+            <LazyPage><IncidentsAssignmentPage /></LazyPage>
+          </RoleGuard>
+        ),
+      },
+      {
         path: 'dashboard',
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR']}>
@@ -459,6 +476,14 @@ export const router = createBrowserRouter([
         element: (
           <RoleGuard allowedRoles={['ADMIN', 'EXECUTIVE', 'WHS_CONTROL']}>
             <LazyPage><WHSDashboard /></LazyPage>
+          </RoleGuard>
+        ),
+      },
+      {
+        path: 'whs/my-incidents',
+        element: (
+          <RoleGuard allowedRoles={['WHS_CONTROL']}>
+            <LazyPage><WHSMyIncidentsPage /></LazyPage>
           </RoleGuard>
         ),
       },

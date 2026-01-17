@@ -10,6 +10,8 @@
  * - Not work day / Too early / Too late
  * - Check-in form
  * - Check-in dashboard (after submission)
+ *
+ * Uses consolidated /worker/dashboard endpoint for data fetching.
  */
 
 import { useEffect } from 'react';
@@ -17,7 +19,11 @@ import { useAuthStore } from '../../../store/auth.store';
 import { SkeletonDashboard } from '../../../components/ui/Skeleton';
 
 // Hooks
-import { useCheckinQueries } from './hooks';
+import {
+  useWorkerDashboard,
+  useInvalidateWorkerDashboard,
+  useDashboardHelpers,
+} from './hooks';
 
 // State Components
 import {
@@ -37,32 +43,32 @@ import { checkCheckinAvailability } from './utils';
 export function CheckinPage() {
   const setUser = useAuthStore((state) => state.setUser);
 
-  // Get today's check-in data first to pass to queries
-  const {
-    currentUser,
-    team,
-    leaveStatus,
-    todayCheckin,
-    recentCheckins: _recentCheckins,
-    weekStats: _weekStats,
-    isLoading,
-  } = useCheckinQueries();
+  // Fetch consolidated dashboard data (replaces 8 separate API calls)
+  const { data: dashboardData, isLoading } = useWorkerDashboard();
+  const helpers = useDashboardHelpers(dashboardData);
+  const invalidateDashboard = useInvalidateWorkerDashboard();
 
   // Update auth store when fresh user data is fetched
   useEffect(() => {
-    if (currentUser.data) {
-      setUser(currentUser.data);
+    if (dashboardData?.user) {
+      // Map dashboard user to auth store format
+      setUser({
+        id: dashboardData.user.id,
+        firstName: dashboardData.user.firstName,
+        lastName: dashboardData.user.lastName,
+        email: dashboardData.user.email,
+        role: dashboardData.user.role,
+        avatar: dashboardData.user.avatar,
+        teamId: dashboardData.user.teamId,
+        team: dashboardData.team
+          ? {
+              id: dashboardData.team.id,
+              name: dashboardData.team.name,
+            }
+          : undefined,
+      });
     }
-  }, [currentUser.data, setUser]);
-
-  // Re-fetch exemption queries with today's check-in data
-  const {
-    exemptionStatus: _exemptionStatusWithId,
-    pendingExemption: _pendingExemptionWithId,
-  } = useCheckinQueries({
-    todayCheckinId: todayCheckin.data?.id,
-    todayCheckinStatus: todayCheckin.data?.readinessStatus,
-  });
+  }, [dashboardData?.user, dashboardData?.team, setUser]);
 
   // Loading state
   if (isLoading) {
@@ -74,59 +80,83 @@ export function CheckinPage() {
   }
 
   // Non-MEMBER/WORKER role - check-in not required
-  if (currentUser.data?.role !== 'MEMBER' && currentUser.data?.role !== 'WORKER') {
-    return <NotRequiredState role={currentUser.data?.role} />;
+  if (dashboardData?.user?.role !== 'MEMBER' && dashboardData?.user?.role !== 'WORKER') {
+    return <NotRequiredState role={dashboardData?.user?.role} />;
   }
 
   // No team assigned
-  if (!currentUser.data?.teamId) {
+  if (!helpers.hasTeam) {
     return <NoTeamState />;
   }
 
   // User is before their effective start date (just added to team today)
-  if (leaveStatus.data?.isBeforeStart) {
+  if (helpers.isBeforeStart) {
     return (
       <WelcomeState
-        effectiveStartDate={leaveStatus.data.effectiveStartDate}
-        teamName={currentUser.data?.team?.name}
+        effectiveStartDate={dashboardData?.leaveStatus.effectiveStartDate || null}
+        teamName={dashboardData?.team?.name}
       />
     );
   }
 
   // User is on approved leave
-  if (leaveStatus.data?.isOnLeave && leaveStatus.data.currentException) {
-    return <OnLeaveState exception={leaveStatus.data.currentException} />;
+  if (helpers.isOnLeave && dashboardData?.leaveStatus.currentException) {
+    return <OnLeaveState exception={dashboardData.leaveStatus.currentException} />;
   }
 
   // Already checked in today - show dashboard
-  if (todayCheckin.data) {
-    // Check if low score reason is needed (YELLOW/RED without reason submitted)
+  if (helpers.hasCheckedInToday && dashboardData?.todayCheckin) {
+    // Check if low score reason is needed (RED without reason submitted)
     const needsLowScoreReason =
-      (todayCheckin.data.readinessStatus === 'RED' ||
-        todayCheckin.data.readinessStatus === 'YELLOW') &&
-      !todayCheckin.data.lowScoreReason;
+      dashboardData.todayCheckin.readinessStatus === 'RED' &&
+      !dashboardData.todayCheckin.lowScoreReason;
 
     return (
       <CheckinDashboard
-        currentUser={currentUser.data}
-        team={team.data}
-        todayCheckin={todayCheckin.data}
+        currentUser={{
+          id: dashboardData.user.id,
+          firstName: dashboardData.user.firstName,
+          lastName: dashboardData.user.lastName,
+          email: dashboardData.user.email,
+          role: dashboardData.user.role,
+          avatar: dashboardData.user.avatar,
+          teamId: dashboardData.user.teamId,
+          team: dashboardData.team
+            ? { id: dashboardData.team.id, name: dashboardData.team.name }
+            : undefined,
+        }}
+        team={dashboardData.team}
+        todayCheckin={dashboardData.todayCheckin}
         needsLowScoreReason={needsLowScoreReason}
-        onRefetchTodayCheckin={() => todayCheckin.refetch()}
+        onRefetchTodayCheckin={invalidateDashboard}
+      />
+    );
+  }
+
+  // Check if today is a holiday
+  if (helpers.isHoliday && dashboardData?.holidayName) {
+    return (
+      <NotWorkDayState
+        availability={{
+          available: false,
+          reason: 'HOLIDAY',
+          message: `Today is ${dashboardData.holidayName}. Check-in is not required.`,
+          holidayName: dashboardData.holidayName,
+        }}
       />
     );
   }
 
   // Check if check-in is available based on team schedule
-  if (team.data) {
-    const availability = checkCheckinAvailability(team.data);
+  if (dashboardData?.team) {
+    const availability = checkCheckinAvailability(dashboardData.team, dashboardData.timezone);
     if (!availability.available) {
       return <NotWorkDayState availability={availability} />;
     }
   }
 
   // Check-in form
-  return <CheckinForm leaveStatus={leaveStatus.data} />;
+  return <CheckinForm leaveStatus={dashboardData?.leaveStatus} />;
 }
 
 // Default export for router

@@ -26,10 +26,11 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/Button';
-import { Skeleton, SkeletonDashboard } from '../../components/ui/Skeleton';
+import { SkeletonDashboard } from '../../components/ui/Skeleton';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
 import { useToast } from '../../components/ui/Toast';
 import { Avatar } from '../../components/ui/Avatar';
+import { StatCard } from '../../components/ui/StatCard';
 import api from '../../services/api';
 import { useUser } from '../../hooks/useUser';
 
@@ -259,40 +260,35 @@ export function TeamOverviewPage() {
           label="Total Members"
           value={stats?.totalMembers || members.length}
           icon={Users}
-          iconBg="bg-primary-100"
-          iconColor="text-primary-600"
+          color="primary"
           isLoading={statsLoading}
         />
         <StatCard
           label="Checked In"
           value={stats?.checkedIn || 0}
           icon={UserCheck}
-          iconBg="bg-green-100"
-          iconColor="text-green-600"
+          color="success"
           isLoading={statsLoading}
         />
         <StatCard
           label="Not Checked In"
           value={stats?.notCheckedIn || 0}
           icon={Clock}
-          iconBg="bg-yellow-100"
-          iconColor="text-yellow-600"
+          color="warning"
           isLoading={statsLoading}
         />
         <StatCard
           label="On Leave"
           value={stats?.onLeaveCount || 0}
           icon={UserMinus}
-          iconBg="bg-purple-100"
-          iconColor="text-purple-600"
+          color="purple"
           isLoading={statsLoading}
         />
         <StatCard
           label="Avg Score"
           value={stats?.avgReadinessScore ? Math.round(stats.avgReadinessScore) : '—'}
           icon={Activity}
-          iconBg="bg-blue-100"
-          iconColor="text-blue-600"
+          color="blue"
           isLoading={statsLoading}
         />
       </div>
@@ -567,41 +563,6 @@ export function TeamOverviewPage() {
         action="remove"
         isLoading={removeMemberMutation.isPending}
       />
-    </div>
-  );
-}
-
-// Stat Card Component
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  iconBg,
-  iconColor,
-  isLoading,
-}: {
-  label: string;
-  value: number | string;
-  icon: typeof Users;
-  iconBg: string;
-  iconColor: string;
-  isLoading?: boolean;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="flex items-center gap-3">
-        <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center', iconBg)}>
-          <Icon className={cn('h-5 w-5', iconColor)} />
-        </div>
-        <div>
-          {isLoading ? (
-            <Skeleton className="h-7 w-12" />
-          ) : (
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
-          )}
-          <p className="text-sm text-gray-500">{label}</p>
-        </div>
-      </div>
     </div>
   );
 }

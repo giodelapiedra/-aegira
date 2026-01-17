@@ -133,52 +133,6 @@ export function TeamSummaryPage() {
         )}
       </div>
 
-      {/* Legend */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-gray-700 mb-3">Legend</h3>
-        <div className="space-y-3">
-          <div>
-            <p className="text-xs font-medium text-gray-500 mb-2">Compliance Status</p>
-            <div className="flex flex-wrap gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-green-500"></span>
-                <span className="text-gray-600">Perfect (100%)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-blue-500"></span>
-                <span className="text-gray-600">Good (80-99%)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
-                <span className="text-gray-600">Warning (60-79%)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-red-500"></span>
-                <span className="text-gray-600">Poor (&lt;60%)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-purple-500"></span>
-                <span className="text-gray-600">Holiday</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="w-3 h-3 rounded-full bg-gray-300"></span>
-                <span className="text-gray-600">Rest Day</span>
-              </div>
-            </div>
-          </div>
-          <div className="pt-2 border-t border-gray-200 space-y-1">
-            <p className="text-xs text-gray-500">
-              <strong>On Leave</strong> = Members with approved leave requests (Exception APPROVED)
-            </p>
-            <p className="text-xs text-gray-500">
-              <strong>Excused</strong> = TL-approved absences (not penalized, not counted in expected check-ins)
-            </p>
-            <p className="text-xs text-gray-500">
-              <strong>Absent</strong> = Unexcused absences (penalized, 0 points)
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

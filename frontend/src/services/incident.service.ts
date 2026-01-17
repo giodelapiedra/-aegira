@@ -2,7 +2,7 @@ import api from './api';
 import type { Incident, IncidentActivity } from '../types/user';
 
 export interface CreateIncidentData {
-  type: 'INJURY' | 'ILLNESS' | 'MENTAL_HEALTH' | 'EQUIPMENT' | 'ENVIRONMENTAL' | 'OTHER';
+  type: 'INJURY' | 'ILLNESS' | 'MENTAL_HEALTH' | 'MEDICAL_EMERGENCY' | 'HEALTH_SAFETY' | 'OTHER';
   title: string;
   description: string;
   severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -24,11 +24,25 @@ export const incidentService = {
     status?: string;
     severity?: string;
     teamId?: string;
+    search?: string;
+    exceptionStatus?: string;
   }): Promise<{
     data: Incident[];
     pagination: { page: number; limit: number; total: number; totalPages: number };
   }> {
     const response = await api.get('/incidents', { params });
+    return response.data;
+  },
+
+  async getStats(teamId?: string): Promise<{
+    total: number;
+    open: number;
+    inProgress: number;
+    resolved: number;
+    pendingLeave: number;
+    byStatus: { open: number; inProgress: number; resolved: number; closed: number };
+  }> {
+    const response = await api.get('/incidents/stats', { params: teamId ? { teamId } : undefined });
     return response.data;
   },
 
@@ -51,8 +65,26 @@ export const incidentService = {
     return response.data;
   },
 
-  async getMyIncidents(): Promise<Incident[]> {
-    const response = await api.get<Incident[]>('/incidents/my');
+  async getMyIncidents(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<{
+    data: Incident[];
+    pagination: { page: number; limit: number; total: number; totalPages: number };
+  }> {
+    const response = await api.get('/incidents/my', { params });
+    return response.data;
+  },
+
+  async getMyIncidentStats(): Promise<{
+    total: number;
+    open: number;
+    inProgress: number;
+    resolved: number;
+    byStatus: { open: number; inProgress: number; resolved: number; closed: number };
+  }> {
+    const response = await api.get('/incidents/my/stats');
     return response.data;
   },
 

@@ -50,8 +50,8 @@ const typeLabels: Record<string, string> = {
   INJURY: 'Injury',
   ILLNESS: 'Illness',
   MENTAL_HEALTH: 'Mental Health',
-  EQUIPMENT: 'Equipment',
-  ENVIRONMENTAL: 'Environmental',
+  MEDICAL_EMERGENCY: 'Medical Emergency',
+  HEALTH_SAFETY: 'Health & Safety',
   OTHER: 'Other',
 };
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { exceptionService } from '../../services/exception.service';
 import { Button } from '../../components/ui/Button';
@@ -36,7 +36,17 @@ export function ApprovalsPage() {
   const { company } = useAuthStore();
   const [filter, setFilter] = useState<FilterStatus>('PENDING');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
   const [selectedException, setSelectedException] = useState<Exception | null>(null);
   const [approveException, setApproveException] = useState<Exception | null>(null);
   const [rejectException, setRejectException] = useState<Exception | null>(null);
@@ -45,26 +55,28 @@ export function ApprovalsPage() {
   const limit = 10;
 
   const { data: exceptions, isLoading } = useQuery({
-    queryKey: ['exceptions', filter, page],
+    queryKey: ['exceptions', filter, debouncedSearch, page],
     queryFn: () =>
       exceptionService.getAll({
         status: filter === 'all' ? undefined : filter,
+        search: debouncedSearch || undefined,
         page,
         limit,
       }),
   });
 
-  // Get counts for tabs
-  const { data: allExceptions } = useQuery({
-    queryKey: ['exceptions', 'counts'],
-    queryFn: () => exceptionService.getAll({ page: 1, limit: 500 }),
+  // Get stats for tabs (server-side counts)
+  const { data: stats } = useQuery({
+    queryKey: ['exceptions', 'stats'],
+    queryFn: () => exceptionService.getStats(),
+    refetchInterval: 30000,
   });
 
   const counts = {
-    PENDING: allExceptions?.data?.filter((e) => e.status === 'PENDING').length || 0,
-    APPROVED: allExceptions?.data?.filter((e) => e.status === 'APPROVED').length || 0,
-    REJECTED: allExceptions?.data?.filter((e) => e.status === 'REJECTED').length || 0,
-    all: allExceptions?.data?.length || 0,
+    PENDING: stats?.pending || 0,
+    APPROVED: stats?.approved || 0,
+    REJECTED: stats?.rejected || 0,
+    all: stats?.total || 0,
   };
 
   const handleFilterChange = (value: FilterStatus) => {
@@ -172,16 +184,6 @@ export function ApprovalsPage() {
     return labels[type] || type;
   };
 
-  const filteredExceptions = exceptions?.data?.filter((e) => {
-    if (!searchQuery) return true;
-    const search = searchQuery.toLowerCase();
-    return (
-      e.user?.firstName?.toLowerCase().includes(search) ||
-      e.user?.lastName?.toLowerCase().includes(search) ||
-      e.reason?.toLowerCase().includes(search)
-    );
-  });
-
   const getDurationText = (exception: Exception) => {
     const start = formatDisplayDate(exception.startDate);
     if (!exception.endDate) return `${start} - Ongoing`;
@@ -263,7 +265,7 @@ export function ApprovalsPage() {
         {/* List */}
         {isLoading ? (
           <SkeletonTable rows={5} columns={4} />
-        ) : filteredExceptions?.length === 0 ? (
+        ) : exceptions?.data?.length === 0 ? (
           <div className="py-16 text-center">
             <Inbox className="h-12 w-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500">
@@ -272,7 +274,7 @@ export function ApprovalsPage() {
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {filteredExceptions?.map((exception) => (
+            {exceptions?.data?.map((exception) => (
               <div
                 key={exception.id}
                 className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer transition-colors"

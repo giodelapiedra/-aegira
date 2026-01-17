@@ -17,7 +17,8 @@ export type CheckinAvailability =
   | { available: true }
   | { available: false; reason: 'NOT_WORK_DAY'; message: string }
   | { available: false; reason: 'TOO_EARLY'; message: string; shiftStart: string }
-  | { available: false; reason: 'TOO_LATE'; message: string; shiftEnd: string };
+  | { available: false; reason: 'TOO_LATE'; message: string; shiftEnd: string }
+  | { available: false; reason: 'HOLIDAY'; message: string; holidayName: string };
 
 /**
  * Check-in form data

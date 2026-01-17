@@ -52,9 +52,10 @@ export function useHomeCalculations({
   absenceHistory,
   userId,
 }: UseHomeCalculationsParams) {
-  // Centralized timezone
+  // Centralized timezone - comes from company settings via dashboard
+  // Fallback to UTC if not available (edge case - should always come from company settings)
   const timezone = useMemo(
-    () => team?.company?.timezone || 'Asia/Manila',
+    () => team?.company?.timezone || 'UTC',
     [team?.company?.timezone]
   );
 

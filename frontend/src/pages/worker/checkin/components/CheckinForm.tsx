@@ -22,6 +22,7 @@ import { Slider } from '../../../../components/ui/Slider';
 import { useToast } from '../../../../components/ui/Toast';
 import { checkinService, type CreateCheckinData, type CheckinWithAttendance } from '../../../../services/checkin.service';
 import { invalidateRelatedQueries } from '../../../../lib/query-utils';
+import { useInvalidateWorkerDashboard } from '../hooks';
 import { CheckinErrorMessage } from './CheckinErrorMessage';
 import { formatExceptionType } from '../utils';
 
@@ -40,6 +41,7 @@ interface CheckinFormProps {
 export function CheckinForm({ leaveStatus }: CheckinFormProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const invalidateDashboard = useInvalidateWorkerDashboard();
 
   const [formData, setFormData] = useState<CreateCheckinData>({
     mood: 7,
@@ -52,7 +54,10 @@ export function CheckinForm({ leaveStatus }: CheckinFormProps) {
   const createMutation = useMutation({
     mutationFn: (data: CreateCheckinData) => checkinService.create(data),
     onSuccess: (data: CheckinWithAttendance) => {
+      // Invalidate both legacy queries and new consolidated dashboard
       invalidateRelatedQueries(queryClient, 'checkins');
+      invalidateDashboard();
+
       const attendanceMsg = data.attendance
         ? ` | Attendance: ${data.attendance.status}`
         : '';

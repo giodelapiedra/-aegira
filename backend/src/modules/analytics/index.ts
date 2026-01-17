@@ -38,20 +38,16 @@ analyticsRoutes.get('/dashboard', async (c) => {
   const companyId = c.get('companyId');
   const user = c.get('user');
   const userId = c.get('userId');
-
-  // Get company timezone from context (no DB query needed!)
   const timezone = c.get('timezone');
   const todayDate = getTodayForDbDate(timezone);
 
-  // ADMIN role: Super admin - can see ALL data across ALL companies (developer oversight)
   const userRole = user.role?.toUpperCase();
   const isAdmin = userRole === 'ADMIN';
   const isTeamLead = userRole === 'TEAM_LEAD';
 
-  // TEAM_LEAD: Only see their own team's data
+  // TEAM_LEAD: Get their team ID
   let teamIdFilter: string | undefined;
   if (isTeamLead) {
-    // Get team where user is the leader
     const team = await prisma.team.findFirst({
       where: { leaderId: userId, companyId, isActive: true },
       select: { id: true },
@@ -62,21 +58,14 @@ analyticsRoutes.get('/dashboard', async (c) => {
     teamIdFilter = team.id;
   }
 
-  // Build where clause
-  const where: any = { date: todayDate };
-  if (isAdmin) {
-    // Admin sees all companies
-  } else if (isTeamLead && teamIdFilter) {
-    // Team lead sees only their team
-    where.teamId = teamIdFilter;
-    where.companyId = companyId;
-  } else {
-    // Other roles see all teams in their company
-    where.companyId = companyId;
-  }
+  // Build reusable scope filters based on role
+  const companyScope = isAdmin ? {} : { companyId };
+  const teamScope = isTeamLead && teamIdFilter ? { teamId: teamIdFilter, ...companyScope } : companyScope;
 
   // Get today's summaries from DailyTeamSummary (pre-computed data)
-  const summaries = await prisma.dailyTeamSummary.findMany({ where });
+  const summaries = await prisma.dailyTeamSummary.findMany({
+    where: { date: todayDate, ...teamScope },
+  });
 
   // Aggregate from summaries
   let totalMembers = 0;
@@ -84,8 +73,6 @@ analyticsRoutes.get('/dashboard', async (c) => {
   let yellowCount = 0;
   let redCount = 0;
   let onLeaveCount = 0;
-  let totalExpected = 0;
-  let totalCheckedIn = 0;
   let isHoliday = false;
 
   for (const summary of summaries) {
@@ -94,54 +81,45 @@ analyticsRoutes.get('/dashboard', async (c) => {
     yellowCount += summary.yellowCount;
     redCount += summary.redCount;
     onLeaveCount += summary.onLeaveCount;
-    totalExpected += summary.expectedToCheckIn;
-    totalCheckedIn += summary.checkedInCount;
     if (summary.isHoliday) isHoliday = true;
   }
 
-  // Get pending exceptions and open incidents (these aren't in summary)
-  // TEAM_LEAD: Only see exceptions/incidents from their team members
-  let teamMemberIds: string[] | undefined;
-  if (isTeamLead && teamIdFilter) {
-    teamMemberIds = (await prisma.user.findMany({
-      where: { teamId: teamIdFilter, isActive: true },
-      select: { id: true },
-    })).map(u => u.id);
+  // FALLBACK: If no DailyTeamSummary exists (new team, no check-ins yet),
+  // get actual member count from User table
+  if (summaries.length === 0) {
+    totalMembers = await prisma.user.count({
+      where: {
+        ...teamScope,
+        isActive: true,
+        role: { in: ['MEMBER', 'WORKER'] },
+        teamId: { not: null },
+      },
+    });
   }
 
-  const exceptionWhere: any = { status: 'PENDING' };
-  const incidentWhere: any = { status: { in: ['OPEN', 'IN_PROGRESS'] } };
-  
-  if (isAdmin) {
-    // Admin sees all
-  } else if (isTeamLead && teamMemberIds) {
-    // Team lead sees only their team's exceptions/incidents
-    exceptionWhere.userId = { in: teamMemberIds };
-    incidentWhere.reportedBy = { in: teamMemberIds };
-  } else {
-    exceptionWhere.companyId = companyId;
-    incidentWhere.companyId = companyId;
-  }
+  // Get pending exceptions and open incidents
+  // For TEAM_LEAD: filter by their team members only
+  const exceptionScope = isTeamLead && teamIdFilter
+    ? { user: { teamId: teamIdFilter } }
+    : companyScope;
+  const incidentScope = isTeamLead && teamIdFilter
+    ? { reporter: { teamId: teamIdFilter } }
+    : companyScope;
 
   const [pendingExceptions, openIncidents, holidayRecord] = await Promise.all([
-    prisma.exception.count({ where: exceptionWhere }),
-    prisma.incident.count({ where: incidentWhere }),
-    // Get holiday name if it's a holiday
-    isHoliday ? prisma.holiday.findFirst({
-      where: isAdmin ? { date: todayDate } : { companyId, date: todayDate },
-      select: { name: true },
-    }) : null,
+    prisma.exception.count({
+      where: { status: 'PENDING', ...exceptionScope },
+    }),
+    prisma.incident.count({
+      where: { status: { in: ['OPEN', 'IN_PROGRESS'] }, ...incidentScope },
+    }),
+    isHoliday
+      ? prisma.holiday.findFirst({
+          where: { date: todayDate, ...companyScope },
+          select: { name: true },
+        })
+      : null,
   ]);
-
-  // Calculate check-in rate from summaries
-  let checkinRate: number;
-  if (isHoliday) {
-    checkinRate = 100;
-  } else {
-    checkinRate = totalExpected > 0
-      ? Math.round((totalCheckedIn / totalExpected) * 100)
-      : 0;
-  }
 
   return c.json({
     totalMembers,
@@ -151,7 +129,6 @@ analyticsRoutes.get('/dashboard', async (c) => {
     onLeaveCount,
     pendingExceptions,
     openIncidents,
-    checkinRate,
     isHoliday,
     holidayName: holidayRecord?.name || null,
   });
@@ -162,7 +139,7 @@ analyticsRoutes.get('/recent-checkins', async (c) => {
   const companyId = c.get('companyId');
   const user = c.get('user');
   const userId = c.get('userId');
-  const limit = parseInt(c.req.query('limit') || '10');
+  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100);
 
   // ADMIN: see all check-ins across all companies, but only from members with teams
   const userRole = user.role?.toUpperCase();

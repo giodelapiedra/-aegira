@@ -104,7 +104,8 @@ export function TeamsPage() {
 
   // Get company timezone from auth store (already loaded on login)
   const { company } = useUser();
-  const companyTimezone = company?.timezone || 'Asia/Manila';
+  // Timezone from company settings (fallback to UTC if not set)
+  const companyTimezone = company?.timezone || 'UTC';
 
   // Update current time in company timezone every minute
   useEffect(() => {

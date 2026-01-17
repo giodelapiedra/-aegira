@@ -28,7 +28,7 @@ import { systemLogsService, getActionColor } from '../../services/system-logs.se
 import api from '../../services/api';
 
 // Import reusable components
-import { StatsCard, StatsCardGrid } from '../../components/ui/StatsCard';
+import { StatCard, StatCardGrid } from '../../components/ui/StatCard';
 import { Skeleton, SkeletonDashboard } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 
@@ -127,77 +127,62 @@ export function AdminDashboard() {
       {/* Welcome Banner */}
       <WelcomeBanner userName={user?.firstName} companyName={company?.name} />
 
-      {/* Stats Grid - Using Reusable StatsCard */}
-      <StatsCardGrid columns={4}>
-        <StatsCard
-          label="Total Personnel"
-          value={stats?.totalUsers || 0}
+      {/* Stats Grid - Using Centralized StatCard */}
+      <StatCardGrid columns={4}>
+        <StatCard
           icon={Users}
-          variant="primary"
+          value={stats?.totalUsers || 0}
+          label="Total Personnel"
+          color="primary"
           isLoading={statsLoading}
         />
-        <StatsCard
-          label="Green Status"
-          value={stats?.greenCount || 0}
+        <StatCard
           icon={CheckCircle2}
-          variant="success"
+          value={stats?.greenCount || 0}
+          label="Green Status"
+          color="success"
           isLoading={statsLoading}
-          description={stats && stats.totalUsers > 0 ? `${Math.round((stats.greenCount / stats.totalUsers) * 100)}% of total` : '0% of total'}
         />
-        <StatsCard
-          label="Yellow Status"
-          value={stats?.yellowCount || 0}
+        <StatCard
           icon={AlertTriangle}
-          variant="warning"
+          value={stats?.yellowCount || 0}
+          label="Yellow Status"
+          color="warning"
           isLoading={statsLoading}
-          description={stats && stats.totalUsers > 0 ? `${Math.round((stats.yellowCount / stats.totalUsers) * 100)}% of total` : '0% of total'}
         />
-        <StatsCard
-          label="Red Status"
-          value={stats?.redCount || 0}
+        <StatCard
           icon={XCircle}
-          variant="danger"
+          value={stats?.redCount || 0}
+          label="Red Status"
+          color="danger"
           isLoading={statsLoading}
-          description={stats && stats.totalUsers > 0 ? `${Math.round((stats.redCount / stats.totalUsers) * 100)}% of total` : '0% of total'}
         />
-      </StatsCardGrid>
+      </StatCardGrid>
 
-      {/* Secondary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-6 h-full">
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-primary-100 flex-shrink-0">
-              <Activity className="h-6 w-6 text-primary-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-2xl font-bold text-gray-900">{stats?.checkinRate || 0}%</p>
-              <p className="text-sm text-gray-500">Today's Check-in Rate</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-6 h-full">
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-warning-100 flex-shrink-0">
-              <FileText className="h-6 w-6 text-warning-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-2xl font-bold text-gray-900">{stats?.pendingExceptions || 0}</p>
-              <p className="text-sm text-gray-500">Pending Exceptions</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-6 h-full">
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-danger-100 flex-shrink-0">
-              <AlertTriangle className="h-6 w-6 text-danger-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-2xl font-bold text-gray-900">{stats?.openIncidents || 0}</p>
-              <p className="text-sm text-gray-500">Open Incidents</p>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Secondary Stats - Using Centralized StatCard */}
+      <StatCardGrid columns={3}>
+        <StatCard
+          icon={Activity}
+          value={`${stats?.checkinRate || 0}%`}
+          label="Check-in Rate"
+          color="primary"
+          isLoading={statsLoading}
+        />
+        <StatCard
+          icon={FileText}
+          value={stats?.pendingExceptions || 0}
+          label="Pending Exceptions"
+          color="warning"
+          isLoading={statsLoading}
+        />
+        <StatCard
+          icon={AlertTriangle}
+          value={stats?.openIncidents || 0}
+          label="Open Incidents"
+          color="danger"
+          isLoading={statsLoading}
+        />
+      </StatCardGrid>
 
       {/* Quick Actions */}
       <QuickActionsGrid actions={quickActions} />

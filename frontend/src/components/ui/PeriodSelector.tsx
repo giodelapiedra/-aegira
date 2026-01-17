@@ -16,7 +16,7 @@ export interface DateRange {
 interface PeriodSelectorProps {
   value: DateRange;
   onChange: (range: DateRange) => void;
-  timezone?: string; // Company timezone
+  timezone: string; // Company timezone - REQUIRED
   className?: string;
 }
 
@@ -31,9 +31,9 @@ const presets: { id: PeriodPreset; label: string }[] = [
 /**
  * Get date range from preset using company timezone
  * @param preset - Period preset
- * @param timezone - Company timezone (IANA format, e.g., "Asia/Manila")
+ * @param timezone - Company timezone (IANA format) - REQUIRED, no fallback
  */
-export function getDateRangeFromPreset(preset: PeriodPreset, timezone: string = 'Asia/Manila'): DateRange {
+export function getDateRangeFromPreset(preset: PeriodPreset, timezone: string): DateRange {
   // Get current date in company timezone
   const nowInTz = getNowInTimezone(timezone);
   const todayDate = nowInTz.date;
@@ -77,7 +77,7 @@ export function getDateRangeFromPreset(preset: PeriodPreset, timezone: string = 
   }
 }
 
-export function PeriodSelector({ value, onChange, timezone = 'Asia/Manila', className }: PeriodSelectorProps) {
+export function PeriodSelector({ value, onChange, timezone, className }: PeriodSelectorProps) {
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 

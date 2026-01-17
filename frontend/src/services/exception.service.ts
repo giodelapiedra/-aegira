@@ -20,11 +20,22 @@ export const exceptionService = {
     page?: number;
     limit?: number;
     status?: string;
+    search?: string;
   }): Promise<{
     data: Exception[];
     pagination: { page: number; limit: number; total: number; totalPages: number };
   }> {
     const response = await api.get('/exceptions', { params });
+    return response.data;
+  },
+
+  async getStats(): Promise<{
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+  }> {
+    const response = await api.get('/exceptions/stats');
     return response.data;
   },
 

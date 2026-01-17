@@ -25,12 +25,10 @@ import {
   XCircle,
   Users,
   UserX,
-  
-  Calendar,
 } from 'lucide-react';
 
 type Severity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-type IncidentType = 'INJURY' | 'ILLNESS' | 'MENTAL_HEALTH' | 'EQUIPMENT' | 'ENVIRONMENTAL' | 'OTHER';
+type IncidentType = 'INJURY' | 'ILLNESS' | 'MENTAL_HEALTH' | 'MEDICAL_EMERGENCY' | 'HEALTH_SAFETY' | 'OTHER';
 
 const severityOptions: { value: Severity; label: string; description: string; color: string }[] = [
   { value: 'LOW', label: 'Low', description: 'Minor issue, no immediate action needed', color: 'bg-gray-100 border-gray-300 text-gray-700' },
@@ -43,59 +41,58 @@ const incidentTypes: { value: IncidentType; label: string; icon: typeof AlertTri
   { value: 'INJURY', label: 'Physical Injury', icon: AlertCircle },
   { value: 'ILLNESS', label: 'Illness/Sickness', icon: XCircle },
   { value: 'MENTAL_HEALTH', label: 'Mental Health', icon: Info },
-  { value: 'EQUIPMENT', label: 'Equipment Issue', icon: AlertTriangle },
-  { value: 'ENVIRONMENTAL', label: 'Environmental Hazard', icon: AlertTriangle },
+  { value: 'MEDICAL_EMERGENCY', label: 'Medical Emergency', icon: AlertTriangle },
+  { value: 'HEALTH_SAFETY', label: 'Health & Safety Concern', icon: AlertTriangle },
   { value: 'OTHER', label: 'Other', icon: FileText },
 ];
 
 export function ReportIncidentPage() {
   const queryClient = useQueryClient();
-  const { user } = useUser();
+  const { user, company } = useUser();
   const toast = useToast();
-  const [formData, setFormData] = useState<CreateIncidentData>({
+  const timezone = company?.timezone || 'UTC';
+  const [formData, setFormData] = useState<Omit<CreateIncidentData, 'requestException'>>({
     type: 'OTHER',
     severity: 'MEDIUM',
     title: '',
     description: '',
     location: '',
-    requestException: false,
   });
   const [showHistory, setShowHistory] = useState(false);
-  const [lastSubmitHadException, setLastSubmitHadException] = useState(false);
 
   const isMemberOrWorker = user?.role === 'MEMBER' || user?.role === 'WORKER';
 
   // Check if user has team and team leader (only required for MEMBER/WORKER role)
+  // No auto-refetch - data only changes on page load
   const { data: myTeam, isLoading: isLoadingTeam, error: teamError } = useQuery({
     queryKey: ['team', 'my'],
     queryFn: () => teamService.getMyTeam(),
     retry: false,
     enabled: isMemberOrWorker,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 
+  // My incidents - refetch only after submit (via mutation invalidation)
   const { data: myIncidents } = useQuery({
     queryKey: ['incidents', 'my'],
     queryFn: () => incidentService.getMyIncidents(),
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
   });
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY RETURNS
   const createMutation = useMutation({
-    mutationFn: (data: CreateIncidentData) => {
-      // Track if exception was requested for success message
-      setLastSubmitHadException(!!data.requestException);
-      return incidentService.create(data);
-    },
+    mutationFn: (data: Omit<CreateIncidentData, 'requestException'>) => incidentService.create(data),
     onSuccess: () => {
       // Invalidate all incident-related queries across the app
       invalidateRelatedQueries(queryClient, 'incidents');
-      invalidateRelatedQueries(queryClient, 'exceptions');
       setFormData({
         type: 'OTHER',
         severity: 'MEDIUM',
         title: '',
         description: '',
         location: '',
-        requestException: false,
       });
       toast.success('Incident Reported', 'Your incident report has been submitted.');
     },
@@ -215,21 +212,11 @@ export function ReportIncidentPage() {
 
       {/* Success Message */}
       {createMutation.isSuccess && (
-        <div className="p-4 rounded-xl bg-success-50 border border-success-200 animate-slide-down">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="h-5 w-5 text-success-600" />
-            <p className="text-sm text-success-700 font-medium">
-              Incident reported successfully. Your team will be notified.
-            </p>
-          </div>
-          {lastSubmitHadException && (
-            <div className="mt-2 ml-8 p-2 rounded bg-success-100 border border-success-200">
-              <p className="text-xs text-success-700">
-                <strong>Exception request created!</strong> Your team leader will review it.
-                You can track the status in the <span className="font-semibold">Request Exception</span> page.
-              </p>
-            </div>
-          )}
+        <div className="p-4 rounded-xl bg-success-50 border border-success-200 animate-slide-down flex items-center gap-3">
+          <CheckCircle2 className="h-5 w-5 text-success-600" />
+          <p className="text-sm text-success-700 font-medium">
+            Incident reported successfully. Your team leader will be notified and can approve leave if needed.
+          </p>
         </div>
       )}
 
@@ -340,34 +327,6 @@ export function ReportIncidentPage() {
               />
             </div>
 
-            {/* Request Exception Checkbox */}
-            <div className="p-4 rounded-lg bg-primary-50 border border-primary-200">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.requestException}
-                  onChange={(e) => setFormData({ ...formData, requestException: e.target.checked })}
-                  className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <div>
-                  <p className="font-medium text-primary-900">
-                    Request Exception / Leave
-                  </p>
-                  <p className="text-sm text-primary-700 mt-0.5">
-                    Check this box if you need time off due to this incident. Your team leader will receive an exception request for approval.
-                  </p>
-                </div>
-              </label>
-              {formData.requestException && (
-                <div className="mt-3 p-3 rounded-lg bg-white border border-primary-200 flex items-start gap-2">
-                  <Calendar className="h-4 w-4 text-primary-600 mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-primary-700">
-                    A single-day exception will be created for today. Your team leader can adjust the dates when approving.
-                  </p>
-                </div>
-              )}
-            </div>
-
             {/* Error */}
             {createMutation.isError && (
               <div className="p-4 rounded-lg bg-danger-50 border border-danger-200">
@@ -429,9 +388,40 @@ export function ReportIncidentPage() {
                     <p className="text-sm text-gray-500 line-clamp-2 mb-2">
                       {incident.description}
                     </p>
-                    <p className="text-xs text-gray-400">
-                      Reported {formatDisplayDateTime(incident.createdAt)}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-gray-400">
+                        Reported {formatDisplayDateTime(incident.createdAt, timezone)}
+                      </p>
+                      {/* Approval Status Indicator */}
+                      {incident.exception && (
+                        <div className="flex items-center gap-2">
+                          {incident.exception.status === 'APPROVED' && incident.exception.reviewedBy && (
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-success-50 border border-success-200 rounded-md">
+                              <CheckCircle2 className="h-3.5 w-3.5 text-success-600" />
+                              <span className="text-xs font-medium text-success-700">
+                                Approved by {incident.exception.reviewedBy.firstName} {incident.exception.reviewedBy.lastName}
+                              </span>
+                            </div>
+                          )}
+                          {incident.exception.status === 'REJECTED' && incident.exception.reviewedBy && (
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-danger-50 border border-danger-200 rounded-md">
+                              <XCircle className="h-3.5 w-3.5 text-danger-600" />
+                              <span className="text-xs font-medium text-danger-700">
+                                Rejected by {incident.exception.reviewedBy.firstName} {incident.exception.reviewedBy.lastName}
+                              </span>
+                            </div>
+                          )}
+                          {incident.exception.status === 'PENDING' && (
+                            <div className="flex items-center gap-1.5 px-2 py-1 bg-warning-50 border border-warning-200 rounded-md">
+                              <Clock className="h-3.5 w-3.5 text-warning-600" />
+                              <span className="text-xs font-medium text-warning-700">
+                                Pending approval
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

@@ -69,3 +69,6 @@ if ($Seed) {
 Write-Host "`n✅ Database setup complete!" -ForegroundColor Green
 Write-Host "💡 You can now start your server with: npm run start" -ForegroundColor Cyan
 
+
+
+

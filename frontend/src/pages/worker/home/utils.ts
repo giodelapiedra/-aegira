@@ -235,8 +235,9 @@ export function getNextCheckin(
 ): NextCheckinResult | null {
   if (!team?.shiftStart || !team?.workDays) return null;
 
-  // Use company timezone
-  const timezone = team.company?.timezone || 'Asia/Manila';
+  // Use company timezone - comes from company settings via dashboard
+  // Fallback to UTC if not available (edge case)
+  const timezone = team.company?.timezone || 'UTC';
   const nowInTz = getNowInTimezone(timezone);
   const now = nowInTz.date;
 

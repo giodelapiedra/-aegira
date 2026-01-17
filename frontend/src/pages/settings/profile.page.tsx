@@ -203,7 +203,7 @@ export function ProfilePage() {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
-      timeZone: company?.timezone || 'Asia/Manila',
+      timeZone: company?.timezone,
     });
   };
 

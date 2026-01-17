@@ -22,7 +22,12 @@ import { chatbotRoutes } from './modules/chatbot/index.js';
 import { holidaysRoutes } from './modules/holidays/index.js';
 import { calendarRoutes } from './modules/calendar/index.js';
 import { absencesRoutes } from './modules/absences/index.js';
+import { workerRoutes } from './modules/worker/index.js';
+import { supervisorRoutes } from './modules/supervisor/index.js';
 import { cronRoutes } from './cron/index.js';
+
+// Dev routes (only in development)
+import { devRoutes } from './modules/dev/index.js';
 
 const api = new Hono();
 
@@ -51,6 +56,13 @@ api.route('/chatbot', chatbotRoutes);
 api.route('/holidays', holidaysRoutes);
 api.route('/calendar', calendarRoutes);
 api.route('/absences', absencesRoutes);
+api.route('/worker', workerRoutes);
+api.route('/supervisor', supervisorRoutes);
 api.route('/cron', cronRoutes);
+
+// Dev routes - only in development
+if (process.env.NODE_ENV !== 'production') {
+  api.route('/dev', devRoutes);
+}
 
 export { api };

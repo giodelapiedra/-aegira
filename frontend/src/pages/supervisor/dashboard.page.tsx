@@ -1,319 +1,362 @@
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { StatCard } from '../../components/ui/StatCard';
+import { SkeletonTable } from '../../components/ui/Skeleton';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
 import { Avatar } from '../../components/ui/Avatar';
-import { SkeletonDashboard } from '../../components/ui/Skeleton';
+import { CheckCircle2, AlertTriangle, Clock, UserPlus, ChevronRight } from 'lucide-react';
+import { formatDisplayDate } from '../../lib/date-utils';
 import { cn } from '../../lib/utils';
-import { formatDisplayDateTime } from '../../lib/date-utils';
-import {
-  Users,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-  Clock,
-  TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
-  Activity,
-  FileText,
-  
-} from 'lucide-react';
-import { analyticsService } from '../../services/analytics.service';
+import { supervisorService } from '../../services/supervisor.service';
+
+// Severity config for badges
+const severityConfig: Record<string, { label: string; variant: 'danger' | 'warning' | 'default' }> = {
+  CRITICAL: { label: 'Critical', variant: 'danger' },
+  HIGH: { label: 'High', variant: 'danger' },
+  MEDIUM: { label: 'Medium', variant: 'warning' },
+  LOW: { label: 'Low', variant: 'default' },
+};
+
+const typeLabels: Record<string, string> = {
+  INJURY: 'Injury',
+  ILLNESS: 'Illness',
+  MENTAL_HEALTH: 'Mental Health',
+  MEDICAL_EMERGENCY: 'Medical Emergency',
+  HEALTH_SAFETY: 'Health & Safety',
+  OTHER: 'Other',
+};
+
+// Incident status config
+const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+  OPEN: { label: 'Open', color: 'text-blue-700', bg: 'bg-blue-50' },
+  IN_PROGRESS: { label: 'In Progress', color: 'text-yellow-700', bg: 'bg-yellow-50' },
+  RESOLVED: { label: 'Resolved', color: 'text-green-700', bg: 'bg-green-50' },
+  CLOSED: { label: 'Closed', color: 'text-gray-700', bg: 'bg-gray-100' },
+};
 
 export function SupervisorDashboard() {
-  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
-    queryKey: ['dashboard', 'stats'],
-    queryFn: () => analyticsService.getDashboardStats(),
-    staleTime: 5 * 60 * 1000, // 5 minutes - dashboard stats don't need real-time updates
+  const navigate = useNavigate();
+
+  // Incident stats - single source of truth for all stats
+  const { data: incidentStats, isLoading: statsLoading } = useQuery({
+    queryKey: ['supervisor-incidents-stats'],
+    queryFn: () => supervisorService.getIncidentStats(),
+    staleTime: 60 * 1000,
   });
 
-  const { data: recentCheckins, isLoading: _checkinsLoading } = useQuery({
-    queryKey: ['dashboard', 'recentCheckins'],
-    queryFn: () => analyticsService.getRecentCheckins(10),
-    staleTime: 2 * 60 * 1000, // 2 minutes - recent checkins can be slightly stale
+  // Pending incidents for table (limit 5 for dashboard overview)
+  const { data: pendingIncidents, isLoading: pendingLoading } = useQuery({
+    queryKey: ['supervisor-incidents', 'pending', 1, 5],
+    queryFn: () => supervisorService.getPendingIncidents({ page: 1, limit: 5 }),
+    staleTime: 60 * 1000,
   });
 
-  if (statsLoading) {
-    return <SkeletonDashboard />;
-  }
+  // Recently assigned incidents (limit 3 for dashboard overview)
+  const { data: assignedIncidents, isLoading: assignedLoading } = useQuery({
+    queryKey: ['supervisor-incidents', 'assigned', 1, 3],
+    queryFn: () => supervisorService.getAssignedIncidents({ page: 1, limit: 3 }),
+    staleTime: 60 * 1000,
+  });
 
-  if (statsError) {
-    return (
-      <div className="text-center py-8">
-        <AlertTriangle className="h-10 w-10 text-danger-500 mx-auto mb-3" />
-        <p className="text-gray-500">Failed to load dashboard data</p>
-      </div>
-    );
-  }
-
-  const statCards = [
-    {
-      label: 'Total Personnel',
-      value: stats?.totalMembers || 0,
-      icon: Users,
-      color: 'bg-primary-500',
-      change: '+3',
-      trend: 'up',
-    },
-    {
-      label: 'Green Status',
-      value: stats?.greenCount || 0,
-      icon: CheckCircle2,
-      color: 'bg-success-500',
-      percentage: stats && stats.totalMembers > 0 ? Math.round((stats.greenCount / stats.totalMembers) * 100) : 0,
-    },
-    {
-      label: 'Yellow Status',
-      value: stats?.yellowCount || 0,
-      icon: AlertTriangle,
-      color: 'bg-warning-500',
-      percentage: stats && stats.totalMembers > 0 ? Math.round((stats.yellowCount / stats.totalMembers) * 100) : 0,
-    },
-    {
-      label: 'Red Status',
-      value: stats?.redCount || 0,
-      icon: XCircle,
-      color: 'bg-danger-500',
-      percentage: stats && stats.totalMembers > 0 ? Math.round((stats.redCount / stats.totalMembers) * 100) : 0,
-    },
-  ];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'GREEN':
-        return 'bg-success-500';
-      case 'YELLOW':
-        return 'bg-warning-500';
-      case 'RED':
-        return 'bg-danger-500';
-      default:
-        return 'bg-gray-500';
-    }
-  };
+  const hasPending = (incidentStats?.pending || 0) > 0;
+  const hasUrgent = (incidentStats?.urgent || 0) > 0;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 mt-1">Personnel readiness overview</p>
+        <p className="text-gray-500 mt-1">Manage incident assignments to WHS officers</p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map((stat, index) => (
-          <Card key={index} className="relative overflow-hidden">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-gray-500">{stat.label}</p>
-                <p className="text-3xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                {stat.percentage !== undefined && (
-                  <p className="text-sm text-gray-500 mt-1">{stat.percentage}% of total</p>
-                )}
-                {stat.change && (
-                  <div
-                    className={cn(
-                      'inline-flex items-center gap-1 text-sm mt-2',
-                      stat.trend === 'up' ? 'text-success-600' : 'text-danger-600'
-                    )}
-                  >
-                    {stat.trend === 'up' ? (
-                      <ArrowUpRight className="h-4 w-4" />
-                    ) : (
-                      <ArrowDownRight className="h-4 w-4" />
-                    )}
-                    {stat.change} this week
-                  </div>
-                )}
-              </div>
-              <div className={cn('p-3 rounded-lg', stat.color)}>
-                <stat.icon className="h-6 w-6 text-white" />
-              </div>
-            </div>
-          </Card>
-        ))}
+      {/* Incident Stats - Only 3 cards, focused on supervisor's job */}
+      <div className="grid grid-cols-3 gap-4">
+        <StatCard
+          icon={Clock}
+          value={statsLoading ? '-' : incidentStats?.pending || 0}
+          label="Pending"
+          color={hasPending ? 'warning' : 'gray'}
+        />
+        <StatCard
+          icon={AlertTriangle}
+          value={statsLoading ? '-' : incidentStats?.urgent || 0}
+          label="Urgent"
+          color={hasUrgent ? 'danger' : 'gray'}
+        />
+        <StatCard
+          icon={CheckCircle2}
+          value={statsLoading ? '-' : incidentStats?.assigned || 0}
+          label="Assigned"
+          color="success"
+        />
       </div>
 
-      {/* Secondary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-primary-100">
-              <Activity className="h-6 w-6 text-primary-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats?.checkinRate || 0}%</p>
-              <p className="text-sm text-gray-500">Today's Check-in Rate</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-warning-100">
-              <FileText className="h-6 w-6 text-warning-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats?.pendingExceptions || 0}</p>
-              <p className="text-sm text-gray-500">Pending Exceptions</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-danger-100">
-              <AlertTriangle className="h-6 w-6 text-danger-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats?.openIncidents || 0}</p>
-              <p className="text-sm text-gray-500">Open Incidents</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Charts and Lists */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Readiness Distribution */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-gray-400" />
-              Readiness Distribution
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Green */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Ready (Green)</span>
-                  <span className="text-sm text-gray-500">
-                    {stats?.greenCount || 0} personnel
-                  </span>
-                </div>
-                <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-success-500 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${stats ? (stats.greenCount / stats.totalMembers) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Yellow */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Caution (Yellow)</span>
-                  <span className="text-sm text-gray-500">
-                    {stats?.yellowCount || 0} personnel
-                  </span>
-                </div>
-                <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-warning-500 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${stats ? (stats.yellowCount / stats.totalMembers) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Red */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-700">Not Ready (Red)</span>
-                  <span className="text-sm text-gray-500">
-                    {stats?.redCount || 0} personnel
-                  </span>
-                </div>
-                <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-danger-500 rounded-full transition-all duration-500"
-                    style={{
-                      width: `${stats ? (stats.redCount / stats.totalMembers) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Recent Check-ins */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-gray-400" />
-              Recent Check-ins
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {recentCheckins && recentCheckins.length > 0 ? (
-              <div className="space-y-4">
-                {recentCheckins.map((checkin) => (
-                  <div key={checkin.id} className="flex items-center gap-3">
-                    <Avatar
-                      firstName={checkin.user.firstName}
-                      lastName={checkin.user.lastName}
-                      size="sm"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {checkin.user.firstName} {checkin.user.lastName}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {formatDisplayDateTime(checkin.createdAt)}
-                      </p>
-                    </div>
-                    <div
-                      className={cn(
-                        'h-3 w-3 rounded-full',
-                        getStatusColor(checkin.readinessStatus)
-                      )}
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Clock className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No recent check-ins</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Actions */}
+      {/* Pending Incidents Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <button className="p-4 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors text-left">
-              <Users className="h-6 w-6 text-primary-600 mb-2" />
-              <p className="font-medium text-gray-900">View Team</p>
-              <p className="text-sm text-gray-500">See all members</p>
-            </button>
-            <button className="p-4 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors text-left">
-              <FileText className="h-6 w-6 text-primary-600 mb-2" />
-              <p className="font-medium text-gray-900">Approvals</p>
-              <p className="text-sm text-gray-500">Review requests</p>
-            </button>
-            <button className="p-4 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors text-left">
-              <AlertTriangle className="h-6 w-6 text-primary-600 mb-2" />
-              <p className="font-medium text-gray-900">Incidents</p>
-              <p className="text-sm text-gray-500">View reports</p>
-            </button>
-            <button className="p-4 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors text-left">
-              <TrendingUp className="h-6 w-6 text-primary-600 mb-2" />
-              <p className="font-medium text-gray-900">Analytics</p>
-              <p className="text-sm text-gray-500">View trends</p>
-            </button>
+        <CardHeader className="border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-warning-500" />
+              Pending Incidents
+              {hasPending && (
+                <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-warning-100 text-warning-700 rounded-full">
+                  {incidentStats?.pending}
+                </span>
+              )}
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/supervisor/incidents-assignment')}
+            >
+              View All
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
           </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {pendingLoading ? (
+            <SkeletonTable rows={3} columns={5} />
+          ) : !pendingIncidents?.data?.length ? (
+            <div className="p-12 text-center">
+              <CheckCircle2 className="h-12 w-12 text-success-500 mx-auto mb-3" />
+              <p className="text-gray-900 font-medium">All caught up!</p>
+              <p className="text-gray-500 text-sm mt-1">No incidents pending assignment</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/50">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Case</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Worker</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Severity</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Date</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {pendingIncidents.data.map((incident) => {
+                    const severity = severityConfig[incident.severity] || severityConfig.LOW;
+                    const isUrgent = incident.severity === 'CRITICAL' || incident.severity === 'HIGH';
+
+                    return (
+                      <tr
+                        key={incident.id}
+                        className={cn(
+                          'hover:bg-gray-50 cursor-pointer transition-colors',
+                          isUrgent && 'bg-red-50/30'
+                        )}
+                        onClick={() => navigate(`/incidents/${incident.id}`)}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {isUrgent && (
+                              <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                              </span>
+                            )}
+                            <span className="font-medium text-gray-900">{incident.caseNumber}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Avatar
+                              src={incident.reporter?.avatar}
+                              firstName={incident.reporter?.firstName}
+                              lastName={incident.reporter?.lastName}
+                              size="sm"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {incident.reporter?.firstName} {incident.reporter?.lastName}
+                              </p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {incident.reporter?.team?.name || 'No Team'}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 hidden sm:table-cell">
+                          <span className="text-sm text-gray-700">
+                            {typeLabels[incident.type] || incident.type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant={severity.variant} size="sm">
+                            {severity.label}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 hidden md:table-cell">
+                          <span className="text-sm text-gray-500">
+                            {formatDisplayDate(incident.createdAt)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Button
+                            size="sm"
+                            variant={isUrgent ? 'danger' : 'primary'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate('/supervisor/incidents-assignment');
+                            }}
+                          >
+                            <UserPlus className="h-3.5 w-3.5 sm:mr-1" />
+                            <span className="hidden sm:inline">Assign</span>
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Footer with count */}
+          {pendingIncidents?.pagination && pendingIncidents.pagination.total > 5 && (
+            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 text-center">
+              <button
+                onClick={() => navigate('/supervisor/incidents-assignment')}
+                className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+              >
+                View all {pendingIncidents.pagination.total} pending incidents →
+              </button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Recently Assigned Incidents */}
+      <Card>
+        <CardHeader className="border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-success-500" />
+              Recently Assigned
+              {(incidentStats?.assigned || 0) > 0 && (
+                <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-success-100 text-success-700 rounded-full">
+                  {incidentStats?.assigned}
+                </span>
+              )}
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/supervisor/incidents-assignment')}
+            >
+              View All
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {assignedLoading ? (
+            <SkeletonTable rows={2} columns={6} />
+          ) : !assignedIncidents?.data?.length ? (
+            <div className="p-8 text-center">
+              <Clock className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+              <p className="text-gray-500 text-sm">No assigned incidents yet</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/50">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Case</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Worker</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase hidden sm:table-cell">Severity</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">WHS Officer</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase hidden lg:table-cell">Assigned By</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {assignedIncidents.data.map((incident) => {
+                    const severity = severityConfig[incident.severity] || severityConfig.LOW;
+                    const status = statusConfig[incident.status] || statusConfig.OPEN;
+
+                    return (
+                      <tr
+                        key={incident.id}
+                        className="hover:bg-gray-50 cursor-pointer transition-colors"
+                        onClick={() => navigate(`/incidents/${incident.id}`)}
+                      >
+                        <td className="px-4 py-3">
+                          <span className="font-medium text-gray-900">{incident.caseNumber}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Avatar
+                              src={incident.reporter?.avatar}
+                              firstName={incident.reporter?.firstName}
+                              lastName={incident.reporter?.lastName}
+                              size="sm"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {incident.reporter?.firstName} {incident.reporter?.lastName}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 hidden sm:table-cell">
+                          <Badge variant={severity.variant} size="sm">
+                            {severity.label}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Avatar
+                              src={incident.whsOfficer?.avatar}
+                              firstName={incident.whsOfficer?.firstName}
+                              lastName={incident.whsOfficer?.lastName}
+                              size="sm"
+                            />
+                            <span className="text-sm text-gray-700 truncate">
+                              {incident.whsOfficer?.firstName} {incident.whsOfficer?.lastName}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 hidden lg:table-cell">
+                          <span className="text-sm text-gray-700">
+                            {incident.whsAssigner?.firstName} {incident.whsAssigner?.lastName}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={cn('px-2 py-1 text-xs font-medium rounded-full', status.bg, status.color)}>
+                            {status.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right hidden md:table-cell">
+                          <span className="text-sm text-gray-500">
+                            {incident.whsAssignedAt ? formatDisplayDate(incident.whsAssignedAt) : '-'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Footer with count */}
+          {assignedIncidents?.pagination && assignedIncidents.pagination.total > 3 && (
+            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 text-center">
+              <button
+                onClick={() => navigate('/supervisor/incidents-assignment')}
+                className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+              >
+                View all {assignedIncidents.pagination.total} assigned incidents →
+              </button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

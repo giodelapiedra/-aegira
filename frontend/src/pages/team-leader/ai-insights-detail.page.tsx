@@ -225,7 +225,8 @@ export function AIInsightsDetailPage() {
   const navigate = useNavigate();
   const printRef = useRef<HTMLDivElement>(null);
   const { company } = useUser();
-  const timezone = company?.timezone || 'Asia/Manila';
+  // Timezone from company settings (fallback to UTC if not set)
+  const timezone = company?.timezone || 'UTC';
 
   // Queries
   const { data: team, isLoading: teamLoading } = useQuery({

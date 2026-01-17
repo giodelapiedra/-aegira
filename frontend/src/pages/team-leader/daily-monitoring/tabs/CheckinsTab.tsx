@@ -3,7 +3,7 @@
  * Displays today's check-ins with search and filtering
  */
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Users, Search } from 'lucide-react';
 import { EmptyState } from '../../../../components/ui/EmptyState';
 import { CheckinCard } from '../components/CheckinCard';
@@ -20,33 +20,30 @@ interface CheckinsTabProps {
 
 export function CheckinsTab({ teamId, onCreateExemption }: CheckinsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  // Fetch check-ins
+  // Debounce search to reduce API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch check-ins (server-side search)
   const { data: checkinsData, isLoading: checkinsLoading } = useCheckinsPaginated({
     teamId,
-    search: searchQuery || undefined,
+    search: debouncedSearch || undefined,
   });
 
-  // Fetch not checked in
+  // Fetch not checked in (server-side search)
   const { data: notCheckedInData } = useNotCheckedIn({
     teamId,
-    search: searchQuery || undefined,
+    search: debouncedSearch || undefined,
   });
 
   const checkins = checkinsData?.data || [];
   const notCheckedInMembers = notCheckedInData?.data || [];
-
-  // Filter by search (client-side for quick response)
-  const filteredCheckins = useMemo(() => {
-    if (!searchQuery) return checkins;
-    const query = searchQuery.toLowerCase();
-    return checkins.filter(
-      (c) =>
-        c.user.firstName.toLowerCase().includes(query) ||
-        c.user.lastName.toLowerCase().includes(query) ||
-        c.user.email.toLowerCase().includes(query)
-    );
-  }, [checkins, searchQuery]);
 
   const handleCreateExemption = useCallback(
     (checkin: TodayCheckin) => {
@@ -78,7 +75,7 @@ export function CheckinsTab({ teamId, onCreateExemption }: CheckinsTabProps) {
       </div>
 
       {/* Check-ins List */}
-      {filteredCheckins.length === 0 ? (
+      {checkins.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-200 py-12">
           <EmptyState
             icon={Users}
@@ -90,7 +87,7 @@ export function CheckinsTab({ teamId, onCreateExemption }: CheckinsTabProps) {
         <>
           {/* Mobile Card View */}
           <div className="grid grid-cols-1 gap-3 md:hidden">
-            {filteredCheckins.map((checkin) => (
+            {checkins.map((checkin) => (
               <CheckinCard
                 key={checkin.id}
                 checkin={checkin}
@@ -100,7 +97,7 @@ export function CheckinsTab({ teamId, onCreateExemption }: CheckinsTabProps) {
           </div>
 
           {/* Desktop Table View */}
-          <CheckinTable checkins={filteredCheckins} onCreateExemption={handleCreateExemption} />
+          <CheckinTable checkins={checkins} onCreateExemption={handleCreateExemption} />
         </>
       )}
 

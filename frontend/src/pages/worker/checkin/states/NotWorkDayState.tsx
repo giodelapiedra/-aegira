@@ -2,10 +2,10 @@
  * NotWorkDayState Component
  *
  * Shown when check-in is not available due to time restrictions
- * (too early, too late, or not a work day).
+ * (too early, too late, not a work day, or holiday).
  */
 
-import { Clock, CalendarX } from 'lucide-react';
+import { Clock, CalendarX, PartyPopper } from 'lucide-react';
 import { Card, CardContent } from '../../../../components/ui/Card';
 import type { CheckinAvailability } from '../types';
 
@@ -22,13 +22,17 @@ export function NotWorkDayState({ availability }: NotWorkDayStateProps) {
         return <Clock className="h-8 w-8 text-warning-600" />;
       case 'NOT_WORK_DAY':
         return <CalendarX className="h-8 w-8 text-warning-600" />;
+      case 'HOLIDAY':
+        return <PartyPopper className="h-8 w-8 text-primary-600" />;
       default:
         return <CalendarX className="h-8 w-8 text-warning-600" />;
     }
   };
 
   const getIconBgColor = () => {
-    return availability.reason === 'TOO_LATE' ? 'bg-danger-100' : 'bg-warning-100';
+    if (availability.reason === 'TOO_LATE') return 'bg-danger-100';
+    if (availability.reason === 'HOLIDAY') return 'bg-primary-100';
+    return 'bg-warning-100';
   };
 
   const getTitle = () => {
@@ -39,6 +43,8 @@ export function NotWorkDayState({ availability }: NotWorkDayStateProps) {
         return 'Too Early to Check In';
       case 'NOT_WORK_DAY':
         return 'Not a Work Day';
+      case 'HOLIDAY':
+        return 'Company Holiday';
       default:
         return 'Check-in Unavailable';
     }
@@ -62,6 +68,13 @@ export function NotWorkDayState({ availability }: NotWorkDayStateProps) {
         );
       case 'NOT_WORK_DAY':
         return 'Enjoy your day off! Check-in will be available on your next scheduled work day.';
+      case 'HOLIDAY':
+        return (
+          <>
+            Today is <span className="font-semibold">{availability.holidayName}</span>.
+            Enjoy your holiday! Check-in will be available on your next work day.
+          </>
+        );
       default:
         return 'Check-in is not available at this time.';
     }

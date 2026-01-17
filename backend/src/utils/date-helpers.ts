@@ -796,11 +796,20 @@ export function getRelativeTime(date: Date, timezone: string = DEFAULT_TIMEZONE)
 
 /**
  * Validate if a string is a valid IANA timezone
+ * Uses Luxon's zone validation - checks if zone can be created and is valid
  */
 export function isValidTimezone(tz: string): boolean {
+  if (!tz || typeof tz !== 'string') {
+    return false;
+  }
+
   try {
+    // Try to create a DateTime with the timezone
     const dt = DateTime.now().setZone(tz);
-    return dt.isValid && dt.zoneName === tz;
+    
+    // Check if DateTime is valid and zone name matches (or zone is valid)
+    // zone.name returns the IANA timezone identifier
+    return dt.isValid && (dt.zone.name === tz || dt.zone.isValid);
   } catch {
     return false;
   }

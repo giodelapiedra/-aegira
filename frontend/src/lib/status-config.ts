@@ -227,13 +227,13 @@ export const incidentTypeConfig: Record<string, { label: string; description: st
     label: 'Mental Health',
     description: 'Mental health concern or crisis',
   },
-  EQUIPMENT: {
-    label: 'Equipment',
-    description: 'Equipment malfunction or issue',
+  MEDICAL_EMERGENCY: {
+    label: 'Medical Emergency',
+    description: 'Urgent medical situation requiring immediate attention',
   },
-  ENVIRONMENTAL: {
-    label: 'Environmental',
-    description: 'Environmental hazard or concern',
+  HEALTH_SAFETY: {
+    label: 'Health & Safety',
+    description: 'Workplace health and safety concern',
   },
   OTHER: {
     label: 'Other',

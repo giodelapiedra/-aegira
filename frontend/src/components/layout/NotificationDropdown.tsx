@@ -103,7 +103,8 @@ export function NotificationDropdown() {
     }
   };
 
-  const timezone = company?.timezone || 'Asia/Manila';
+  // Timezone from company settings - UTC fallback for edge cases
+  const timezone = company?.timezone || 'UTC';
   const unreadCount = unreadData?.count || 0;
   const notifications = notificationsData?.data || [];
 

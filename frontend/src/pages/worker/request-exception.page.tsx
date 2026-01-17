@@ -24,7 +24,6 @@ import {
   HelpCircle,
   Users,
   UserX,
-  
   Link2,
   AlertTriangle,
 } from 'lucide-react';
@@ -41,8 +40,9 @@ const exceptionTypes: { value: ExceptionType; label: string; description: string
 
 export function RequestExceptionPage() {
   const queryClient = useQueryClient();
-  const { user } = useUser();
+  const { user, company } = useUser();
   const toast = useToast();
+  const timezone = company?.timezone || 'UTC';
   const [formData, setFormData] = useState<CreateExceptionData>({
     type: 'SICK_LEAVE',
     reason: '',
@@ -54,22 +54,31 @@ export function RequestExceptionPage() {
   const isMemberOrWorker = user?.role === 'MEMBER' || user?.role === 'WORKER';
 
   // Check if user has team and team leader (only required for MEMBER/WORKER role)
+  // No auto-refetch - data only changes on page load
   const { data: myTeam, isLoading: isLoadingTeam, error: teamError } = useQuery({
     queryKey: ['team', 'my'],
     queryFn: () => teamService.getMyTeam(),
     retry: false,
     enabled: isMemberOrWorker,
+    staleTime: Infinity, // Never stale - team data rarely changes
+    refetchOnWindowFocus: false,
   });
 
+  // My exceptions - refetch only after submit (via mutation invalidation)
   const { data: myExceptions } = useQuery({
     queryKey: ['exceptions', 'my'],
     queryFn: () => exceptionService.getMyExceptions(),
+    staleTime: Infinity, // Never stale - only refetch after submit
+    refetchOnWindowFocus: false,
   });
 
-  // Get user's incidents for linking
+  // Get user's incidents for linking (optional feature)
+  // No auto-refetch - incidents don't change frequently
   const { data: myIncidents } = useQuery({
     queryKey: ['incidents', 'my'],
     queryFn: () => incidentService.getMyIncidents(),
+    staleTime: Infinity, // Never stale
+    refetchOnWindowFocus: false,
   });
 
   // ALL HOOKS MUST BE CALLED BEFORE ANY RETURNS
@@ -93,6 +102,12 @@ export function RequestExceptionPage() {
 
   const hasTeam = !!myTeam;
   const hasTeamLeader = !!myTeam?.leaderId;
+
+  // Check for existing pending/active exemptions to prevent duplicates
+  const hasPendingExemption = myExceptions?.some(e => e.status === 'PENDING');
+  const hasActiveExemption = myExceptions?.some(e =>
+    e.status === 'APPROVED' && e.endDate && new Date(e.endDate) >= new Date()
+  );
 
   // Loading state (only for MEMBER)
   if (isMemberOrWorker && isLoadingTeam) {
@@ -145,6 +160,77 @@ export function RequestExceptionPage() {
                 Exception requests need a team leader to receive and approve them.
                 Please contact your administrator.
               </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Block if user has pending exemption
+  if (hasPendingExemption) {
+    const pendingException = myExceptions?.find(e => e.status === 'PENDING');
+    return (
+      <div className="max-w-2xl mx-auto">
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center">
+              <div className="mx-auto h-16 w-16 rounded-full bg-warning-100 flex items-center justify-center mb-4">
+                <Clock className="h-8 w-8 text-warning-600" />
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                Pending Request Exists
+              </h2>
+              <p className="text-gray-500 mb-4 max-w-md mx-auto">
+                You already have a pending exception request waiting for approval.
+                Please wait for your team leader to review it before submitting another request.
+              </p>
+              {pendingException && (
+                <div className="inline-block p-4 rounded-lg bg-warning-50 border border-warning-200 text-left">
+                  <p className="text-sm font-medium text-warning-800">
+                    {exceptionTypes.find(t => t.value === pendingException.type)?.label || pendingException.type}
+                  </p>
+                  <p className="text-xs text-warning-600 mt-1">
+                    {formatDisplayDate(pendingException.startDate, timezone)} - {formatDisplayDate(pendingException.endDate, timezone)}
+                  </p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Block if user has active approved exemption
+  if (hasActiveExemption) {
+    const activeException = myExceptions?.find(e =>
+      e.status === 'APPROVED' && e.endDate && new Date(e.endDate) >= new Date()
+    );
+    return (
+      <div className="max-w-2xl mx-auto">
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center">
+              <div className="mx-auto h-16 w-16 rounded-full bg-success-100 flex items-center justify-center mb-4">
+                <CheckCircle2 className="h-8 w-8 text-success-600" />
+              </div>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                Already On Approved Leave
+              </h2>
+              <p className="text-gray-500 mb-4 max-w-md mx-auto">
+                You currently have an approved exception. You cannot submit a new request until your current leave period ends.
+              </p>
+              {activeException && (
+                <div className="inline-block p-4 rounded-lg bg-success-50 border border-success-200 text-left">
+                  <p className="text-sm font-medium text-success-800">
+                    {exceptionTypes.find(t => t.value === activeException.type)?.label || activeException.type}
+                  </p>
+                  <p className="text-xs text-success-600 mt-1">
+                    Until {formatDisplayDate(activeException.endDate, timezone)}
+                  </p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -394,7 +480,7 @@ export function RequestExceptionPage() {
                             {exceptionTypes.find(t => t.value === exception.type)?.label || exception.type}
                           </p>
                           <p className="text-sm text-gray-500">
-                            {formatDisplayDate(exception.startDate)} - {formatDisplayDate(exception.endDate)}
+                            {formatDisplayDate(exception.startDate, timezone)} - {formatDisplayDate(exception.endDate, timezone)}
                           </p>
                         </div>
                       </div>
@@ -402,7 +488,7 @@ export function RequestExceptionPage() {
                     </div>
                     <p className="text-sm text-gray-600 mb-2">{exception.reason}</p>
                     <p className="text-xs text-gray-400">
-                      Requested {formatDisplayDateTime(exception.createdAt)}
+                      Requested {formatDisplayDateTime(exception.createdAt, timezone)}
                     </p>
                     {exception.reviewedBy && (
                       <p className="text-xs text-gray-500 mt-2">

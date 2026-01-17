@@ -35,7 +35,7 @@ import api from '../../services/api';
 
 // Import reusable components
 import { PageHeader } from '../../components/ui/PageHeader';
-import { StatsCard, StatsCardGrid } from '../../components/ui/StatsCard';
+import { StatCard, StatCardGrid } from '../../components/ui/StatCard';
 import { DataTable, type Column } from '../../components/ui/DataTable';
 import { Badge } from '../../components/ui/StatusBadge';
 
@@ -180,32 +180,32 @@ export function SystemLogsPage() {
 
       {/* Stats Cards */}
       {stats && (
-        <StatsCardGrid columns={4}>
-          <StatsCard
-            label="Total Logs"
-            value={stats.totalLogs}
+        <StatCardGrid columns={4}>
+          <StatCard
             icon={ScrollText}
-            variant="primary"
+            value={stats.totalLogs}
+            label="Total Logs"
+            color="primary"
           />
-          <StatsCard
-            label="Today"
-            value={stats.todayLogs}
+          <StatCard
             icon={Activity}
-            variant="success"
+            value={stats.todayLogs}
+            label="Today"
+            color="success"
           />
-          <StatsCard
-            label="This Week"
-            value={stats.weekLogs}
+          <StatCard
             icon={TrendingUp}
-            variant="warning"
+            value={stats.weekLogs}
+            label="This Week"
+            color="warning"
           />
-          <StatsCard
-            label="Active Users"
-            value={stats.mostActiveUsers.length}
+          <StatCard
             icon={Users}
-            variant="secondary"
+            value={stats.mostActiveUsers.length}
+            label="Active Users"
+            color="gray"
           />
-        </StatsCardGrid>
+        </StatCardGrid>
       )}
 
       {/* Search and Filters */}

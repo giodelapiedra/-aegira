@@ -41,4 +41,26 @@ export const whsService = {
     const response = await api.get('/whs/incidents', { params });
     return response.data;
   },
+
+  // ===== My Assigned Incidents (for WHS officer) =====
+  getMyAssignedIncidents: async (params?: {
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: any[]; pagination: any }> => {
+    const response = await api.get('/whs/my-incidents', { params });
+    return response.data;
+  },
+
+  // ===== My Assigned Incidents Stats =====
+  getMyAssignedIncidentsStats: async (): Promise<{
+    total: number;
+    active: number;
+    resolved: number;
+    byStatus: { open: number; inProgress: number; resolved: number; closed: number };
+  }> => {
+    const response = await api.get('/whs/my-incidents/stats');
+    return response.data;
+  },
 };

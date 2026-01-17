@@ -42,6 +42,7 @@ import { cn } from '../../lib/utils';
 import { teamService, type TeamAnalytics } from '../../services/team.service';
 import { SkeletonDashboard } from '../../components/ui/Skeleton';
 import { Avatar } from '../../components/ui/Avatar';
+import { StatCard } from '../../components/ui/StatCard';
 import { getComplianceColorClasses, getComplianceGradientClasses } from '../../lib/status-config';
 
 type PeriodOption = 'today' | '7days' | '14days' | 'alltime' | 'custom';
@@ -138,7 +139,7 @@ export function TeamAnalyticsPage() {
               <CalendarDays className="h-4 w-4" />
               <span className="flex-1 text-left">
                 {period === 'custom' && customStartDate && customEndDate
-                  ? `${new Date(customStartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: analytics?.team?.timezone || 'Asia/Manila' })} - ${new Date(customEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: analytics?.team?.timezone || 'Asia/Manila' })}`
+                  ? `${new Date(customStartDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: analytics?.team?.timezone })} - ${new Date(customEndDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: analytics?.team?.timezone })}`
                   : periodLabels[period]
                 }
               </span>
@@ -326,43 +327,43 @@ export function TeamAnalyticsPage() {
         </div>
       )}
 
-      {/* Compliance Breakdown */}
+      {/* Compliance Breakdown - Using Centralized StatCard */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <StatCard
-          label="Checked In"
-          value={analytics.complianceDetails?.checkedIn ?? 0}
           icon={CheckCircle2}
+          value={analytics.complianceDetails?.checkedIn ?? 0}
+          label="Checked In"
           color="success"
         />
         <StatCard
-          label="Active Members"
-          value={analytics.complianceDetails?.activeMembers ?? 0}
           icon={Users}
+          value={analytics.complianceDetails?.activeMembers ?? 0}
+          label="Active Members"
           color="primary"
         />
         <StatCard
-          label="On Leave"
-          value={analytics.complianceDetails?.onLeave ?? 0}
           icon={Calendar}
+          value={analytics.complianceDetails?.onLeave ?? 0}
+          label="On Leave"
           color="warning"
         />
         <StatCard
-          label="Not Checked In"
-          value={analytics.complianceDetails?.notCheckedIn ?? 0}
           icon={Clock}
-          color="secondary"
+          value={analytics.complianceDetails?.notCheckedIn ?? 0}
+          label="Not Checked In"
+          color="gray"
         />
         <StatCard
-          label="Excused"
-          value={analytics.complianceDetails?.excusedCount ?? 0}
           icon={CheckCheck}
+          value={analytics.complianceDetails?.excusedCount ?? 0}
+          label="Excused"
           color="primary"
           tooltip="TL-approved absences (not penalized)"
         />
         <StatCard
-          label="Absent"
-          value={analytics.complianceDetails?.absentCount ?? 0}
           icon={XCircle}
+          value={analytics.complianceDetails?.absentCount ?? 0}
+          label="Absent"
           color="danger"
           tooltip="Penalized absences (0 points)"
         />
@@ -479,9 +480,9 @@ export function TeamAnalyticsPage() {
             <TrendingUp className="h-5 w-5 text-primary-600" />
             Readiness Trend
           </h3>
-          <TrendChart 
-            data={analytics.trendData} 
-            timezone={analytics.team?.timezone || 'Asia/Manila'}
+          <TrendChart
+            data={analytics.trendData}
+            timezone={analytics.team?.timezone || 'UTC'}
             periodCompliance={analytics.teamGrade?.compliance || 0}
           />
         </div>
@@ -601,7 +602,7 @@ export function TeamAnalyticsPage() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 truncate">{member.name}</p>
                     <p className="text-sm text-gray-500">
-                      {new Date(member.startDate).toLocaleDateString('en-US', { timeZone: analytics.team?.timezone || 'Asia/Manila' })} - {new Date(member.endDate).toLocaleDateString('en-US', { timeZone: analytics.team?.timezone || 'Asia/Manila' })}
+                      {new Date(member.startDate).toLocaleDateString('en-US', { timeZone: analytics.team?.timezone })} - {new Date(member.endDate).toLocaleDateString('en-US', { timeZone: analytics.team?.timezone })}
                     </p>
                   </div>
                   <span className="flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium bg-warning-100 text-warning-700">
@@ -612,43 +613,6 @@ export function TeamAnalyticsPage() {
               ))
             )}
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Stat Card Component
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  tooltip,
-}: {
-  label: string;
-  value: number;
-  icon: typeof Users;
-  color: 'primary' | 'success' | 'warning' | 'danger' | 'secondary';
-  tooltip?: string;
-}) {
-  const colorClasses = {
-    primary: 'bg-primary-50 text-primary-600',
-    success: 'bg-success-50 text-success-600',
-    warning: 'bg-warning-50 text-warning-600',
-    danger: 'bg-danger-50 text-danger-600',
-    secondary: 'bg-gray-100 text-gray-600',
-  };
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4" title={tooltip}>
-      <div className="flex items-center gap-3">
-        <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center', colorClasses[color])}>
-          <Icon className="h-5 w-5" />
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-          <p className="text-sm text-gray-500">{label}</p>
         </div>
       </div>
     </div>

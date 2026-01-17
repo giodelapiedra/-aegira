@@ -272,7 +272,8 @@ const EmptyState = memo(function EmptyState({ title, description, action }: Empt
 export function AIInsightsHistoryPage() {
   const navigate = useNavigate();
   const { company } = useUser();
-  const timezone = company?.timezone || 'Asia/Manila';
+  // Timezone from company settings (fallback to UTC if not set)
+  const timezone = company?.timezone || 'UTC';
 
   // State
   const [statusFilter, setStatusFilter] = useState('');

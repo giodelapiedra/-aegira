@@ -412,10 +412,25 @@ function calculateTeamGradeFromSummaries(params: {
   // ============================================
   // CALCULATE GRADE SCORE
   // Grade = (avgReadiness × 60%) + (compliance × 40%)
+  //
+  // SPECIAL CASE: If no members have sufficient data (all onboarding),
+  // return N/A grade instead of a misleading Grade F
   // ============================================
 
-  const score = Math.round((avgReadiness * 0.6) + (periodCompliance * 0.4));
-  const gradeInfo = getGradeInfo(score);
+  // Check if we have any data to calculate a grade
+  const hasGradeableData = includedMemberCount > 0 || totalExpected > 0;
+
+  let score: number;
+  let gradeInfo: { grade: string; label: string; color: string };
+
+  if (!hasGradeableData) {
+    // No data - return N/A grade
+    score = 0;
+    gradeInfo = { grade: 'N/A', label: 'Insufficient Data', color: 'GRAY' };
+  } else {
+    score = Math.round((avgReadiness * 0.6) + (periodCompliance * 0.4));
+    gradeInfo = getGradeInfo(score);
+  }
 
   // On-time rate (GREEN out of total check-ins)
   const onTimeRate = totalCheckins > 0
@@ -439,12 +454,17 @@ function calculateTeamGradeFromSummaries(params: {
   const prevScore = Math.round((prevAvgReadiness * 0.6) + (prevPeriodCompliance * 0.4));
 
   // Determine trend
-  const scoreDelta = score - prevScore;
+  // If no gradeable data, trend is always stable (no comparison possible)
+  let scoreDelta = 0;
   let trend: 'up' | 'down' | 'stable' = 'stable';
-  if (scoreDelta >= TREND_THRESHOLD) {
-    trend = 'up';
-  } else if (scoreDelta <= -TREND_THRESHOLD) {
-    trend = 'down';
+
+  if (hasGradeableData) {
+    scoreDelta = score - prevScore;
+    if (scoreDelta >= TREND_THRESHOLD) {
+      trend = 'up';
+    } else if (scoreDelta <= -TREND_THRESHOLD) {
+      trend = 'down';
+    }
   }
 
   return {

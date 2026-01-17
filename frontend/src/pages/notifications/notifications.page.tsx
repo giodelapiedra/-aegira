@@ -140,7 +140,8 @@ export function NotificationsPage() {
     }
   };
 
-  const timezone = company?.timezone || 'Asia/Manila';
+  // Timezone from company settings (fallback to UTC if not set)
+  const timezone = company?.timezone || 'UTC';
 
   const allNotifications = notificationsData?.data || [];
   const unreadCount = unreadData?.count || 0;

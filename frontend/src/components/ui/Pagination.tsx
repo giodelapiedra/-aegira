@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export interface PaginationProps {
@@ -9,7 +9,6 @@ export interface PaginationProps {
   pageSize?: number;
   onPageChange: (page: number) => void;
   showPageNumbers?: boolean;
-  showFirstLast?: boolean;
   showItemCount?: boolean;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
@@ -22,7 +21,6 @@ export function Pagination({
   pageSize = 10,
   onPageChange,
   showPageNumbers = true,
-  showFirstLast = true,
   showItemCount = true,
   className,
   size = 'md',
@@ -31,12 +29,12 @@ export function Pagination({
   if (totalPages <= 1) return null;
 
   const sizeClasses = {
-    sm: 'h-8 w-8 text-xs',
-    md: 'h-9 w-9 text-sm',
-    lg: 'h-10 w-10 text-base',
+    sm: { button: 'h-8 px-3 text-xs', page: 'h-8 w-8 text-xs' },
+    md: { button: 'h-9 px-4 text-sm', page: 'h-9 w-9 text-sm' },
+    lg: { button: 'h-10 px-5 text-base', page: 'h-10 w-10 text-base' },
   };
 
-  const buttonSize = sizeClasses[size];
+  const { button: buttonClass, page: pageClass } = sizeClasses[size];
 
   // Generate page numbers to show
   const getPageNumbers = () => {
@@ -92,52 +90,24 @@ export function Pagination({
   const endItem = Math.min(currentPage * pageSize, totalItems || currentPage * pageSize);
 
   return (
-    <div className={cn('flex flex-col sm:flex-row items-center justify-between gap-4', className)}>
-      {/* Item count */}
-      {showItemCount && totalItems !== undefined && (
-        <p className="text-sm text-gray-500 order-2 sm:order-1">
-          Showing <span className="font-medium text-gray-700">{startItem}</span> to{' '}
-          <span className="font-medium text-gray-700">{endItem}</span> of{' '}
-          <span className="font-medium text-gray-700">{totalItems}</span> results
-        </p>
-      )}
-
-      {/* Pagination controls */}
-      <div className="flex items-center gap-1 order-1 sm:order-2">
-        {/* First page */}
-        {showFirstLast && (
-          <button
-            onClick={() => onPageChange(1)}
-            disabled={currentPage === 1}
-            className={cn(
-              buttonSize,
-              'rounded-lg flex items-center justify-center transition-colors',
-              'disabled:opacity-40 disabled:cursor-not-allowed',
-              currentPage === 1
-                ? 'text-gray-300'
-                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-            )}
-            title="First page"
-          >
-            <ChevronsLeft className="h-4 w-4" />
-          </button>
-        )}
-
-        {/* Previous page */}
+    <div className={cn('flex flex-col gap-4', className)}>
+      {/* Pagination controls - centered */}
+      <div className="flex items-center justify-center gap-2">
+        {/* Previous button */}
         <button
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
           className={cn(
-            buttonSize,
-            'rounded-lg flex items-center justify-center transition-colors',
+            buttonClass,
+            'rounded-lg flex items-center gap-1.5 font-medium transition-all border',
             'disabled:opacity-40 disabled:cursor-not-allowed',
             currentPage === 1
-              ? 'text-gray-300'
-              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+              ? 'border-gray-200 text-gray-300 bg-gray-50'
+              : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400'
           )}
-          title="Previous page"
         >
           <ChevronLeft className="h-4 w-4" />
+          <span>Previous</span>
         </button>
 
         {/* Page numbers */}
@@ -148,7 +118,7 @@ export function Pagination({
                 return (
                   <span
                     key={`ellipsis-${index}`}
-                    className={cn(buttonSize, 'flex items-center justify-center text-gray-400')}
+                    className={cn(pageClass, 'flex items-center justify-center text-gray-400')}
                   >
                     ...
                   </span>
@@ -161,11 +131,11 @@ export function Pagination({
                   key={page}
                   onClick={() => onPageChange(page)}
                   className={cn(
-                    buttonSize,
-                    'rounded-lg font-medium transition-colors',
+                    pageClass,
+                    'rounded-lg font-medium transition-all border',
                     isActive
-                      ? 'bg-primary-600 text-white shadow-sm'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400'
                   )}
                 >
                   {page}
@@ -175,42 +145,32 @@ export function Pagination({
           </div>
         )}
 
-        {/* Next page */}
+        {/* Next button */}
         <button
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
           className={cn(
-            buttonSize,
-            'rounded-lg flex items-center justify-center transition-colors',
+            buttonClass,
+            'rounded-lg flex items-center gap-1.5 font-medium transition-all border',
             'disabled:opacity-40 disabled:cursor-not-allowed',
             currentPage === totalPages
-              ? 'text-gray-300'
-              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+              ? 'border-gray-200 text-gray-300 bg-gray-50'
+              : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400'
           )}
-          title="Next page"
         >
+          <span>Next</span>
           <ChevronRight className="h-4 w-4" />
         </button>
-
-        {/* Last page */}
-        {showFirstLast && (
-          <button
-            onClick={() => onPageChange(totalPages)}
-            disabled={currentPage === totalPages}
-            className={cn(
-              buttonSize,
-              'rounded-lg flex items-center justify-center transition-colors',
-              'disabled:opacity-40 disabled:cursor-not-allowed',
-              currentPage === totalPages
-                ? 'text-gray-300'
-                : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-            )}
-            title="Last page"
-          >
-            <ChevronsRight className="h-4 w-4" />
-          </button>
-        )}
       </div>
+
+      {/* Item count - below pagination */}
+      {showItemCount && totalItems !== undefined && (
+        <p className="text-sm text-gray-500 text-center">
+          Showing <span className="font-medium text-gray-700">{startItem}</span> to{' '}
+          <span className="font-medium text-gray-700">{endItem}</span> of{' '}
+          <span className="font-medium text-gray-700">{totalItems}</span> results
+        </p>
+      )}
     </div>
   );
 }

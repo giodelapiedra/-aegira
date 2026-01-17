@@ -55,28 +55,141 @@ async function generateCaseNumber(companyId: string, maxRetries: number = 10): P
   throw new Error('Failed to generate unique case number after multiple attempts');
 }
 
-// GET /incidents/my - Get current user's incidents
-incidentsRoutes.get('/my', async (c) => {
+// GET /incidents/my/stats - Get stats for current user's incidents
+incidentsRoutes.get('/my/stats', async (c) => {
   const userId = c.get('userId');
 
-  const incidents = await prisma.incident.findMany({
-    where: { reportedBy: userId },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      caseNumber: true,
-      title: true,
-      description: true,
-      type: true,
-      severity: true,
-      status: true,
-      incidentDate: true,
-      createdAt: true,
-      updatedAt: true,
+  const [total, open, inProgress, resolved, closed] = await Promise.all([
+    prisma.incident.count({ where: { reportedBy: userId } }),
+    prisma.incident.count({ where: { reportedBy: userId, status: 'OPEN' } }),
+    prisma.incident.count({ where: { reportedBy: userId, status: 'IN_PROGRESS' } }),
+    prisma.incident.count({ where: { reportedBy: userId, status: 'RESOLVED' } }),
+    prisma.incident.count({ where: { reportedBy: userId, status: 'CLOSED' } }),
+  ]);
+
+  return c.json({
+    total,
+    open,
+    inProgress,
+    resolved: resolved + closed, // Combined for UI
+    byStatus: { open, inProgress, resolved, closed },
+  });
+});
+
+// GET /incidents/my - Get current user's incidents with pagination
+incidentsRoutes.get('/my', async (c) => {
+  const userId = c.get('userId');
+  const page = parseInt(c.req.query('page') || '1');
+  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100);
+  const status = c.req.query('status');
+  const skip = (page - 1) * limit;
+
+  // Build where clause
+  const where: any = { reportedBy: userId };
+  if (status && status !== 'ALL') {
+    where.status = status;
+  }
+
+  const [incidents, total] = await Promise.all([
+    prisma.incident.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+      select: {
+        id: true,
+        caseNumber: true,
+        title: true,
+        description: true,
+        type: true,
+        severity: true,
+        status: true,
+        location: true,
+        incidentDate: true,
+        createdAt: true,
+        updatedAt: true,
+        resolvedAt: true,
+        assignee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        // Include linked exception with approval info
+        exception: {
+          select: {
+            id: true,
+            status: true,
+            type: true,
+            reviewedBy: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+            approvedAt: true,
+            rejectedAt: true,
+          },
+        },
+      },
+    }),
+    prisma.incident.count({ where }),
+  ]);
+
+  return c.json({
+    data: incidents,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
     },
   });
+});
 
-  return c.json(incidents);
+// GET /incidents/stats - Stats for incidents (for team leader dashboard)
+incidentsRoutes.get('/stats', async (c) => {
+  const companyId = c.get('companyId');
+  const currentUser = c.get('user');
+  const currentUserId = c.get('userId');
+  let teamId = c.req.query('teamId');
+
+  // TEAM_LEAD: Can only see stats from their own team
+  const isTeamLead = currentUser.role?.toUpperCase() === 'TEAM_LEAD';
+  if (isTeamLead) {
+    const leaderTeam = await prisma.team.findFirst({
+      where: { leaderId: currentUserId, companyId, isActive: true },
+      select: { id: true },
+    });
+
+    if (!leaderTeam) {
+      return c.json({ error: 'You are not assigned as a team leader' }, 403);
+    }
+    teamId = leaderTeam.id;
+  }
+
+  const baseWhere: any = { companyId };
+  if (teamId) baseWhere.teamId = teamId;
+
+  const [total, open, inProgress, resolved, closed, pendingLeave] = await Promise.all([
+    prisma.incident.count({ where: baseWhere }),
+    prisma.incident.count({ where: { ...baseWhere, status: 'OPEN' } }),
+    prisma.incident.count({ where: { ...baseWhere, status: 'IN_PROGRESS' } }),
+    prisma.incident.count({ where: { ...baseWhere, status: 'RESOLVED' } }),
+    prisma.incident.count({ where: { ...baseWhere, status: 'CLOSED' } }),
+    prisma.incident.count({ where: { ...baseWhere, exception: { status: 'PENDING' } } }),
+  ]);
+
+  return c.json({
+    total,
+    open,
+    inProgress,
+    resolved: resolved + closed,
+    pendingLeave,
+    byStatus: { open, inProgress, resolved, closed },
+  });
 });
 
 // GET /incidents - List all incidents (company-scoped)
@@ -85,9 +198,11 @@ incidentsRoutes.get('/', async (c) => {
   const currentUser = c.get('user');
   const currentUserId = c.get('userId');
   const page = parseInt(c.req.query('page') || '1');
-  const limit = parseInt(c.req.query('limit') || '10');
+  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100);
   const status = c.req.query('status');
   const severity = c.req.query('severity');
+  const search = c.req.query('search');
+  const exceptionStatus = c.req.query('exceptionStatus');
   let teamId = c.req.query('teamId');
 
   const skip = (page - 1) * limit;
@@ -118,6 +233,22 @@ incidentsRoutes.get('/', async (c) => {
   if (severity) where.severity = severity;
   if (teamId) where.teamId = teamId;
 
+  // Add exception status filter
+  if (exceptionStatus) {
+    where.exception = { status: exceptionStatus };
+  }
+
+  // Add search filter
+  if (search) {
+    where.OR = [
+      { caseNumber: { contains: search, mode: 'insensitive' } },
+      { title: { contains: search, mode: 'insensitive' } },
+      { description: { contains: search, mode: 'insensitive' } },
+      { reporter: { firstName: { contains: search, mode: 'insensitive' } } },
+      { reporter: { lastName: { contains: search, mode: 'insensitive' } } },
+    ];
+  }
+
   const [incidents, total] = await Promise.all([
     prisma.incident.findMany({
       where,
@@ -136,6 +267,18 @@ incidentsRoutes.get('/', async (c) => {
             firstName: true,
             lastName: true,
             email: true,
+          },
+        },
+        // Include linked exception for approve/reject actions
+        exception: {
+          select: {
+            id: true,
+            status: true,
+            type: true,
+            reason: true,
+            startDate: true,
+            endDate: true,
+            createdAt: true,
           },
         },
       },
@@ -298,87 +441,66 @@ incidentsRoutes.post('/', async (c) => {
     metadata: { caseNumber, severity: body.severity, type: body.type },
   });
 
-  // Create pending exception if:
-  // 1. Worker explicitly requested it (requestException: true), OR
-  // 2. Auto-create for CRITICAL/HIGH severity personal incidents
-  const personalIncidentTypes = ['INJURY', 'ILLNESS', 'MENTAL_HEALTH'];
-  const highSeverityLevels = ['CRITICAL', 'HIGH'];
-  const isAutoCreate = personalIncidentTypes.includes(body.type) && highSeverityLevels.includes(body.severity);
-  const shouldCreateException = body.requestException || isAutoCreate;
+  // Create exception for ALL incident types - TL must review each report
+  const incidentDate = body.incidentDate ? new Date(body.incidentDate) : new Date();
+  incidentDate.setHours(0, 0, 0, 0);
 
-  if (shouldCreateException) {
-    // Map incident type to exception type
-    const exceptionTypeMap: Record<string, string> = {
-      INJURY: 'SICK_LEAVE',
-      ILLNESS: 'SICK_LEAVE',
-      MENTAL_HEALTH: 'SICK_LEAVE',
-      EQUIPMENT: 'OTHER',
-      ENVIRONMENTAL: 'OTHER',
-      OTHER: 'OTHER',
-    };
+  const exceptionTypeMap: Record<string, string> = {
+    INJURY: 'SICK_LEAVE',
+    ILLNESS: 'SICK_LEAVE',
+    MENTAL_HEALTH: 'SICK_LEAVE',
+    MEDICAL_EMERGENCY: 'SICK_LEAVE',
+    HEALTH_SAFETY: 'SICK_LEAVE',
+    OTHER: 'OTHER',
+  };
+  const exceptionType = exceptionTypeMap[body.type] || 'OTHER';
 
-    const exceptionType = exceptionTypeMap[body.type] || 'SICK_LEAVE';
-    const incidentDate = body.incidentDate ? new Date(body.incidentDate) : new Date();
-
-    // Create pending exception linked to this incident
-    const exception = await prisma.exception.create({
-      data: {
-        userId,
-        companyId,
-        type: exceptionType as any,
-        reason: body.requestException
-          ? `Exception requested for incident ${caseNumber}: ${body.title}`
-          : `Auto-generated from incident ${caseNumber}: ${body.title}`,
-        startDate: incidentDate,
-        endDate: incidentDate, // Single day initially, can be extended during approval
-        status: 'PENDING',
-        linkedIncidentId: incident.id,
-        notes: `Severity: ${body.severity}. ${body.description}`,
-        attachments: body.attachments || [],
-      },
-    });
-
-    // Notify team leader if user has one
-    if (user.team?.leaderId) {
-      const notificationTitle = body.requestException
-        ? 'Exception Request from Incident Report'
-        : 'Exception Auto-Created from Incident';
-      const notificationMessage = body.requestException
-        ? `${user.firstName} ${user.lastName} reported an incident (${caseNumber}) and requested an exception. Please review.`
-        : `A ${body.severity.toLowerCase()} severity ${body.type.toLowerCase()} incident was reported by ${user.firstName} ${user.lastName}. A pending exception request has been auto-created and requires your review.`;
-
-      await prisma.notification.create({
-        data: {
-          userId: user.team.leaderId,
-          companyId,
-          title: notificationTitle,
-          message: notificationMessage,
-          type: 'EXCEPTION_SUBMITTED',
-          data: { exceptionId: exception.id, incidentId: incident.id, requesterId: userId },
-        },
-      });
-    }
-
-    // Log exception creation
-    await createSystemLog({
-      companyId,
+  const exception = await prisma.exception.create({
+    data: {
       userId,
-      action: body.requestException ? 'EXCEPTION_REQUESTED' : 'EXCEPTION_AUTO_CREATED',
-      entityType: 'exception',
-      entityId: exception.id,
-      description: body.requestException
-        ? `${user.firstName} ${user.lastName} requested exception from incident ${caseNumber}`
-        : `Exception auto-created from ${body.severity} ${body.type} incident ${caseNumber}`,
-      metadata: {
-        incidentId: incident.id,
-        caseNumber,
-        incidentType: body.type,
-        severity: body.severity,
-        exceptionType,
-        requestedByWorker: !!body.requestException,
+      companyId,
+      type: exceptionType as any,
+      reason: `Incident ${caseNumber}: ${body.title}`,
+      startDate: incidentDate,
+      endDate: incidentDate,
+      status: 'PENDING',
+      linkedIncidentId: incident.id,
+      notes: `Type: ${body.type}. Severity: ${body.severity}. ${body.description}`,
+      attachments: body.attachments || [],
+      isExemption: true,
+    },
+  });
+
+  // Notify team leader
+  if (user.team?.leaderId) {
+    await prisma.notification.create({
+      data: {
+        userId: user.team.leaderId,
+        companyId,
+        title: 'Incident Report - Action Required',
+        message: `${user.firstName} ${user.lastName} reported an incident (${caseNumber}: ${body.title}). Please review and take action.`,
+        type: 'EXCEPTION_SUBMITTED',
+        data: { exceptionId: exception.id, incidentId: incident.id, requesterId: userId },
       },
     });
   }
+
+  // Log exception creation
+  await createSystemLog({
+    companyId,
+    userId,
+    action: 'EXCEPTION_CREATED_FROM_INCIDENT',
+    entityType: 'exception',
+    entityId: exception.id,
+    description: `Exception created from incident ${caseNumber} by ${user.firstName} ${user.lastName}`,
+    metadata: {
+      incidentId: incident.id,
+      caseNumber,
+      incidentType: body.type,
+      severity: body.severity,
+      exceptionType,
+    },
+  });
 
   return c.json(incident, 201);
 });
@@ -438,6 +560,7 @@ incidentsRoutes.get('/:id', async (c) => {
               firstName: true,
               lastName: true,
               avatar: true,
+              role: true,
             },
           },
         },
@@ -460,6 +583,22 @@ incidentsRoutes.get('/:id', async (c) => {
               lastName: true,
             },
           },
+        },
+      },
+      // WHS Assignment info
+      whsOfficer: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          avatar: true,
+        },
+      },
+      whsAssigner: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
         },
       },
     },
@@ -606,7 +745,7 @@ incidentsRoutes.patch('/:id/status', async (c) => {
         activities: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, avatar: true },
+              select: { id: true, firstName: true, lastName: true, avatar: true, role: true },
             },
           },
           orderBy: { createdAt: 'asc' },

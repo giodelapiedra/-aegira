@@ -26,8 +26,8 @@ export { Pagination, usePagination } from './Pagination';
 export type { PaginationProps } from './Pagination';
 
 // Stats & Dashboard Components
-export { StatsCard, StatsCardGrid } from './StatsCard';
-export type { StatsCardProps, StatsCardVariant } from './StatsCard';
+export { StatCard, StatCardGrid } from './StatCard';
+export type { StatCardProps, StatCardColor } from './StatCard';
 
 // Page Layout Components
 export { PageHeader } from './PageHeader';

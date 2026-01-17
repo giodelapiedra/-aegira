@@ -69,7 +69,7 @@ export function AppLayout() {
     : '';
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 print:bg-white">
       {/* Blocking Absence Justification Modal */}
       {showAbsenceModal && (
         <AbsenceJustificationModal
@@ -78,36 +78,42 @@ export function AppLayout() {
         />
       )}
 
-      {/* Sidebar - Icon Rail with Hover Flyout */}
-      <Sidebar
-        isOpen={isSidebarOpen}
-        onClose={handleSidebarClose}
-        activeSubMenuId={activeItemWithChildren?.id}
-      />
+      {/* Sidebar - Icon Rail with Hover Flyout (hidden when printing) */}
+      <div className="print:hidden">
+        <Sidebar
+          isOpen={isSidebarOpen}
+          onClose={handleSidebarClose}
+          activeSubMenuId={activeItemWithChildren?.id}
+        />
+      </div>
 
       {/* Main content area */}
-      <div className="lg:pl-[72px] min-h-screen flex">
-        {/* Persistent SubMenu Panel - shows when on page with children */}
+      <div className="lg:pl-[72px] print:pl-0 min-h-screen flex">
+        {/* Persistent SubMenu Panel - shows when on page with children (hidden when printing) */}
         {hasSubMenu && activeItemWithChildren && (
-          <SubMenuPanel
-            parentItem={activeItemWithChildren}
-            isCollapsed={isSubMenuCollapsed}
-            onToggleCollapse={handleToggleSubMenu}
-            className="hidden lg:flex fixed left-[72px] top-0 z-40"
-          />
+          <div className="print:hidden">
+            <SubMenuPanel
+              parentItem={activeItemWithChildren}
+              isCollapsed={isSubMenuCollapsed}
+              onToggleCollapse={handleToggleSubMenu}
+              className="hidden lg:flex fixed left-[72px] top-0 z-40"
+            />
+          </div>
         )}
 
         {/* Content wrapper */}
         <div className={cn(
-          'flex-1 flex flex-col min-h-screen transition-all duration-200',
+          'flex-1 flex flex-col min-h-screen transition-all duration-200 print:pl-0',
           contentPaddingClass
         )}>
-          {/* Header */}
-          <Header onMenuClick={handleSidebarOpen} />
+          {/* Header (hidden when printing) */}
+          <div className="print:hidden">
+            <Header onMenuClick={handleSidebarOpen} />
+          </div>
 
           {/* Page content */}
-          <main className="flex-1 p-4 md:p-6 lg:p-8">
-            <div className="max-w-7xl mx-auto">
+          <main className="flex-1 p-4 md:p-6 lg:p-8 print:p-0">
+            <div className="max-w-7xl mx-auto print:max-w-none">
               <Outlet />
             </div>
           </main>

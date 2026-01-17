@@ -42,13 +42,12 @@ companiesRoutes.get('/my', async (c) => {
 });
 
 // PATCH /companies/my - Update current user's company (EXECUTIVE only)
-// Note: timezone is NOT editable - it's set during registration only
 companiesRoutes.patch('/my', requireRole('EXECUTIVE'), async (c) => {
   const user = c.get('user');
   const body = await c.req.json();
 
-  // Allowed fields to update (timezone is intentionally excluded)
-  const { name, logo, industry, size, address, phone, website } = body;
+  // Allowed fields to update (timezone can be changed by executive)
+  const { name, logo, industry, size, address, phone, website, timezone } = body;
 
   const company = await prisma.company.update({
     where: { id: user.companyId },
@@ -60,6 +59,7 @@ companiesRoutes.patch('/my', requireRole('EXECUTIVE'), async (c) => {
       ...(address !== undefined && { address }),
       ...(phone !== undefined && { phone }),
       ...(website !== undefined && { website }),
+      ...(timezone && { timezone }),
     },
     select: {
       id: true,

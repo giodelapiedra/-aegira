@@ -46,7 +46,7 @@ export function Header({ onMenuClick }: HeaderProps) {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
-      timeZone: company?.timezone || 'Asia/Manila',
+      timeZone: company?.timezone,
     })
   };
 

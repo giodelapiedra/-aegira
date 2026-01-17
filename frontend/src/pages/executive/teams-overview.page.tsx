@@ -20,13 +20,13 @@ import {
   AlertTriangle,
   MoreHorizontal,
   UserCheck,
-  Clock,
   ChevronDown,
   UserPlus,
 } from 'lucide-react';
 import { analyticsService, type TeamGradeSummary, type TeamsOverviewParams } from '../../services/analytics.service';
 import { Avatar } from '../../components/ui/Avatar';
 import { SkeletonDashboard } from '../../components/ui/Skeleton';
+import { StatCard } from '../../components/ui/StatCard';
 
 // ===========================================
 // CONSTANTS
@@ -64,7 +64,9 @@ function getScoreColor(score: number): string {
  * Get grade badge styling
  */
 function getGradeStyle(grade: string): { bg: string; text: string } {
-  switch (grade) {
+  // Handle grade variants (A+, A, A-, B+, etc.)
+  const baseGrade = grade.charAt(0);
+  switch (baseGrade) {
     case 'A':
       return { bg: 'bg-green-100', text: 'text-green-700' };
     case 'B':
@@ -72,7 +74,10 @@ function getGradeStyle(grade: string): { bg: string; text: string } {
     case 'C':
       return { bg: 'bg-yellow-100', text: 'text-yellow-700' };
     case 'D':
+    case 'F':
       return { bg: 'bg-red-100', text: 'text-red-700' };
+    case 'N': // N/A - no data
+      return { bg: 'bg-gray-100', text: 'text-gray-500' };
     default:
       return { bg: 'bg-gray-100', text: 'text-gray-700' };
   }
@@ -93,9 +98,11 @@ function getTrendDisplay(trend: 'up' | 'down' | 'stable', delta: number) {
 }
 
 /**
- * Get status label based on score
+ * Get status label based on score and grade
  */
-function getStatusLabel(score: number): { label: string; color: string } {
+function getStatusLabel(score: number, grade?: string): { label: string; color: string } {
+  // Handle N/A grade (no data)
+  if (grade === 'N/A') return { label: 'No Data', color: 'text-gray-500' };
   if (score >= 90) return { label: 'Excellent', color: 'text-green-600' };
   if (score >= 80) return { label: 'Good', color: 'text-blue-600' };
   if (score >= 70) return { label: 'Fair', color: 'text-yellow-600' };
@@ -114,7 +121,8 @@ function TeamCard({ team, onClick }: { team: TeamGradeSummary; onClick: () => vo
   const trendDisplay = getTrendDisplay(team.trend, team.scoreDelta);
   const TrendIcon = trendDisplay.icon;
   const scoreColor = getScoreColor(team.score);
-  const status = getStatusLabel(team.score);
+  const status = getStatusLabel(team.score, team.grade);
+  const isNoData = team.grade === 'N/A';
 
   return (
     <div
@@ -151,39 +159,45 @@ function TeamCard({ team, onClick }: { team: TeamGradeSummary; onClick: () => vo
       {/* Score Progress Bar */}
       <div className="mb-4">
         <div className="flex items-center justify-between mb-1.5">
-          <span className={`text-sm font-medium ${status.color}`}>{team.score}% Score</span>
-          <div className="flex items-center gap-1">
-            <TrendIcon className={`h-3.5 w-3.5 ${trendDisplay.color}`} />
-            <span className={`text-xs font-medium ${trendDisplay.color}`}>{trendDisplay.label}</span>
-          </div>
+          <span className={`text-sm font-medium ${status.color}`}>
+            {isNoData ? 'No Data Yet' : `${team.score}% Score`}
+          </span>
+          {!isNoData && (
+            <div className="flex items-center gap-1">
+              <TrendIcon className={`h-3.5 w-3.5 ${trendDisplay.color}`} />
+              <span className={`text-xs font-medium ${trendDisplay.color}`}>{trendDisplay.label}</span>
+            </div>
+          )}
         </div>
         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
           <div
-            className={`h-full ${scoreColor} rounded-full transition-all duration-500`}
-            style={{ width: `${team.score}%` }}
+            className={`h-full ${isNoData ? 'bg-gray-300' : scoreColor} rounded-full transition-all duration-500`}
+            style={{ width: `${isNoData ? 100 : team.score}%` }}
           />
         </div>
       </div>
 
       {/* Status Breakdown */}
       <div className="flex items-center gap-3 mb-4 text-xs flex-wrap">
-        <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-gray-600">{team.breakdown.green} On-time</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-full bg-yellow-500" />
-          <span className="text-gray-600">{team.breakdown.yellow} Late</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-2 h-2 rounded-full bg-red-500" />
-          <span className="text-gray-600">{team.breakdown.absent} Absent</span>
-        </div>
-        {team.breakdown.excused > 0 && (
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-full bg-blue-500" />
-            <span className="text-gray-600">{team.breakdown.excused} Excused</span>
-          </div>
+        {isNoData ? (
+          <span className="text-gray-400 italic">Awaiting first check-ins from team members</span>
+        ) : (
+          <>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-gray-600">{team.breakdown.green} Checked In</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-gray-600">{team.breakdown.absent} Absent</span>
+            </div>
+            {team.breakdown.excused > 0 && (
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-full bg-blue-500" />
+                <span className="text-gray-600">{team.breakdown.excused} Excused</span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -193,14 +207,16 @@ function TeamCard({ team, onClick }: { team: TeamGradeSummary; onClick: () => vo
           <UserCheck className="h-4 w-4 text-gray-400" />
           <div>
             <p className="text-xs text-gray-500">Attendance</p>
-            <p className="text-sm font-semibold text-gray-900">{team.attendanceRate}%</p>
+            <p className="text-sm font-semibold text-gray-900">{isNoData ? '—' : `${team.attendanceRate}%`}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-gray-400" />
+          <Users className="h-4 w-4 text-gray-400" />
           <div>
-            <p className="text-xs text-gray-500">On-time Rate</p>
-            <p className="text-sm font-semibold text-gray-900">{team.onTimeRate}%</p>
+            <p className="text-xs text-gray-500">Checked In</p>
+            <p className="text-sm font-semibold text-gray-900">
+              {isNoData ? '—' : `${team.breakdown.green} / ${team.memberCount}`}
+            </p>
           </div>
         </div>
       </div>
@@ -227,11 +243,18 @@ function TeamCard({ team, onClick }: { team: TeamGradeSummary; onClick: () => vo
         {/* Grade Badge */}
         <div className="flex flex-col items-end gap-1">
           <div className={`px-2.5 py-1 rounded-lg ${gradeStyle.bg}`}>
-            <span className={`text-sm font-bold ${gradeStyle.text}`}>Grade {team.grade}</span>
+            <span className={`text-sm font-bold ${gradeStyle.text}`}>
+              {isNoData ? 'New Team' : `Grade ${team.grade}`}
+            </span>
           </div>
-          {team.onboardingCount > 0 && (
+          {!isNoData && team.onboardingCount > 0 && (
             <span className="text-xs text-gray-400">
               based on {team.includedMemberCount} of {team.memberCount}
+            </span>
+          )}
+          {isNoData && team.memberCount > 0 && (
+            <span className="text-xs text-gray-400">
+              {team.memberCount} member{team.memberCount > 1 ? 's' : ''} onboarding
             </span>
           )}
         </div>
@@ -244,40 +267,6 @@ function TeamCard({ team, onClick }: { team: TeamGradeSummary; onClick: () => vo
           <span className="text-xs font-medium">{team.atRiskCount} member{team.atRiskCount > 1 ? 's' : ''} need attention</span>
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * Summary stat card
- */
-function StatCard({
-  label,
-  value,
-  subtext,
-  icon: Icon,
-  iconBg,
-  iconColor,
-}: {
-  label: string;
-  value: string | number;
-  subtext?: string;
-  icon: typeof Users;
-  iconBg: string;
-  iconColor: string;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="flex items-center gap-3">
-        <div className={`h-10 w-10 rounded-lg ${iconBg} flex items-center justify-center`}>
-          <Icon className={`h-5 w-5 ${iconColor}`} />
-        </div>
-        <div>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-          <p className="text-sm text-gray-500">{label}</p>
-        </div>
-      </div>
-      {subtext && <p className="text-xs text-gray-400 mt-2">{subtext}</p>}
     </div>
   );
 }
@@ -377,24 +366,21 @@ export function TeamsOverviewPage() {
               value={data.summary.totalTeams}
               subtext={`${data.summary.totalMembers} total members`}
               icon={Users}
-              iconBg="bg-primary-100"
-              iconColor="text-primary-600"
+              color="primary"
             />
             <StatCard
               label="Average Score"
               value={`${data.summary.avgScore}%`}
               subtext={`Grade ${data.summary.avgGrade}`}
               icon={TrendingUp}
-              iconBg={data.summary.avgScore >= 80 ? 'bg-green-100' : data.summary.avgScore >= 70 ? 'bg-yellow-100' : 'bg-red-100'}
-              iconColor={data.summary.avgScore >= 80 ? 'text-green-600' : data.summary.avgScore >= 70 ? 'text-yellow-600' : 'text-red-600'}
+              color={data.summary.avgScore >= 80 ? 'success' : data.summary.avgScore >= 70 ? 'warning' : 'danger'}
             />
             <StatCard
               label="Needs Attention"
               value={data.summary.teamsAtRisk}
               subtext="Grade C or D teams"
               icon={AlertTriangle}
-              iconBg={data.summary.teamsAtRisk > 0 ? 'bg-red-100' : 'bg-green-100'}
-              iconColor={data.summary.teamsAtRisk > 0 ? 'text-red-600' : 'text-green-600'}
+              color={data.summary.teamsAtRisk > 0 ? 'danger' : 'success'}
             />
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <p className="text-sm text-gray-500 mb-3">Trends</p>

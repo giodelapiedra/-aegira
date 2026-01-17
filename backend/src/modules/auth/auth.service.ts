@@ -200,11 +200,19 @@ export async function refreshToken(token: string) {
     // Verify user still exists and is active
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, isActive: true },
+      select: { id: true, isActive: true, email: true },
     });
 
-    if (!user || !user.isActive) {
-      throw new AppError(401, 'User not found or inactive');
+    if (!user) {
+      // Log this case as it might indicate data inconsistency
+      console.warn(`[Auth] Refresh token attempted for non-existent user: ${userId}`);
+      throw new AppError(401, 'User account not found');
+    }
+
+    if (!user.isActive) {
+      // Log deactivated user attempting to refresh
+      console.warn(`[Auth] Refresh token attempted for inactive user: ${user.email} (${userId})`);
+      throw new AppError(401, 'User account has been deactivated');
     }
 
     // Generate new tokens (refresh token stays the same to allow multiple sessions)
@@ -214,6 +222,8 @@ export async function refreshToken(token: string) {
     if (error instanceof AppError) {
       throw error;
     }
+    // Log unexpected errors for debugging
+    console.error('[Auth] Unexpected error during token refresh:', error);
     throw new AppError(401, 'Invalid or expired refresh token');
   }
 }

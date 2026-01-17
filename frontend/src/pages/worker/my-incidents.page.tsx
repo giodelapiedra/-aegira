@@ -1,11 +1,11 @@
 /**
  * My Incidents Page
  * Track personal incident reports and their status
- * Uses centralized components and utilities - no duplicate code
+ * Uses server-side filtering and pagination for scalability
  */
 
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -27,7 +27,7 @@ import { incidentService } from '../../services/incident.service';
 
 // Import reusable components
 import { PageHeader } from '../../components/ui/PageHeader';
-import { StatsCard, StatsCardGrid } from '../../components/ui/StatsCard';
+import { StatCard, StatCardGrid } from '../../components/ui/StatCard';
 import { SeverityBadge, IncidentStatusBadge } from '../../components/ui/StatusBadge';
 import { SkeletonTable } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -53,8 +53,8 @@ const INCIDENT_TYPE_CONFIG: Record<string, { label: string; icon: typeof AlertTr
   INJURY: { label: 'Physical Injury', icon: AlertTriangle },
   ILLNESS: { label: 'Illness/Sickness', icon: XCircle },
   MENTAL_HEALTH: { label: 'Mental Health', icon: User },
-  EQUIPMENT: { label: 'Equipment Issue', icon: AlertTriangle },
-  ENVIRONMENTAL: { label: 'Environmental Hazard', icon: AlertTriangle },
+  MEDICAL_EMERGENCY: { label: 'Medical Emergency', icon: AlertTriangle },
+  HEALTH_SAFETY: { label: 'Health & Safety', icon: AlertTriangle },
   OTHER: { label: 'Other', icon: FileText },
 };
 
@@ -68,38 +68,27 @@ export function MyIncidentsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const { data: incidents, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['incidents', 'my'],
-    queryFn: () => incidentService.getMyIncidents(),
+  // Fetch stats (separate endpoint for accurate counts)
+  const { data: stats } = useQuery({
+    queryKey: ['incidents', 'my', 'stats'],
+    queryFn: () => incidentService.getMyIncidentStats(),
+    refetchInterval: 30000,
   });
 
-  // Computed data
-  const { filteredIncidents, stats, paginatedIncidents, totalPages } = useMemo(() => {
-    const all = incidents || [];
+  // Fetch incidents with server-side filtering
+  const { data: incidentsData, isLoading, isFetching, refetch } = useQuery({
+    queryKey: ['incidents', 'my', currentPage, statusFilter],
+    queryFn: () => incidentService.getMyIncidents({
+      page: currentPage,
+      limit: ITEMS_PER_PAGE,
+      status: statusFilter === 'ALL' ? undefined : statusFilter,
+    }),
+  });
 
-    const filtered = statusFilter === 'ALL'
-      ? all
-      : all.filter((i) => i.status === statusFilter);
-
-    const pages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
-    const paginated = filtered.slice(
-      (currentPage - 1) * ITEMS_PER_PAGE,
-      currentPage * ITEMS_PER_PAGE
-    );
-
-    return {
-      filteredIncidents: filtered,
-      paginatedIncidents: paginated,
-      totalPages: pages,
-      stats: {
-        total: all.length,
-        open: all.filter((i) => i.status === 'OPEN').length,
-        inProgress: all.filter((i) => i.status === 'IN_PROGRESS').length,
-        resolved: all.filter((i) => i.status === 'RESOLVED' || i.status === 'CLOSED').length,
-      },
-    };
-  }, [incidents, statusFilter, currentPage]);
+  const incidents = incidentsData?.data || [];
+  const pagination = incidentsData?.pagination;
 
   // Handlers
   const handleFilterChange = (filter: StatusFilter) => {
@@ -107,9 +96,21 @@ export function MyIncidentsPage() {
     setCurrentPage(1);
   };
 
+  const handleRefresh = () => {
+    refetch();
+    queryClient.invalidateQueries({ queryKey: ['incidents', 'my', 'stats'] });
+  };
+
   const getFilterCount = (filter: StatusFilter) => {
-    if (filter === 'ALL') return stats.total;
-    return incidents?.filter((i) => i.status === filter).length || 0;
+    if (!stats) return 0;
+    switch (filter) {
+      case 'ALL': return stats.total;
+      case 'OPEN': return stats.byStatus.open;
+      case 'IN_PROGRESS': return stats.byStatus.inProgress;
+      case 'RESOLVED': return stats.byStatus.resolved;
+      case 'CLOSED': return stats.byStatus.closed;
+      default: return 0;
+    }
   };
 
   if (isLoading) {
@@ -133,7 +134,7 @@ export function MyIncidentsPage() {
             label: 'Refresh',
             icon: RefreshCw,
             variant: 'secondary',
-            onClick: () => refetch(),
+            onClick: handleRefresh,
             disabled: isFetching,
           },
           {
@@ -145,32 +146,32 @@ export function MyIncidentsPage() {
       />
 
       {/* Stats Cards */}
-      <StatsCardGrid columns={4}>
-        <StatsCard
-          label="Total Reports"
-          value={stats.total}
+      <StatCardGrid columns={4}>
+        <StatCard
           icon={FileText}
-          variant="secondary"
+          value={stats?.total ?? 0}
+          label="Total Reports"
+          color="gray"
         />
-        <StatsCard
-          label="Open"
-          value={stats.open}
+        <StatCard
           icon={Clock}
-          variant="warning"
+          value={stats?.open ?? 0}
+          label="Open"
+          color="warning"
         />
-        <StatsCard
-          label="In Progress"
-          value={stats.inProgress}
+        <StatCard
           icon={RefreshCw}
-          variant="primary"
+          value={stats?.inProgress ?? 0}
+          label="In Progress"
+          color="primary"
         />
-        <StatsCard
-          label="Resolved"
-          value={stats.resolved}
+        <StatCard
           icon={CheckCircle2}
-          variant="success"
+          value={stats?.resolved ?? 0}
+          label="Resolved"
+          color="success"
         />
-      </StatsCardGrid>
+      </StatCardGrid>
 
       {/* Filter Tabs */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2">
@@ -207,7 +208,7 @@ export function MyIncidentsPage() {
       </div>
 
       {/* Incidents List */}
-      {filteredIncidents.length === 0 ? (
+      {incidents.length === 0 ? (
         <EmptyState
           icon={FileText}
           title={statusFilter === 'ALL' ? 'No Incidents Reported' : `No ${statusFilter.replace('_', ' ')} Incidents`}
@@ -224,7 +225,7 @@ export function MyIncidentsPage() {
         />
       ) : (
         <div className="space-y-4">
-          {paginatedIncidents.map((incident) => (
+          {incidents.map((incident) => (
             <IncidentCard
               key={incident.id}
               incident={incident}
@@ -233,13 +234,13 @@ export function MyIncidentsPage() {
           ))}
 
           {/* Pagination */}
-          {totalPages > 1 && (
+          {pagination && pagination.totalPages > 1 && (
             <div className="flex justify-center pt-4">
               <Pagination
                 currentPage={currentPage}
-                totalPages={totalPages}
+                totalPages={pagination.totalPages}
                 onPageChange={setCurrentPage}
-                totalItems={filteredIncidents.length}
+                totalItems={pagination.total}
                 pageSize={ITEMS_PER_PAGE}
                 showItemCount
               />

@@ -12,9 +12,10 @@ import { cn } from '../../lib/utils';
 interface SkeletonProps {
   className?: string;
   variant?: 'default' | 'primary' | 'success' | 'warning';
+  style?: React.CSSProperties;
 }
 
-export function Skeleton({ className, variant = 'default' }: SkeletonProps) {
+export function Skeleton({ className, variant = 'default', style }: SkeletonProps) {
   const variantClasses = {
     default: 'bg-gradient-to-r from-gray-200 via-gray-100 to-gray-200',
     primary: 'bg-gradient-to-r from-primary-100 via-primary-50 to-primary-100',
@@ -31,6 +32,7 @@ export function Skeleton({ className, variant = 'default' }: SkeletonProps) {
       )}
       style={{
         backgroundSize: '200% 100%',
+        ...style,
       }}
     />
   );

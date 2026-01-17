@@ -286,14 +286,196 @@ const { data: currentUser } = useQuery({
 
 ---
 
+## Issue 3: Backend Query Optimization
+
+### HIGH Priority
+
+#### A. N+1 Team Lookup Problem
+**Impact:** 10+ modules affected, extra DB query per request for TEAM_LEAD users
+
+**Affected Files:**
+| File | Line | Query |
+|------|------|-------|
+| `modules/checkins/index.ts` | 164-167 | `findFirst({ leaderId, companyId, isActive })` |
+| `modules/analytics/index.ts` | 55-62 | Same pattern |
+| `modules/analytics/index.ts` | 175-182 | Same pattern |
+| `modules/analytics/index.ts` | 242-249 | Same pattern |
+| `modules/users/index.ts` | 436-439 | Same pattern |
+| `modules/incidents/index.ts` | 98-101 | Same pattern |
+| `modules/exceptions/index.ts` | 92-95 | Same pattern |
+| `modules/teams/index.ts` | 88-91 | Same pattern |
+
+**Fix:** Add `teamId` to auth context middleware - query once, use everywhere
+
+#### B. Large In-Memory Aggregations
+**File:** `modules/analytics/index.ts:703-845`
+
+**Problem:**
+```typescript
+// Loads ALL checkins into memory, then loops per member
+const checkinsByUser = new Map();
+for (const checkin of allCheckins) { ... }
+const memberAnalytics = team.members.map((member) => { ... });
+```
+
+**Fix:** Use Prisma `groupBy()` for database-level aggregation
+
+#### C. Inefficient Case Number Generation
+**File:** `modules/incidents/index.ts:11-56`
+
+**Problem:** Up to 11 DB queries per incident creation (1 findFirst + 10 retries)
+
+**Fix:** Use database sequence or atomic counter table
+
+---
+
+### MEDIUM Priority
+
+#### D. Missing Composite Indexes
+
+| Table | Current Index | Recommended | Query Pattern |
+|-------|--------------|-------------|---------------|
+| Team | `@@index([leaderId])` | `@@index([leaderId, companyId, isActive])` | Team lookup by leader |
+| Checkin | `@@index([userId])`, `@@index([createdAt])` | `@@index([userId, createdAt])` | Date range queries |
+
+#### E. Redundant Holiday Queries
+**File:** `modules/analytics/index.ts`
+- Line 597-606: Fetches current period holidays
+- Line 960-970: Fetches previous period holidays
+
+**Fix:** Single query for entire year, filter in-memory
+
+#### F. Duplicate Team Member Queries
+**File:** `modules/daily-monitoring/index.ts:100-150`
+
+**Problem:** Fetches user's team, then queries for different team again
+
+#### G. Exception Fetching Without Limits
+**File:** `modules/analytics/index.ts:610-623`
+
+**Problem:** Fetches ALL exceptions for ALL team members without pagination
+
+---
+
+### LOW Priority
+
+#### H. Missing Pagination - Absences Team Pending
+**File:** `modules/absences/index.ts:254-268`
+
+**Problem:** Hard-coded `take: 100`, no offset/skip support
+
+---
+
+## Issue 4: Frontend Query Optimization (Additional)
+
+### HIGH Priority
+
+#### A. Duplicate Tab Queries
+**Files:**
+- `pages/team-leader/daily-monitoring/tabs/CheckinsTab.tsx`
+- `pages/team-leader/daily-monitoring/tabs/ExemptionsTab.tsx`
+
+**Problem:** Each tab makes 2+ separate API calls on switch
+
+**Fix:** Batch queries or use parallel fetching
+
+---
+
+### MEDIUM Priority
+
+#### B. Exception Counts Fetch
+**File:** `pages/team-leader/approvals.page.tsx:58-61`
+
+```typescript
+// Fetches 500 records just for tab count badges!
+const { data: allExceptions } = useQuery({
+  queryKey: ['exceptions', 'counts'],
+  queryFn: () => exceptionService.getAll({ page: 1, limit: 500 }),
+});
+```
+
+**Fix:** Get counts from main query pagination response
+
+#### C. Waterfall Request Pattern
+**File:** `pages/worker/checkin/hooks/useCheckinQueries.ts:59-70`
+
+```typescript
+const weekStats = useQuery({
+  enabled: !!todayCheckin.data, // Waits for today's checkin
+});
+```
+
+**Fix:** Fetch independently - week stats don't need today's checkin
+
+#### D. Overly Aggressive Query Invalidation
+**File:** `pages/team-leader/daily-monitoring/hooks/useExemptionMutations.ts:37-43`
+
+**Problem:** Invalidates 5 queries on every mutation
+
+**Fix:** Targeted invalidation per action type
+
+#### E. Double Client-Side Filtering
+**File:** `pages/team-leader/daily-monitoring/tabs/CheckinsTab.tsx:40-49`
+
+**Problem:** Backend filters by search, then frontend filters again
+
+**Fix:** Remove redundant client-side filter
+
+#### F. Redundant User Fetch
+**File:** `pages/worker/checkin/hooks/useCheckinQueries.ts:24-28`
+
+**Problem:** Fetches user data already in Zustand auth store
+
+**Fix:** Use auth store first, fetch only if needed
+
+---
+
+## Implementation Plan (Updated)
+
+### Phase 1: Quick Wins (LOW EFFORT, HIGH IMPACT)
+- [ ] Add `teamId` to auth context middleware
+- [ ] Add composite index `[leaderId, companyId, isActive]` to Team
+- [ ] Add composite index `[userId, createdAt]` to Checkin
+- [ ] Remove redundant client-side search filter
+- [ ] Combine holiday queries into single yearly fetch
+
+### Phase 2: Fix Aggressive Refetching
+- [ ] `supervisor/dashboard.page.tsx` - Remove refetchInterval, increase staleTime
+- [ ] `whs/dashboard.page.tsx` - Add staleTime, consider removing refetchInterval
+- [ ] `daily-monitoring/AbsencesTab.tsx` - Add staleTime, remove refetchInterval
+- [ ] `ai-insights-history.page.tsx` - Change staleTime from 0 to 30+ minutes
+- [ ] `worker/checkin.page.tsx` - Increase staleTime for profile/exemptions
+
+### Phase 3: Backend Query Optimization
+- [ ] Replace in-memory aggregations with Prisma `groupBy()`
+- [ ] Implement DB sequence for case number generation
+- [ ] Add pagination to exception fetching
+- [ ] Fix duplicate team member queries
+
+### Phase 4: Frontend Query Optimization
+- [ ] Use counts from main query instead of separate fetch
+- [ ] Remove waterfall dependencies where data is independent
+- [ ] Implement targeted query invalidation
+- [ ] Batch tab queries
+
+### Phase 5: Refactor Large Files
+- [ ] `worker/checkin.page.tsx` (1,337 lines) - Split into folder structure
+- [ ] `worker/home.page.tsx` (1,250 lines) - Extract components
+- [ ] `team-leader/member-profile.page.tsx` (976 lines) - Split by tabs
+
+---
+
 ## Status
 
 | Phase | Status | Date |
 |-------|--------|------|
 | Analysis | COMPLETED | 2026-01-14 |
-| Phase 1 (Refetching) | PENDING | - |
-| Phase 2 (Large Files) | PENDING | - |
-| Phase 3 (Other Files) | PENDING | - |
+| Backend Analysis | COMPLETED | 2026-01-16 |
+| Phase 1 (Quick Wins) | PENDING | - |
+| Phase 2 (Refetching) | PENDING | - |
+| Phase 3 (Backend Queries) | PENDING | - |
+| Phase 4 (Frontend Queries) | PENDING | - |
+| Phase 5 (Large Files) | PENDING | - |
 
 ---
 
@@ -305,3 +487,7 @@ const { data: currentUser } = useQuery({
 | 2026-01-14 | Identified 14 large files |
 | 2026-01-14 | Identified 8 aggressive refetching issues |
 | 2026-01-14 | Created fix recommendations |
+| 2026-01-16 | Added backend query optimization analysis |
+| 2026-01-16 | Identified 14 backend issues (3 HIGH, 10 MEDIUM, 1 LOW) |
+| 2026-01-16 | Identified 6 additional frontend query issues |
+| 2026-01-16 | Updated implementation plan with 5 phases |

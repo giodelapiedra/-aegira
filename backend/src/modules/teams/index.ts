@@ -1162,7 +1162,7 @@ teamsRoutes.get('/members/:userId/checkins', async (c) => {
   const currentUser = c.get('user');
 
   const page = parseInt(c.req.query('page') || '1');
-  const limit = parseInt(c.req.query('limit') || '10');
+  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100);
   const status = c.req.query('status'); // GREEN, YELLOW, RED
 
   // Verify member exists and belongs to company

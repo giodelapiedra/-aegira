@@ -2,9 +2,9 @@
  * SummaryAggregateCard Component
  *
  * Displays aggregated statistics for a period.
+ * Clean, minimal design with single accent color.
  */
 
-import { TrendingUp, Users, CheckCircle2, AlertTriangle, XCircle, Calendar, CheckCheck, Ban } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 
 interface AggregateData {
@@ -16,8 +16,8 @@ interface AggregateData {
   totalGreen: number;
   totalYellow: number;
   totalRed: number;
-  totalAbsent: number;   // Penalized absences
-  totalExcused: number;  // TL-approved absences
+  totalAbsent: number;
+  totalExcused: number;
 }
 
 interface SummaryAggregateCardProps {
@@ -26,141 +26,106 @@ interface SummaryAggregateCardProps {
 }
 
 export function SummaryAggregateCard({ aggregate, periodLabel }: SummaryAggregateCardProps) {
-  const complianceColor =
-    aggregate.avgComplianceRate === null
-      ? 'text-gray-500'
-      : aggregate.avgComplianceRate >= 100
-      ? 'text-green-600'
-      : aggregate.avgComplianceRate >= 80
-      ? 'text-blue-600'
-      : aggregate.avgComplianceRate >= 60
-      ? 'text-yellow-600'
-      : 'text-red-600';
-
-  const scoreColor =
-    aggregate.avgReadinessScore === null
-      ? 'text-gray-500'
-      : aggregate.avgReadinessScore >= 70
-      ? 'text-green-600'
-      : aggregate.avgReadinessScore >= 50
-      ? 'text-yellow-600'
-      : 'text-red-600';
-
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-semibold text-gray-900">Period Summary</h3>
-        <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-          {periodLabel}
-        </span>
+    <div className="bg-white rounded-lg border border-gray-200">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        <h3 className="text-base font-semibold text-gray-900">Period Summary</h3>
+        <span className="text-sm text-gray-500">{periodLabel}</span>
       </div>
 
-      {/* Main Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-gray-200">
         {/* Work Days */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Calendar className="h-4 w-4 text-gray-500" />
-            <span className="text-sm text-gray-500">Work Days</span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">{aggregate.totalWorkDays}</p>
+        <div className="px-6 py-4">
+          <p className="text-sm text-gray-500 mb-1">Work Days</p>
+          <p className="text-2xl font-semibold text-gray-900">{aggregate.totalWorkDays}</p>
         </div>
 
-        {/* Total Check-ins */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <Users className="h-4 w-4 text-gray-500" />
-            <span className="text-sm text-gray-500">Total Check-ins</span>
-          </div>
-          <p className="text-2xl font-bold text-gray-900">
+        {/* Check-ins */}
+        <div className="px-6 py-4">
+          <p className="text-sm text-gray-500 mb-1">Check-ins</p>
+          <p className="text-2xl font-semibold text-gray-900">
             {aggregate.totalCheckedIn}
-            <span className="text-sm font-normal text-gray-500">/{aggregate.totalExpected}</span>
+            <span className="text-base font-normal text-gray-400">/{aggregate.totalExpected}</span>
           </p>
         </div>
 
-        {/* Avg Compliance */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="h-4 w-4 text-gray-500" />
-            <span className="text-sm text-gray-500">Avg Compliance</span>
-          </div>
-          <p className={cn('text-2xl font-bold', complianceColor)}>
+        {/* Compliance */}
+        <div className="px-6 py-4">
+          <p className="text-sm text-gray-500 mb-1">Compliance</p>
+          <p className={cn(
+            'text-2xl font-semibold',
+            aggregate.avgComplianceRate === null ? 'text-gray-400' :
+            aggregate.avgComplianceRate >= 80 ? 'text-gray-900' : 'text-red-600'
+          )}>
             {aggregate.avgComplianceRate !== null ? `${aggregate.avgComplianceRate}%` : '—'}
           </p>
         </div>
 
         {/* Avg Score */}
-        <div className="bg-gray-50 rounded-lg p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="h-4 w-4 text-gray-500" />
-            <span className="text-sm text-gray-500">Avg Score</span>
-          </div>
-          <p className={cn('text-2xl font-bold', scoreColor)}>
+        <div className="px-6 py-4">
+          <p className="text-sm text-gray-500 mb-1">Avg Score</p>
+          <p className={cn(
+            'text-2xl font-semibold',
+            aggregate.avgReadinessScore === null ? 'text-gray-400' :
+            aggregate.avgReadinessScore >= 70 ? 'text-gray-900' : 'text-red-600'
+          )}>
             {aggregate.avgReadinessScore !== null ? aggregate.avgReadinessScore : '—'}
+          </p>
+        </div>
+
+        {/* Excused */}
+        <div className="px-6 py-4">
+          <p className="text-sm text-gray-500 mb-1">Excused</p>
+          <p className="text-2xl font-semibold text-gray-900">{aggregate.totalExcused}</p>
+        </div>
+
+        {/* Absent */}
+        <div className="px-6 py-4">
+          <p className="text-sm text-gray-500 mb-1">Absent</p>
+          <p className={cn(
+            'text-2xl font-semibold',
+            aggregate.totalAbsent > 0 ? 'text-red-600' : 'text-gray-900'
+          )}>
+            {aggregate.totalAbsent}
           </p>
         </div>
       </div>
 
-      {/* Status Distribution */}
-      <div className="border-t border-gray-200 pt-4">
-        <h4 className="text-sm font-medium text-gray-500 mb-3">Status Distribution</h4>
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
-              <CheckCircle2 className="h-4 w-4 text-green-600" />
-            </div>
-            <div>
-              <p className="text-lg font-bold text-green-600">{aggregate.totalGreen}</p>
-              <p className="text-xs text-gray-500">Ready</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-yellow-100 flex items-center justify-center">
-              <AlertTriangle className="h-4 w-4 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-lg font-bold text-yellow-600">{aggregate.totalYellow}</p>
-              <p className="text-xs text-gray-500">Caution</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
-              <XCircle className="h-4 w-4 text-red-600" />
-            </div>
-            <div>
-              <p className="text-lg font-bold text-red-600">{aggregate.totalRed}</p>
-              <p className="text-xs text-gray-500">At Risk</p>
-            </div>
+      {/* Status Distribution - Simple bar */}
+      <div className="px-6 py-4 border-t border-gray-200">
+        <div className="flex items-center justify-between text-sm mb-2">
+          <span className="text-gray-500">Status Distribution</span>
+          <div className="flex items-center gap-4 text-gray-600">
+            <span>Ready: <strong className="text-gray-900">{aggregate.totalGreen}</strong></span>
+            <span>Caution: <strong className="text-gray-900">{aggregate.totalYellow}</strong></span>
+            <span>At Risk: <strong className="text-gray-900">{aggregate.totalRed}</strong></span>
           </div>
         </div>
-      </div>
-
-      {/* Absence Breakdown */}
-      <div className="border-t border-gray-200 pt-4">
-        <h4 className="text-sm font-medium text-gray-500 mb-3">Absence Breakdown</h4>
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-primary-100 flex items-center justify-center">
-              <CheckCheck className="h-4 w-4 text-primary-600" />
-            </div>
-            <div>
-              <p className="text-lg font-bold text-primary-600">{aggregate.totalExcused}</p>
-              <p className="text-xs text-gray-500">Excused</p>
-            </div>
+        {/* Progress bar */}
+        {(aggregate.totalGreen + aggregate.totalYellow + aggregate.totalRed) > 0 && (
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden flex">
+            {aggregate.totalGreen > 0 && (
+              <div
+                className="bg-green-500 h-full"
+                style={{ width: `${(aggregate.totalGreen / (aggregate.totalGreen + aggregate.totalYellow + aggregate.totalRed)) * 100}%` }}
+              />
+            )}
+            {aggregate.totalYellow > 0 && (
+              <div
+                className="bg-yellow-400 h-full"
+                style={{ width: `${(aggregate.totalYellow / (aggregate.totalGreen + aggregate.totalYellow + aggregate.totalRed)) * 100}%` }}
+              />
+            )}
+            {aggregate.totalRed > 0 && (
+              <div
+                className="bg-red-500 h-full"
+                style={{ width: `${(aggregate.totalRed / (aggregate.totalGreen + aggregate.totalYellow + aggregate.totalRed)) * 100}%` }}
+              />
+            )}
           </div>
-
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center">
-              <Ban className="h-4 w-4 text-red-600" />
-            </div>
-            <div>
-              <p className="text-lg font-bold text-red-600">{aggregate.totalAbsent}</p>
-              <p className="text-xs text-gray-500">Absent</p>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

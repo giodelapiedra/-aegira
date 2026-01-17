@@ -493,7 +493,7 @@ pdfTemplatesRoutes.get('/filled/list', async (c) => {
   const incidentId = c.req.query('incidentId');
   const templateId = c.req.query('templateId');
   const page = parseInt(c.req.query('page') || '1', 10);
-  const limit = parseInt(c.req.query('limit') || '20', 10);
+  const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100);
 
   const where: any = { companyId };
   if (incidentId) where.incidentId = incidentId;

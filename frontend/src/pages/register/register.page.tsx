@@ -127,9 +127,24 @@ export function RegisterPage() {
             {/* Error Message */}
             {(registerError || passwordError) && (
               <div className="mb-6 p-4 rounded-xl bg-danger-50 border border-danger-200 animate-slide-down">
-                <p className="text-sm text-danger-600">
-                  {passwordError || (registerError as any)?.response?.data?.error || 'Registration failed. Please try again.'}
-                </p>
+                {passwordError ? (
+                  <p className="text-sm text-danger-600">{passwordError}</p>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-danger-700 mb-1">
+                      {(registerError as any)?.response?.data?.error || 'Registration failed'}
+                    </p>
+                    {(registerError as any)?.response?.data?.details && (
+                      <ul className="text-sm text-danger-600 list-disc list-inside space-y-1">
+                        {((registerError as any)?.response?.data?.details || []).map((issue: any, idx: number) => (
+                          <li key={idx}>
+                            {issue.path?.join('.')}: {issue.message}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
               </div>
             )}
 

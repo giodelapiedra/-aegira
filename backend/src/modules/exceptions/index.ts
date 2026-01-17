@@ -72,15 +72,56 @@ exceptionsRoutes.get('/pending', async (c) => {
   return c.json(exceptions);
 });
 
+// GET /exceptions/stats - Stats for exceptions (for team leader dashboard)
+exceptionsRoutes.get('/stats', async (c) => {
+  const companyId = c.get('companyId');
+  const userId = c.get('userId');
+  const user = c.get('user');
+
+  // TEAM_LEAD: Only see stats from their team members
+  const isTeamLead = user.role?.toUpperCase() === 'TEAM_LEAD';
+  let teamIdFilter: string | undefined;
+  if (isTeamLead) {
+    const team = await prisma.team.findFirst({
+      where: { leaderId: userId, companyId, isActive: true },
+      select: { id: true },
+    });
+    if (!team) {
+      return c.json({ error: 'You are not assigned to lead any team' }, 403);
+    }
+    teamIdFilter = team.id;
+  }
+
+  const baseWhere: any = { companyId };
+  if (isTeamLead && teamIdFilter) {
+    baseWhere.user = { teamId: teamIdFilter };
+  }
+
+  const [total, pending, approved, rejected] = await Promise.all([
+    prisma.exception.count({ where: baseWhere }),
+    prisma.exception.count({ where: { ...baseWhere, status: 'PENDING' } }),
+    prisma.exception.count({ where: { ...baseWhere, status: 'APPROVED' } }),
+    prisma.exception.count({ where: { ...baseWhere, status: 'REJECTED' } }),
+  ]);
+
+  return c.json({
+    total,
+    pending,
+    approved,
+    rejected,
+  });
+});
+
 // GET /exceptions - List all exceptions (company-scoped, team-filtered for team leads)
 exceptionsRoutes.get('/', async (c) => {
   const companyId = c.get('companyId');
   const userId = c.get('userId');
   const user = c.get('user');
   const page = parseInt(c.req.query('page') || '1');
-  const limit = parseInt(c.req.query('limit') || '10');
+  const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100);
   const status = c.req.query('status');
   const userIdParam = c.req.query('userId');
+  const search = c.req.query('search');
   const activeOn = c.req.query('activeOn'); // Filter exceptions active on this date (YYYY-MM-DD)
 
   const skip = (page - 1) * limit;
@@ -102,10 +143,19 @@ exceptionsRoutes.get('/', async (c) => {
   const where: any = { companyId };
   if (status) where.status = status;
   if (userIdParam) where.userId = userIdParam;
-  
+
   // TEAM_LEAD: Filter by team
   if (isTeamLead && teamIdFilter) {
     where.user = { teamId: teamIdFilter };
+  }
+
+  // Add search filter
+  if (search) {
+    where.OR = [
+      { reason: { contains: search, mode: 'insensitive' } },
+      { user: { firstName: { contains: search, mode: 'insensitive' } } },
+      { user: { lastName: { contains: search, mode: 'insensitive' } } },
+    ];
   }
 
   // Filter exceptions that are active on a specific date
@@ -358,7 +408,7 @@ exceptionsRoutes.put('/:id', async (c) => {
   // Authorization check
   const isOwner = existing.userId === userId;
   const isTeamLead = currentUser.role === 'TEAM_LEAD';
-  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR'].includes(currentUser.role);
+  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'WHS_CONTROL'].includes(currentUser.role);
 
   // TEAM_LEAD: Can only update exceptions from their own team members
   if (isTeamLead) {
@@ -549,8 +599,14 @@ exceptionsRoutes.patch('/:id/approve', async (c) => {
     metadata: { type: exception.type, userId: exception.userId },
   });
 
-  // If linked to an incident, create activity
+  // If linked to an incident, create activity and notify supervisors
   if (existing.linkedIncidentId) {
+    // Get incident info for notification
+    const incident = await prisma.incident.findUnique({
+      where: { id: existing.linkedIncidentId },
+      select: { caseNumber: true },
+    });
+
     await prisma.incidentActivity.create({
       data: {
         incidentId: existing.linkedIncidentId,
@@ -559,6 +615,29 @@ exceptionsRoutes.patch('/:id/approve', async (c) => {
         comment: `${reviewer?.firstName} ${reviewer?.lastName} approved the linked leave request`,
       },
     });
+
+    // Notify supervisors about pending WHS assignment
+    const supervisors = await prisma.user.findMany({
+      where: {
+        companyId,
+        role: 'SUPERVISOR',
+        isActive: true,
+      },
+      select: { id: true },
+    });
+
+    if (supervisors.length > 0) {
+      await prisma.notification.createMany({
+        data: supervisors.map((sup) => ({
+          userId: sup.id,
+          companyId,
+          title: 'Incident Pending WHS Assignment',
+          message: `Incident ${incident?.caseNumber || ''} has been approved by Team Leader. Please assign to a WHS officer.`,
+          type: 'INCIDENT_PENDING_ASSIGNMENT',
+          data: { incidentId: existing.linkedIncidentId },
+        })),
+      });
+    }
   }
 
   // Recalculate daily team summaries for the leave period (affects expectedToCheckIn)
@@ -898,7 +977,7 @@ exceptionsRoutes.delete('/:id', async (c) => {
   // Authorization check
   const isOwner = existing.userId === reviewerId;
   const isTeamLead = currentUser.role === 'TEAM_LEAD';
-  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR'].includes(currentUser.role);
+  const hasElevatedRole = ['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'WHS_CONTROL'].includes(currentUser.role);
 
   // TEAM_LEAD: Can only delete exceptions from their own team members
   if (isTeamLead) {

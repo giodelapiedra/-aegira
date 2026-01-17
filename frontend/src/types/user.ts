@@ -171,6 +171,7 @@ export interface IncidentActivity {
     firstName: string;
     lastName: string;
     avatar?: string;
+    role?: Role;
   };
 }
 
@@ -195,7 +196,7 @@ export interface Incident {
   id: string;
   caseNumber: string;
   companyId: string;
-  type: 'INJURY' | 'ILLNESS' | 'MENTAL_HEALTH' | 'EQUIPMENT' | 'ENVIRONMENTAL' | 'OTHER';
+  type: 'INJURY' | 'ILLNESS' | 'MENTAL_HEALTH' | 'MEDICAL_EMERGENCY' | 'HEALTH_SAFETY' | 'OTHER';
   title: string;
   description: string;
   severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
@@ -227,8 +228,32 @@ export interface Incident {
     firstName: string;
     lastName: string;
   };
+  // WHS Assignment (Supervisor assigns to WHS Officer)
+  whsAssignedTo?: string;
+  whsAssignedAt?: string;
+  whsAssignedBy?: string;
+  whsAssignedNote?: string;
+  whsOfficer?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    avatar?: string;
+  };
+  whsAssigner?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
   createdAt: string;
   updatedAt?: string;
+}
+
+// WHS Officer (for dropdown selection)
+export interface WHSOfficer {
+  id: string;
+  firstName: string;
+  lastName: string;
+  avatar?: string;
 }
 
 export interface DashboardStats {

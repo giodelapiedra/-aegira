@@ -26,14 +26,14 @@ interface ReadinessTrendChartProps {
   data: DataPoint[];
   height?: number;
   showZones?: boolean;
-  timezone?: string;
+  timezone: string; // Company timezone - REQUIRED
 }
 
 export function ReadinessTrendChart({
   data,
   height = 280,
   showZones = true,
-  timezone = 'Asia/Manila',
+  timezone,
 }: ReadinessTrendChartProps) {
   if (!data || data.length === 0) {
     return (

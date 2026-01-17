@@ -39,7 +39,8 @@ import { incidentService } from '../../services/incident.service';
 import { exceptionService } from '../../services/exception.service';
 import { useAuthStore } from '../../store/auth.store';
 import { useToast } from '../../components/ui/Toast';
-import type { Incident, IncidentActivity } from '../../types/user';
+import type { Incident, IncidentActivity, Role } from '../../types/user';
+import { ROLE_CONFIG } from '../../config/roles';
 
 // Status configuration
 const statusConfig: Record<string, {
@@ -94,8 +95,8 @@ const typeConfig: Record<string, { label: string }> = {
   INJURY: { label: 'Physical Injury' },
   ILLNESS: { label: 'Illness' },
   MENTAL_HEALTH: { label: 'Mental Health' },
-  EQUIPMENT: { label: 'Equipment Issue' },
-  ENVIRONMENTAL: { label: 'Environmental' },
+  MEDICAL_EMERGENCY: { label: 'Medical Emergency' },
+  HEALTH_SAFETY: { label: 'Health & Safety' },
   OTHER: { label: 'Other' },
 };
 
@@ -302,55 +303,10 @@ export function IncidentDetailPage() {
     </div>
   );
 
-  // Handle print/PDF
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDownloadPDF = async () => {
-    // Dynamic import for html2pdf
-    const html2pdf = (await import('html2pdf.js')).default;
-
-    const element = document.getElementById('print-content');
-    if (!element) return;
-
-    const opt = {
-      margin: [10, 10, 10, 10] as [number, number, number, number],
-      filename: `Case-${incident.caseNumber}.pdf`,
-      image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, logging: false },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' as const },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
-    };
-
-    html2pdf().set(opt).from(element).save();
-  };
-
   return (
-    <div className="max-w-7xl mx-auto py-6 px-4 print-container" id="print-content">
-      {/* Print Header - Only visible when printing */}
-      <div className="hidden print:block print-header mb-6">
-        <div className="flex justify-between items-center border-b-4 border-indigo-600 pb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">INCIDENT REPORT</h1>
-            <div className="flex items-center gap-4 mt-2">
-              <span className="text-sm font-semibold text-indigo-600">Case #{incident.caseNumber}</span>
-              <span className="text-sm text-gray-500">|</span>
-              <span className={cn("text-sm font-semibold", status.color)}>{status.label.toUpperCase()}</span>
-              <span className="text-sm text-gray-500">|</span>
-              <span className={cn("text-sm font-semibold", severity.color)}>{severity.label.toUpperCase()} SEVERITY</span>
-            </div>
-          </div>
-          <div className="text-right">
-            <p className="text-lg font-bold text-gray-900">Aegira</p>
-            <p className="text-xs text-gray-500">Safety Management System</p>
-            <p className="text-xs text-gray-400 mt-1">Report Date: {formatDisplayDate(new Date().toISOString())}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Top Header - Hidden when printing */}
-      <div className="flex items-start justify-between mb-8 no-print">
+    <div className="max-w-7xl mx-auto py-6 px-4">
+      {/* Top Header */}
+      <div className="flex items-start justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Case Details</h1>
           <div className="flex items-center gap-3 mt-1">
@@ -431,11 +387,13 @@ export function IncidentDetailPage() {
 
           <div className="h-6 w-px bg-gray-200 mx-1" />
 
-          <Button variant="secondary" size="sm" leftIcon={<Printer className="h-4 w-4" />} onClick={handlePrint}>
-            Print
-          </Button>
-          <Button variant="secondary" size="sm" leftIcon={<Download className="h-4 w-4" />} onClick={handleDownloadPDF}>
-            PDF
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Printer className="h-4 w-4" />}
+            onClick={() => navigate(`/incidents/${id}/print`)}
+          >
+            Print / PDF
           </Button>
           <button
             onClick={() => navigate(-1)}
@@ -447,9 +405,9 @@ export function IncidentDetailPage() {
       </div>
 
       {/* Main Info Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 print-grid">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         {/* CASE INFORMATION */}
-        <Card className="page-break-avoid">
+        <Card>
           <CardHeader className="pb-2 border-b border-gray-100 mb-0">
             <CardTitle className="text-sm font-bold uppercase tracking-wider text-gray-900">CASE INFORMATION</CardTitle>
           </CardHeader>
@@ -469,7 +427,7 @@ export function IncidentDetailPage() {
         </Card>
 
         {/* WORKER INFORMATION */}
-        <Card className="page-break-avoid">
+        <Card>
           <CardHeader className="pb-2 border-b border-gray-100 mb-0">
             <CardTitle className="text-sm font-bold uppercase tracking-wider text-gray-900">WORKER INFORMATION</CardTitle>
           </CardHeader>
@@ -491,7 +449,7 @@ export function IncidentDetailPage() {
         </Card>
 
         {/* INCIDENT DETAILS */}
-        <Card className="page-break-avoid">
+        <Card>
           <CardHeader className="pb-2 border-b border-gray-100 mb-0">
             <CardTitle className="text-sm font-bold uppercase tracking-wider text-gray-900">INCIDENT DETAILS</CardTitle>
           </CardHeader>
@@ -511,23 +469,37 @@ export function IncidentDetailPage() {
           </CardContent>
         </Card>
 
-        {/* SUPERVISOR INFORMATION */}
-        <Card className="page-break-avoid">
+        {/* WHS ASSIGNMENT */}
+        <Card>
           <CardHeader className="pb-2 border-b border-gray-100 mb-0">
-            <CardTitle className="text-sm font-bold uppercase tracking-wider text-gray-900">SUPERVISOR INFORMATION</CardTitle>
+            <CardTitle className="text-sm font-bold uppercase tracking-wider text-gray-900">WHS ASSIGNMENT</CardTitle>
           </CardHeader>
           <CardContent className="pt-4 space-y-1">
-            <InfoRow 
-              label="Supervisor:" 
-              value={incident.assignee ? `${incident.assignee.firstName} ${incident.assignee.lastName}` : 'Unassigned'} 
+            <InfoRow
+              label="WHS Officer:"
+              value={incident.whsOfficer ? `${incident.whsOfficer.firstName} ${incident.whsOfficer.lastName}` : 'Unassigned'}
             />
-            <InfoRow 
-              label="Last Updated:" 
-              value={incident.updatedAt ? formatDisplayDate(incident.updatedAt) : formatDisplayDate(incident.createdAt)} 
-            />
+            {incident.whsAssigner && (
+              <InfoRow
+                label="Assigned By:"
+                value={`${incident.whsAssigner.firstName} ${incident.whsAssigner.lastName}`}
+              />
+            )}
+            {incident.whsAssignedAt && (
+              <InfoRow
+                label="Assigned Date:"
+                value={formatDisplayDate(incident.whsAssignedAt)}
+              />
+            )}
+            {incident.whsAssignedNote && (
+              <div className="pt-2 mt-2 border-t border-gray-50">
+                <span className="text-sm text-gray-500 block mb-1">Assignment Note:</span>
+                <p className="text-sm text-gray-900">{incident.whsAssignedNote}</p>
+              </div>
+            )}
             <div className="flex justify-end pt-2">
-              <Badge variant={incident.assignee ? 'success' : 'default'}>
-                {incident.assignee ? 'ASSIGNED TO CLINICIAN' : 'UNASSIGNED'}
+              <Badge variant={incident.whsOfficer ? 'success' : 'default'}>
+                {incident.whsOfficer ? 'ASSIGNED TO WHS' : 'PENDING ASSIGNMENT'}
               </Badge>
             </div>
           </CardContent>
@@ -539,7 +511,7 @@ export function IncidentDetailPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* AI Summary */}
           {incident.aiSummary && (
-            <div className="bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-600 rounded-2xl shadow-lg p-6 text-white ai-summary-card page-break-avoid">
+            <div className="bg-gradient-to-br from-violet-500 via-purple-500 to-indigo-600 rounded-2xl shadow-lg p-6 text-white">
                <div className="flex items-center gap-3 mb-4">
                   <Brain className="h-6 w-6" />
                   <h3 className="font-semibold text-lg">AI Summary</h3>
@@ -551,7 +523,7 @@ export function IncidentDetailPage() {
           )}
 
           {/* Activity Timeline - Hidden in Print */}
-          <Card className="no-print">
+          <Card>
             <CardHeader className="border-b border-gray-100">
                <CardTitle>Activity Timeline</CardTitle>
             </CardHeader>
@@ -598,7 +570,8 @@ export function IncidentDetailPage() {
                     const config = activityConfig[activity.type] || activityConfig.COMMENT;
                     const Icon = config.icon;
                     const { action, detail } = getActivityText(activity);
-                    
+                    const roleConfig = activity.user.role ? ROLE_CONFIG[activity.user.role as Role] : null;
+
                     return (
                       <div key={activity.id} className="relative flex gap-4">
                         <div className={cn(
@@ -608,7 +581,14 @@ export function IncidentDetailPage() {
                           <Icon className={cn('h-4 w-4', config.color)} />
                         </div>
                         <div className="flex-1 pt-1">
-                          <p className="text-sm text-gray-900 font-medium">{action}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm text-gray-900 font-medium">{action}</p>
+                            {roleConfig && (
+                              <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium', roleConfig.bgColor, roleConfig.color)}>
+                                {roleConfig.label}
+                              </span>
+                            )}
+                          </div>
                           {detail && <p className="text-sm text-gray-500 mt-0.5">{detail}</p>}
                           <p className="text-xs text-gray-400 mt-1">{formatDisplayDateTime(activity.createdAt)}</p>
                         </div>
@@ -626,7 +606,7 @@ export function IncidentDetailPage() {
         <div className="space-y-6">
            {/* Linked Exception */}
            {incident.exception && (
-            <Card className="page-break-avoid">
+            <Card>
               <CardHeader className="border-b border-gray-100">
                 <CardTitle>Leave Request</CardTitle>
               </CardHeader>
@@ -658,7 +638,7 @@ export function IncidentDetailPage() {
                             const endDate = new Date(incident.exception!.endDate);
                             setExceptionEndDate(endDate.toISOString().split('T')[0]);
                           }}
-                          className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-primary-50 transition-colors no-print"
+                          className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-primary-50 transition-colors"
                         >
                           <Edit3 className="h-3.5 w-3.5" />
                           Edit Range
@@ -727,9 +707,23 @@ export function IncidentDetailPage() {
                   </div>
                   
                   {incident.exception.status === 'PENDING' && canUpdateStatus && (
-                    <div className="flex gap-2 pt-2 no-print">
+                    <div className="flex gap-2 pt-2">
                       <Button size="sm" variant="success" className="flex-1" onClick={() => approveExceptionMutation.mutate(incident.exception!.id)}>Approve</Button>
                       <Button size="sm" variant="danger" className="flex-1" onClick={() => rejectExceptionMutation.mutate(incident.exception!.id)}>Reject</Button>
+                    </div>
+                  )}
+
+                  {/* TL Approval Info */}
+                  {incident.exception.status === 'APPROVED' && incident.exception.reviewedBy && (
+                    <div className="pt-3 border-t border-gray-100">
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className="h-4 w-4 text-success-500" />
+                        <span className="text-gray-600">
+                          Approved by <span className="font-medium text-gray-900">
+                            {incident.exception.reviewedBy.firstName} {incident.exception.reviewedBy.lastName}
+                          </span>
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -737,9 +731,10 @@ export function IncidentDetailPage() {
             </Card>
           )}
 
+
           {/* Return to Work Certificate */}
           {(incident.type === 'INJURY' || incident.type === 'ILLNESS' || incident.type === 'MENTAL_HEALTH') && (
-            <Card className="page-break-avoid">
+            <Card>
               <CardHeader className="border-b border-gray-100">
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-2">
@@ -792,7 +787,7 @@ export function IncidentDetailPage() {
                                 removeRTWMutation.mutate();
                               }
                             }}
-                            className="p-2 text-status-red-600 hover:bg-status-red-50 rounded-lg transition-colors no-print"
+                            className="p-2 text-status-red-600 hover:bg-status-red-50 rounded-lg transition-colors"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -813,7 +808,7 @@ export function IncidentDetailPage() {
                     </div>
                     <p className="text-sm text-gray-500 mb-3">No RTW certificate uploaded</p>
                     {canUploadRTW && (
-                      <div className="space-y-2 no-print">
+                      <div className="space-y-2">
                         <Link to={`/whs/pdf-templates?incidentId=${incident.id}`}>
                           <Button
                             size="sm"
@@ -843,7 +838,7 @@ export function IncidentDetailPage() {
 
           {/* Attachments - Hidden in Print */}
           {incident.attachments && incident.attachments.length > 0 && (
-             <Card className="no-print">
+             <Card>
                <CardHeader className="border-b border-gray-100">
                  <CardTitle>Attachments ({incident.attachments.length})</CardTitle>
                </CardHeader>
@@ -871,7 +866,7 @@ export function IncidentDetailPage() {
       </div>
 
       {/* Case Progress - Hidden in Print */}
-      <Card className="no-print">
+      <Card>
         <CardHeader className="border-b border-gray-100">
           <CardTitle>Case Progress</CardTitle>
         </CardHeader>
@@ -917,20 +912,6 @@ export function IncidentDetailPage() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Print Footer - Only visible when printing */}
-      <div className="hidden print:block mt-10 pt-6 border-t-2 border-gray-300">
-        <div className="flex justify-between items-center">
-          <div>
-            <p className="text-xs font-semibold text-gray-700">CONFIDENTIAL</p>
-            <p className="text-xs text-gray-500">This document contains sensitive employee information.</p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-500">Aegira Safety Management System</p>
-            <p className="text-xs text-gray-400">Case #{incident.caseNumber} • {formatDisplayDate(new Date().toISOString())}</p>
-          </div>
-        </div>
-      </div>
 
       {/* RTW Certificate Upload Modal */}
       {showRTWModal && (

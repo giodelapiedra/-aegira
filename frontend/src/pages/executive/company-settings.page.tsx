@@ -54,7 +54,7 @@ export function CompanySettingsPage() {
   if (company && !formData) {
     setFormData({
       name: company.name || '',
-      timezone: company.timezone || 'Asia/Manila',
+      timezone: company.timezone || '',
       industry: company.industry || '',
       address: company.address || '',
       phone: company.phone || '',
@@ -86,7 +86,7 @@ export function CompanySettingsPage() {
       // Update local form data
       setFormData({
         name: updatedCompany.name || '',
-        timezone: updatedCompany.timezone || 'Asia/Manila',
+        timezone: updatedCompany.timezone || '',
         industry: updatedCompany.industry || '',
         address: updatedCompany.address || '',
         phone: updatedCompany.phone || '',

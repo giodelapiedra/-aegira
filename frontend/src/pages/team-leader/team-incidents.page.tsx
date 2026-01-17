@@ -1,12 +1,11 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
   Clock,
   XCircle,
-  
   Search,
   Filter,
   FileWarning,
@@ -14,13 +13,26 @@ import {
   User,
   Calendar,
   X,
+  ShieldCheck,
+  ShieldX,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { formatDisplayDateTime } from '../../lib/date-utils';
+import { formatDisplayDateTime, getNowInTimezone } from '../../lib/date-utils';
 import api from '../../services/api';
-import { Pagination, usePagination } from '../../components/ui/Pagination';
+import { incidentService } from '../../services/incident.service';
+import { Pagination } from '../../components/ui/Pagination';
 import { SkeletonTable } from '../../components/ui/Skeleton';
-import type { Incident } from '../../types/user';
+import { Button } from '../../components/ui/Button';
+import { Badge } from '../../components/ui/Badge';
+import { StatCard } from '../../components/ui/StatCard';
+import { useToast } from '../../components/ui/Toast';
+import { useUser } from '../../hooks/useUser';
+import {
+  approveExemption,
+  rejectExemption,
+  getExceptionTypeLabel,
+} from '../../services/exemption.service';
+import type { Incident, Exception } from '../../types/user';
 
 // Status configuration with colors and icons
 const statusConfig: Record<string, {
@@ -62,11 +74,231 @@ const severityConfig: Record<string, { color: string; dotColor: string; label: s
   CRITICAL: { color: 'text-danger-600', dotColor: 'bg-danger-500', label: 'Critical' },
 };
 
+// Simplified Approve Modal for incident-linked exceptions
+function ApproveModal({
+  incident,
+  onClose,
+  onConfirm,
+  isLoading,
+  timezone,
+}: {
+  incident: Incident;
+  onClose: () => void;
+  onConfirm: (endDate: string, notes?: string) => void;
+  isLoading: boolean;
+  timezone: string;
+}) {
+  const [endDate, setEndDate] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const nowInTz = getNowInTimezone(timezone);
+  const today = nowInTz.date;
+
+  const dateFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const todayParts = dateFormatter.formatToParts(today);
+  const todayYear = parseInt(todayParts.find((p) => p.type === 'year')!.value);
+  const todayMonth = parseInt(todayParts.find((p) => p.type === 'month')!.value) - 1;
+  const todayDay = parseInt(todayParts.find((p) => p.type === 'day')!.value);
+
+  const tomorrow = new Date(Date.UTC(todayYear, todayMonth, todayDay + 1, 12, 0, 0));
+  const in3Days = new Date(Date.UTC(todayYear, todayMonth, todayDay + 3, 12, 0, 0));
+  const in7Days = new Date(Date.UTC(todayYear, todayMonth, todayDay + 7, 12, 0, 0));
+
+  const formatDateForInput = (date: Date) => {
+    const parts = dateFormatter.formatToParts(date);
+    return `${parts.find((p) => p.type === 'year')!.value}-${
+      parts.find((p) => p.type === 'month')!.value
+    }-${parts.find((p) => p.type === 'day')!.value}`;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">Approve Leave Request</h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="h-5 w-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="bg-gray-50 rounded-lg p-4 mb-6">
+          <p className="text-sm font-medium text-gray-900 mb-1">
+            {incident.caseNumber}: {incident.title}
+          </p>
+          <p className="text-sm text-gray-600 mb-2">
+            Reported by: {incident.reporter?.firstName} {incident.reporter?.lastName}
+          </p>
+          {incident.exception && (
+            <Badge variant="warning" className="text-xs">
+              {getExceptionTypeLabel(incident.exception.type as any)}
+            </Badge>
+          )}
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Last day of leave
+          </label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            min={formatDateForInput(tomorrow)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          />
+        </div>
+
+        <div className="flex gap-2 mb-6">
+          {[
+            { label: 'Tomorrow', date: tomorrow },
+            { label: '3 days', date: in3Days },
+            { label: '1 week', date: in7Days },
+          ].map((opt) => (
+            <button
+              key={opt.label}
+              type="button"
+              onClick={() => setEndDate(formatDateForInput(opt.date))}
+              className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Notes (optional)
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Add a note..."
+            rows={2}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+          />
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={isLoading}>
+            Cancel
+          </Button>
+          <Button
+            variant="success"
+            className="flex-1"
+            onClick={() => onConfirm(endDate, notes || undefined)}
+            disabled={!endDate || isLoading}
+            isLoading={isLoading}
+          >
+            Approve Leave
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Simplified Reject Modal
+function RejectModal({
+  incident,
+  onClose,
+  onConfirm,
+  isLoading,
+}: {
+  incident: Incident;
+  onClose: () => void;
+  onConfirm: (notes?: string) => void;
+  isLoading: boolean;
+}) {
+  const [notes, setNotes] = useState('');
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">Reject Leave Request</h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <X className="h-5 w-5 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="bg-danger-50 rounded-lg p-4 mb-6">
+          <p className="text-sm font-medium text-gray-900 mb-1">
+            {incident.caseNumber}: {incident.title}
+          </p>
+          <p className="text-sm text-gray-600">
+            Reported by: {incident.reporter?.firstName} {incident.reporter?.lastName}
+          </p>
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Reason for rejection (optional)
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Provide a reason for rejection..."
+            rows={3}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+          />
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={isLoading}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            className="flex-1"
+            onClick={() => onConfirm(notes || undefined)}
+            disabled={isLoading}
+            isLoading={isLoading}
+          >
+            Reject Leave
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TeamIncidentsPage() {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const { company } = useUser();
+  const timezone = company?.timezone || 'UTC';
+
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [severityFilter, setSeverityFilter] = useState<string>('');
+  const [leaveStatusFilter, setLeaveStatusFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [approveModalIncident, setApproveModalIncident] = useState<Incident | null>(null);
+  const [rejectModalIncident, setRejectModalIncident] = useState<Incident | null>(null);
   const navigate = useNavigate();
+  const limit = 10;
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Get user's team first
   const { data: team, isLoading: teamLoading } = useQuery({
@@ -77,54 +309,72 @@ export function TeamIncidentsPage() {
     },
   });
 
-  // Get incidents for team
+  // Fetch stats (separate endpoint for accurate counts)
+  const { data: stats } = useQuery({
+    queryKey: ['team-incidents-stats', team?.id],
+    queryFn: () => incidentService.getStats(team?.id),
+    enabled: !!team?.id,
+    refetchInterval: 30000,
+  });
+
+  // Get incidents for team with server-side filtering
   const { data: incidentsData, isLoading } = useQuery({
-    queryKey: ['team-incidents', team?.id, statusFilter, severityFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.append('teamId', team.id);
-      if (statusFilter) params.append('status', statusFilter);
-      if (severityFilter) params.append('severity', severityFilter);
-      params.append('limit', '100');
-      const response = await api.get(`/incidents?${params.toString()}`);
-      return response.data;
-    },
+    queryKey: ['team-incidents', team?.id, statusFilter, severityFilter, leaveStatusFilter, debouncedSearch, page, limit],
+    queryFn: () => incidentService.getAll({
+      teamId: team.id,
+      status: statusFilter || undefined,
+      severity: severityFilter || undefined,
+      exceptionStatus: leaveStatusFilter || undefined,
+      search: debouncedSearch || undefined,
+      page,
+      limit,
+    }),
     enabled: !!team?.id,
   });
 
-  const allIncidents: Incident[] = incidentsData?.data || [];
+  const incidents: Incident[] = incidentsData?.data || [];
+  const pagination = incidentsData?.pagination;
 
-  // Filter by search query
-  const filteredIncidents = allIncidents.filter((incident) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      incident.title.toLowerCase().includes(query) ||
-      incident.caseNumber.toLowerCase().includes(query) ||
-      incident.description?.toLowerCase().includes(query) ||
-      `${incident.reporter?.firstName} ${incident.reporter?.lastName}`.toLowerCase().includes(query)
-    );
+  // Approve mutation
+  const approveMutation = useMutation({
+    mutationFn: ({ exceptionId, endDate, notes }: { exceptionId: string; endDate: string; notes?: string }) =>
+      approveExemption(exceptionId, { endDate, notes }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['team-incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['team-incidents-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['exemptions'] });
+      setApproveModalIncident(null);
+      toast.success('Leave Approved', 'The leave request has been approved.');
+    },
+    onError: () => {
+      toast.error('Approval Failed', 'Failed to approve leave request.');
+    },
   });
 
-  // Pagination
-  const { paginatedData: incidents, paginationProps } = usePagination(filteredIncidents, {
-    pageSize: 10,
+  // Reject mutation
+  const rejectMutation = useMutation({
+    mutationFn: ({ exceptionId, notes }: { exceptionId: string; notes?: string }) =>
+      rejectExemption(exceptionId, { notes }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['team-incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['team-incidents-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['exemptions'] });
+      setRejectModalIncident(null);
+      toast.success('Leave Rejected', 'The leave request has been rejected.');
+    },
+    onError: () => {
+      toast.error('Rejection Failed', 'Failed to reject leave request.');
+    },
   });
 
-  // Stats
-  const stats = {
-    total: allIncidents.length,
-    open: allIncidents.filter((i) => i.status === 'OPEN').length,
-    inProgress: allIncidents.filter((i) => i.status === 'IN_PROGRESS').length,
-    resolved: allIncidents.filter((i) => i.status === 'RESOLVED' || i.status === 'CLOSED').length,
-  };
-
-  const hasActiveFilters = statusFilter || severityFilter || searchQuery;
+  const hasActiveFilters = statusFilter || severityFilter || leaveStatusFilter || searchQuery;
 
   const clearFilters = () => {
     setStatusFilter('');
     setSeverityFilter('');
+    setLeaveStatusFilter('');
     setSearchQuery('');
+    setPage(1);
   };
 
   if (teamLoading) {
@@ -160,52 +410,41 @@ export function TeamIncidentsPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-sm transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-primary-100 flex items-center justify-center">
-              <FileWarning className="h-5 w-5 text-primary-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-              <p className="text-sm text-gray-500">Total</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-danger-200 p-4 bg-danger-50/50 hover:shadow-sm transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-danger-100 flex items-center justify-center">
-              <AlertTriangle className="h-5 w-5 text-danger-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-danger-700">{stats.open}</p>
-              <p className="text-sm text-danger-600">Open</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-warning-200 p-4 bg-warning-50/50 hover:shadow-sm transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-warning-100 flex items-center justify-center">
-              <Clock className="h-5 w-5 text-warning-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-warning-700">{stats.inProgress}</p>
-              <p className="text-sm text-warning-600">In Progress</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-success-200 p-4 bg-success-50/50 hover:shadow-sm transition-shadow">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-success-100 flex items-center justify-center">
-              <CheckCircle2 className="h-5 w-5 text-success-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-success-700">{stats.resolved}</p>
-              <p className="text-sm text-success-600">Resolved</p>
-            </div>
-          </div>
-        </div>
+      {/* Stats Cards - Using Centralized StatCard */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatCard
+          icon={FileWarning}
+          value={stats?.total ?? 0}
+          label="Total"
+          color="primary"
+        />
+        <StatCard
+          icon={AlertTriangle}
+          value={stats?.open ?? 0}
+          label="Open"
+          color="danger"
+        />
+        <StatCard
+          icon={Clock}
+          value={stats?.inProgress ?? 0}
+          label="In Progress"
+          color="warning"
+        />
+        <StatCard
+          icon={CheckCircle2}
+          value={stats?.resolved ?? 0}
+          label="Resolved"
+          color="success"
+        />
+        {/* Pending Leave Requests */}
+        {(stats?.pendingLeave ?? 0) > 0 && (
+          <StatCard
+            icon={ShieldCheck}
+            value={stats?.pendingLeave ?? 0}
+            label="Pending Leave"
+            color="primary"
+          />
+        )}
       </div>
 
       {/* Search and Filters */}
@@ -229,7 +468,7 @@ export function TeamIncidentsPage() {
               <Filter className="h-4 w-4 text-gray-400" />
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
                 className="px-3 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 min-w-[130px]"
               >
                 <option value="">All Status</option>
@@ -242,7 +481,7 @@ export function TeamIncidentsPage() {
 
             <select
               value={severityFilter}
-              onChange={(e) => setSeverityFilter(e.target.value)}
+              onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}
               className="px-3 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 min-w-[130px]"
             >
               <option value="">All Severity</option>
@@ -250,6 +489,17 @@ export function TeamIncidentsPage() {
               <option value="MEDIUM">Medium</option>
               <option value="HIGH">High</option>
               <option value="CRITICAL">Critical</option>
+            </select>
+
+            <select
+              value={leaveStatusFilter}
+              onChange={(e) => { setLeaveStatusFilter(e.target.value); setPage(1); }}
+              className="px-3 py-2.5 border border-gray-200 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 min-w-[150px]"
+            >
+              <option value="">All Leave Status</option>
+              <option value="PENDING">Pending Approval</option>
+              <option value="APPROVED">Approved</option>
+              <option value="REJECTED">Rejected</option>
             </select>
 
             {hasActiveFilters && (
@@ -269,7 +519,7 @@ export function TeamIncidentsPage() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {isLoading ? (
           <SkeletonTable rows={5} columns={5} />
-        ) : filteredIncidents.length === 0 ? (
+        ) : incidents.length === 0 ? (
           <div className="p-12 text-center">
             <div className="h-16 w-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
               <FileWarning className="h-8 w-8 text-gray-400" />
@@ -317,11 +567,19 @@ export function TeamIncidentsPage() {
                 const status = statusConfig[incident.status] || statusConfig.OPEN;
                 const severity = severityConfig[incident.severity] || severityConfig.MEDIUM;
                 const StatusIcon = status.icon;
+                const hasPendingException = incident.exception?.status === 'PENDING';
+                const isApproved = incident.exception?.status === 'APPROVED';
+                const isRejected = incident.exception?.status === 'REJECTED';
 
                 return (
                   <div
                     key={incident.id}
-                    className="group hover:bg-gray-50 transition-colors cursor-pointer"
+                    className={cn(
+                      'group hover:bg-gray-50 transition-colors cursor-pointer',
+                      hasPendingException && 'bg-purple-50/30',
+                      isApproved && 'bg-success-50/30',
+                      isRejected && 'bg-danger-50/30'
+                    )}
                     onClick={() => navigate(`/incidents/${incident.id}`)}
                   >
                     {/* Desktop Layout */}
@@ -336,10 +594,25 @@ export function TeamIncidentsPage() {
                             <StatusIcon className={cn('h-5 w-5', status.color.split(' ')[0])} />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <span className="font-mono text-xs text-primary-600 bg-primary-50 px-2 py-0.5 rounded font-medium">
                                 {incident.caseNumber}
                               </span>
+                              {hasPendingException && (
+                                <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-xs">
+                                  Leave Pending
+                                </Badge>
+                              )}
+                              {isApproved && (
+                                <Badge variant="success" className="text-xs">
+                                  Leave Approved
+                                </Badge>
+                              )}
+                              {isRejected && (
+                                <Badge variant="danger" className="text-xs">
+                                  Leave Rejected
+                                </Badge>
+                              )}
                             </div>
                             <h3 className="font-medium text-gray-900 truncate">{incident.title}</h3>
                             {incident.description && (
@@ -384,16 +657,41 @@ export function TeamIncidentsPage() {
                       </div>
 
                       {/* Action */}
-                      <div className="col-span-1 flex justify-end">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/incidents/${incident.id}`);
-                          }}
-                          className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                        >
-                          <ChevronRight className="h-5 w-5" />
-                        </button>
+                      <div className="col-span-1 flex justify-end gap-1">
+                        {hasPendingException ? (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setApproveModalIncident(incident);
+                              }}
+                              className="p-2 text-success-600 hover:bg-success-50 rounded-lg transition-colors"
+                              title="Approve Leave"
+                            >
+                              <ShieldCheck className="h-5 w-5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRejectModalIncident(incident);
+                              }}
+                              className="p-2 text-danger-600 hover:bg-danger-50 rounded-lg transition-colors"
+                              title="Reject Leave"
+                            >
+                              <ShieldX className="h-5 w-5" />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/incidents/${incident.id}`);
+                            }}
+                            className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          >
+                            <ChevronRight className="h-5 w-5" />
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -407,7 +705,7 @@ export function TeamIncidentsPage() {
                           <StatusIcon className={cn('h-5 w-5', status.color.split(' ')[0])} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="font-mono text-xs text-primary-600 bg-primary-50 px-2 py-0.5 rounded font-medium">
                               {incident.caseNumber}
                             </span>
@@ -418,6 +716,21 @@ export function TeamIncidentsPage() {
                             )}>
                               {status.label}
                             </span>
+                            {hasPendingException && (
+                              <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-xs">
+                                Leave Pending
+                              </Badge>
+                            )}
+                            {isApproved && (
+                              <Badge variant="success" className="text-xs">
+                                Leave Approved
+                              </Badge>
+                            )}
+                            {isRejected && (
+                              <Badge variant="danger" className="text-xs">
+                                Leave Rejected
+                              </Badge>
+                            )}
                           </div>
                           <h3 className="font-medium text-gray-900">{incident.title}</h3>
 
@@ -432,11 +745,41 @@ export function TeamIncidentsPage() {
                             </div>
                             <div className="flex items-center gap-1">
                               <Calendar className="h-3.5 w-3.5" />
-                              <span>{formatDisplayDateTime(incident.createdAt)}</span>
+                              <span>{formatDisplayDateTime(incident.createdAt, timezone)}</span>
                             </div>
                           </div>
+
+                          {/* Mobile Approve/Reject Buttons */}
+                          {hasPendingException && (
+                            <div className="flex gap-2 mt-3">
+                              <Button
+                                size="sm"
+                                variant="success"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setApproveModalIncident(incident);
+                                }}
+                                leftIcon={<ShieldCheck className="h-4 w-4" />}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRejectModalIncident(incident);
+                                }}
+                                leftIcon={<ShieldX className="h-4 w-4" />}
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          )}
                         </div>
-                        <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                        {!hasPendingException && (
+                          <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                        )}
                       </div>
                     </div>
                   </div>
@@ -445,15 +788,50 @@ export function TeamIncidentsPage() {
             </div>
 
             {/* Pagination - only show wrapper if more than 1 page */}
-            {paginationProps.totalPages > 1 && (
+            {pagination && pagination.totalPages > 1 && (
               <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-                <Pagination {...paginationProps} />
+                <Pagination
+                  currentPage={page}
+                  totalPages={pagination.totalPages}
+                  onPageChange={setPage}
+                />
               </div>
             )}
           </>
         )}
       </div>
 
+      {/* Approve Modal */}
+      {approveModalIncident && approveModalIncident.exception && (
+        <ApproveModal
+          incident={approveModalIncident}
+          onClose={() => setApproveModalIncident(null)}
+          onConfirm={(endDate, notes) => {
+            approveMutation.mutate({
+              exceptionId: approveModalIncident.exception!.id,
+              endDate,
+              notes,
+            });
+          }}
+          isLoading={approveMutation.isPending}
+          timezone={timezone}
+        />
+      )}
+
+      {/* Reject Modal */}
+      {rejectModalIncident && rejectModalIncident.exception && (
+        <RejectModal
+          incident={rejectModalIncident}
+          onClose={() => setRejectModalIncident(null)}
+          onConfirm={(notes) => {
+            rejectMutation.mutate({
+              exceptionId: rejectModalIncident.exception!.id,
+              notes,
+            });
+          }}
+          isLoading={rejectMutation.isPending}
+        />
+      )}
     </div>
   );
 }
