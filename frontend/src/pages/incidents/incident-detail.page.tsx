@@ -809,14 +809,14 @@ export function IncidentDetailPage() {
                     <p className="text-sm text-gray-500 mb-3">No RTW certificate uploaded</p>
                     {canUploadRTW && (
                       <div className="space-y-2">
-                        <Link to={`/whs/pdf-templates?incidentId=${incident.id}`}>
+                        <Link to="/whs/official-forms">
                           <Button
                             size="sm"
                             variant="primary"
                             className="w-full"
                             leftIcon={<FileText className="h-4 w-4" />}
                           >
-                            Fill PDF Form Template
+                            Fill Official Form
                           </Button>
                         </Link>
                         <Button

@@ -124,7 +124,12 @@
       "Bash(__NEW_LINE_2b495e1f370c716c__ echo \"=== TEST 13: Daily Monitoring Checkins \\(uses search/pagination optimization\\) ===\")",
       "Bash(__NEW_LINE_9e76a56dec0e5e6f__ echo \"=== TEST 12: Daily Monitoring Stats \\(uses groupBy optimization\\) ===\")",
       "Bash(__NEW_LINE_31e24967b9cfc926__ echo \"=== TEST 15: Search with name from team \\(Kinetic\\) ===\")",
-      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"yes\" npx prisma migrate reset:*)"
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"yes\" npx prisma migrate reset:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run test:unit:*)",
+      "Bash(npm run test:integration:*)",
+      "Bash(npm run test:coverage:*)",
+      "WebFetch(domain:www.sira.nsw.gov.au)"
     ]
   }
 }

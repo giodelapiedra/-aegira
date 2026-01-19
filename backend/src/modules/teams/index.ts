@@ -755,29 +755,26 @@ teamsRoutes.post('/:id/deactivate', async (c) => {
       },
     });
 
-    // 2. Create TEAM_INACTIVE exemptions for all workers in the team
-    const exemptions = [];
-    for (const member of team.members) {
-      const exemption = await tx.exception.create({
-        data: {
-          userId: member.id,
-          companyId,
-          type: 'TEAM_INACTIVE',
-          reason: `Team "${team.name}" deactivated: ${reason}`,
-          startDate: todayForDb,
-          endDate: endDate,
-          status: 'APPROVED',
-          reviewedById: currentUser.id,
-          reviewNote: 'Auto-approved: Team deactivation',
-          approvedBy: `${currentUser.firstName} ${currentUser.lastName}`,
-          approvedAt: now,
-          isExemption: true,
-        },
-      });
-      exemptions.push(exemption);
-    }
+    // 2. Create TEAM_INACTIVE exemptions for all workers in the team (batch)
+    const exemptionData = team.members.map((member) => ({
+      userId: member.id,
+      companyId,
+      type: 'TEAM_INACTIVE' as const,
+      reason: `Team "${team.name}" deactivated: ${reason}`,
+      startDate: todayForDb,
+      endDate: endDate,
+      status: 'APPROVED' as const,
+      reviewedById: currentUser.id,
+      reviewNote: 'Auto-approved: Team deactivation',
+      approvedBy: `${currentUser.firstName} ${currentUser.lastName}`,
+      approvedAt: now,
+      isExemption: true,
+    }));
 
-    return { team: updatedTeam, exemptions };
+    // Batch create all exemptions in single query (much faster than N individual creates)
+    await tx.exception.createMany({ data: exemptionData });
+
+    return { team: updatedTeam, exemptionsCreated: exemptionData.length };
   });
 
   // Log team deactivation
@@ -802,7 +799,7 @@ teamsRoutes.post('/:id/deactivate', async (c) => {
     success: true,
     message: `Team "${team.name}" deactivated. ${team.members.length} workers are now exempted from check-in.`,
     team: result.team,
-    exemptionsCreated: result.exemptions.length,
+    exemptionsCreated: result.exemptionsCreated,
   });
 });
 

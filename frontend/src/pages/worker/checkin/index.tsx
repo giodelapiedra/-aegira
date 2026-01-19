@@ -49,23 +49,30 @@ export function CheckinPage() {
   const invalidateDashboard = useInvalidateWorkerDashboard();
 
   // Update auth store when fresh user data is fetched
+  // Note: Only updates subset of fields from dashboard - other fields preserved from initial login
   useEffect(() => {
     if (dashboardData?.user) {
-      // Map dashboard user to auth store format
+      // Partial update - merge with existing user data via type assertion
+      // Full user data is set during login, this just refreshes display fields
       setUser({
         id: dashboardData.user.id,
         firstName: dashboardData.user.firstName,
         lastName: dashboardData.user.lastName,
         email: dashboardData.user.email,
-        role: dashboardData.user.role,
-        avatar: dashboardData.user.avatar,
-        teamId: dashboardData.user.teamId,
+        role: dashboardData.user.role as import('../../../types/user').Role,
+        avatar: dashboardData.user.avatar ?? undefined,
+        teamId: dashboardData.user.teamId ?? undefined,
         team: dashboardData.team
           ? {
               id: dashboardData.team.id,
               name: dashboardData.team.name,
             }
           : undefined,
+        // Required fields - use defaults as these are set during login
+        companyId: '',
+        isActive: true,
+        createdAt: '',
+        updatedAt: '',
       });
     }
   }, [dashboardData?.user, dashboardData?.team, setUser]);
@@ -93,7 +100,7 @@ export function CheckinPage() {
   if (helpers.isBeforeStart) {
     return (
       <WelcomeState
-        effectiveStartDate={dashboardData?.leaveStatus.effectiveStartDate || null}
+        effectiveStartDate={dashboardData?.leaveStatus.effectiveStartDate ?? undefined}
         teamName={dashboardData?.team?.name}
       />
     );
@@ -101,7 +108,16 @@ export function CheckinPage() {
 
   // User is on approved leave
   if (helpers.isOnLeave && dashboardData?.leaveStatus.currentException) {
-    return <OnLeaveState exception={dashboardData.leaveStatus.currentException} />;
+    const exception = dashboardData.leaveStatus.currentException;
+    return (
+      <OnLeaveState
+        exception={{
+          ...exception,
+          startDate: exception.startDate || '',
+          endDate: exception.endDate || '',
+        }}
+      />
+    );
   }
 
   // Already checked in today - show dashboard
@@ -117,16 +133,16 @@ export function CheckinPage() {
           id: dashboardData.user.id,
           firstName: dashboardData.user.firstName,
           lastName: dashboardData.user.lastName,
-          email: dashboardData.user.email,
-          role: dashboardData.user.role,
-          avatar: dashboardData.user.avatar,
-          teamId: dashboardData.user.teamId,
-          team: dashboardData.team
-            ? { id: dashboardData.team.id, name: dashboardData.team.name }
-            : undefined,
         }}
         team={dashboardData.team}
-        todayCheckin={dashboardData.todayCheckin}
+        todayCheckin={{
+          ...dashboardData.todayCheckin,
+          userId: dashboardData.user.id,
+          companyId: '',
+          notes: dashboardData.todayCheckin.notes ?? undefined,
+          lowScoreReason: (dashboardData.todayCheckin.lowScoreReason ?? undefined) as import('../../../types/user').LowScoreReason | undefined,
+          lowScoreDetails: dashboardData.todayCheckin.lowScoreDetails ?? undefined,
+        }}
         needsLowScoreReason={needsLowScoreReason}
         onRefetchTodayCheckin={invalidateDashboard}
       />

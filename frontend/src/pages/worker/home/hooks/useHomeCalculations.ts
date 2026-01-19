@@ -27,7 +27,18 @@ import {
   isDateExempted,
 } from '../utils';
 import type { DynamicTip, ActiveExemption, AbsenceRecord } from '../types';
-import type { Checkin } from '../../../../types/user';
+
+// Minimal checkin type for calculations (subset of full Checkin)
+interface MinimalCheckin {
+  id: string;
+  readinessScore: number;
+  readinessStatus: 'GREEN' | 'YELLOW' | 'RED';
+  createdAt: string;
+  mood?: number;
+  stress?: number;
+  sleep?: number;
+  physicalHealth?: number;
+}
 
 interface UseHomeCalculationsParams {
   team: {
@@ -37,8 +48,8 @@ interface UseHomeCalculationsParams {
     name: string;
     company?: { timezone?: string };
   } | null | undefined;
-  todayCheckin: Checkin | null | undefined;
-  recentCheckins: Checkin[] | undefined;
+  todayCheckin: MinimalCheckin | null | undefined;
+  recentCheckins: MinimalCheckin[] | undefined;
   activeExemptions: ActiveExemption[] | undefined;
   absenceHistory: AbsenceRecord[] | undefined;
   userId: string | undefined;
@@ -101,14 +112,14 @@ export function useHomeCalculations({
       };
     }
 
-    if (todayCheckin.sleep <= 4) {
+    if (todayCheckin.sleep !== undefined && todayCheckin.sleep <= 4) {
       return {
         icon: Moon,
         title: 'Sleep Matters',
         text: 'Your sleep quality is low today. Try to get 7-8 hours of rest tonight for better performance.',
       };
     }
-    if (todayCheckin.stress >= 7) {
+    if (todayCheckin.stress !== undefined && todayCheckin.stress >= 7) {
       return {
         icon: Brain,
         title: 'Manage Your Stress',
@@ -122,7 +133,7 @@ export function useHomeCalculations({
         text: 'Great readiness score today! Keep maintaining your healthy habits for consistent performance.',
       };
     }
-    if (todayCheckin.mood <= 4) {
+    if (todayCheckin.mood !== undefined && todayCheckin.mood <= 4) {
       return {
         icon: Smile,
         title: 'Boost Your Mood',

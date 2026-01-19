@@ -67,8 +67,8 @@ export function useExemptionMutations(options: UseExemptionMutationsOptions = {}
   });
 
   const endEarlyMutation = useMutation({
-    mutationFn: ({ id, notes }: { id: string; notes?: string }) =>
-      endExemptionEarly(id, { notes }),
+    mutationFn: ({ id, returnDate, notes }: { id: string; returnDate: string; notes?: string }) =>
+      endExemptionEarly(id, { returnDate, notes }),
     onSuccess: () => {
       invalidateAll();
       options.onEndEarlySuccess?.();

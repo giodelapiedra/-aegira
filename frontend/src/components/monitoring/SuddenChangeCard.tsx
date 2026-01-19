@@ -33,6 +33,7 @@ interface SuddenChangeCardProps {
   onViewDetails?: (userId: string) => void;
   onScheduleOneOnOne?: (userId: string) => void;
   className?: string;
+  timezone?: string;
 }
 
 // ============================================
@@ -76,6 +77,7 @@ export function SuddenChangeCard({
   onViewDetails,
   onScheduleOneOnOne,
   className,
+  timezone = 'Asia/Manila',
 }: SuddenChangeCardProps) {
   const severityColors = getSeverityColor(severity);
   const SeverityIcon = getSeverityIcon(severity);
@@ -103,7 +105,7 @@ export function SuddenChangeCard({
             <h4 className={cn('font-semibold', severityColors.text)}>
               {firstName} {lastName}
             </h4>
-            <p className="text-sm text-gray-500">{formatTimeAgo(checkinTime)}</p>
+            <p className="text-sm text-gray-500">{formatTimeAgo(checkinTime, timezone)}</p>
           </div>
         </div>
 

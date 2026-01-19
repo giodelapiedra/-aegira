@@ -7,6 +7,7 @@ import { useAuthStore } from './store/auth.store';
 import { authService } from './services/auth.service';
 import { ToastProvider } from './components/ui/Toast';
 import { LoadingScreen } from './components/ui/LoadingScreen';
+import { ErrorBoundary } from './components/error';
 
 // React Query DevTools - only in development
 const ReactQueryDevtools = import.meta.env.DEV
@@ -88,17 +89,19 @@ function App() {
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <RouterProvider router={router} />
-      </ToastProvider>
-      {/* React Query DevTools - bottom-right corner, only in dev */}
-      {import.meta.env.DEV && (
-        <Suspense fallback={null}>
-          <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
-        </Suspense>
-      )}
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+        {/* React Query DevTools - bottom-right corner, only in dev */}
+        {import.meta.env.DEV && (
+          <Suspense fallback={null}>
+            <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
+          </Suspense>
+        )}
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

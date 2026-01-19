@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { exceptionService } from '../../services/exception.service';
 import type { CreateExceptionData } from '../../services/exception.service';
+import type { Incident } from '../../types/user';
 import { teamService } from '../../services/team.service';
 import { incidentService } from '../../services/incident.service';
 import { useUser } from '../../hooks/useUser';
@@ -358,7 +359,7 @@ export function RequestExceptionPage() {
             </div>
 
             {/* Link to Incident (Optional) */}
-            {myIncidents && myIncidents.length > 0 && (
+            {myIncidents?.data && myIncidents.data.length > 0 && (
               <div className="space-y-3">
                 <label className="block text-sm font-medium text-gray-700">
                   <div className="flex items-center gap-2">
@@ -372,7 +373,7 @@ export function RequestExceptionPage() {
                   className="block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm"
                 >
                   <option value="">No linked incident</option>
-                  {myIncidents.map((incident) => (
+                  {myIncidents.data.map((incident: Incident) => (
                     <option key={incident.id} value={incident.id}>
                       {incident.caseNumber} - {incident.title} ({incident.severity})
                     </option>

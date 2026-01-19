@@ -21,12 +21,65 @@ import {
   DEFAULT_TIMEZONE,
 } from './date-helpers.js';
 
-import type {
-  TeamGradeSummary,
-  TeamsOverviewSummary,
-  TeamsOverviewResult,
-  TeamGradeOptions,
-} from './team-grades.js';
+// ===========================================
+// TYPE DEFINITIONS
+// ===========================================
+
+export interface TeamGradeOptions {
+  days?: number;
+  companyId: string;
+  timezone?: string;
+  teamIds?: string[];
+  includeInactiveTeams?: boolean;
+}
+
+export interface TeamGradeSummary {
+  id: string;
+  name: string;
+  leader: {
+    id: string;
+    name: string;
+    avatar: string | null;
+  } | null;
+  memberCount: number;
+  grade: string;
+  gradeLabel: string;
+  score: number;
+  attendanceRate: number;
+  onTimeRate: number;
+  breakdown: {
+    green: number;
+    absent: number;
+    excused: number;
+  };
+  trend: 'up' | 'down' | 'stable';
+  scoreDelta: number;
+  atRiskCount: number;
+  membersNeedingAttention: number;
+  onboardingCount: number;
+  includedMemberCount: number;
+}
+
+export interface TeamsOverviewSummary {
+  totalTeams: number;
+  totalMembers: number;
+  avgScore: number;
+  avgGrade: string;
+  teamsAtRisk: number;
+  teamsCritical: number;
+  teamsImproving: number;
+  teamsDeclining: number;
+}
+
+export interface TeamsOverviewResult {
+  teams: TeamGradeSummary[];
+  summary: TeamsOverviewSummary;
+  period: {
+    days: number;
+    startDate: string;
+    endDate: string;
+  };
+}
 
 // ===========================================
 // CONSTANTS
@@ -56,7 +109,7 @@ export const MIN_CHECKIN_DAYS_THRESHOLD = 3;
  * Get grade info based on score - SAME as Team Analytics
  * Grade = (avgReadiness × 60%) + (compliance × 40%)
  */
-function getGradeInfo(score: number): { grade: string; label: string; color: string } {
+export function getGradeInfo(score: number): { grade: string; label: string; color: string } {
   if (score >= 97) return { grade: 'A+', label: 'Outstanding', color: 'GREEN' };
   if (score >= 93) return { grade: 'A', label: 'Excellent', color: 'GREEN' };
   if (score >= 90) return { grade: 'A-', label: 'Excellent', color: 'GREEN' };
@@ -75,7 +128,7 @@ function getGradeInfo(score: number): { grade: string; label: string; color: str
 /**
  * Simplified grade for summary (A, B, C, D)
  */
-function getSimpleGrade(score: number): string {
+export function getSimpleGrade(score: number): string {
   if (score >= 90) return 'A';
   if (score >= 80) return 'B';
   if (score >= 70) return 'C';
@@ -499,7 +552,7 @@ function calculateTeamGradeFromSummaries(params: {
 // HELPER: Calculate summary
 // ===========================================
 
-function calculateOverviewSummary(teams: TeamGradeSummary[]): TeamsOverviewSummary {
+export function calculateOverviewSummary(teams: TeamGradeSummary[]): TeamsOverviewSummary {
   if (teams.length === 0) {
     return {
       totalTeams: 0,

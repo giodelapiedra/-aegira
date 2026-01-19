@@ -150,7 +150,6 @@ export function IncidentPrintPreview() {
                 </div>
                 <div className="text-sm text-gray-500 space-y-0.5">
                   {company?.address && <p>{company.address}</p>}
-                  <p>{company?.city || 'Metro Manila'}, Philippines</p>
                   {company?.phone && <p>{company.phone}</p>}
                 </div>
               </div>

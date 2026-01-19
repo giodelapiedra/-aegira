@@ -59,8 +59,8 @@ export const exceptionService = {
     return response.data;
   },
 
-  async endEarly(id: string, data?: { endDate?: string; notes?: string }): Promise<Exception> {
-    const response = await api.patch<Exception>(`/exceptions/${id}/end-early`, data || {});
+  async endEarly(id: string, data: { returnDate: string; notes?: string }): Promise<Exception> {
+    const response = await api.patch<Exception>(`/exceptions/${id}/end-early`, data);
     return response.data;
   },
 

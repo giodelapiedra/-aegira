@@ -24,6 +24,7 @@ import { cn } from '../../lib/utils';
 import { getExceptionTypeLabel } from '../../services/exemption.service';
 // Use shared hooks and components from team-members module
 import { useMemberMutations, useTransferTeams, TransferMemberModal } from './team-members';
+import { useUser } from '../../hooks/useUser';
 import {
   ArrowLeft,
   Users,
@@ -53,6 +54,8 @@ export function MemberProfilePage() {
   const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
   const toast = useToast();
+  const { company } = useUser();
+  const timezone = company?.timezone || 'Asia/Manila';
 
   const [activeTab, setActiveTab] = useState<'overview' | 'checkins' | 'attendance' | 'incidents'>('overview');
   const [checkinPage, setCheckinPage] = useState(1);
@@ -513,7 +516,7 @@ export function MemberProfilePage() {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Readiness Trend Chart */}
                     <Card className="p-6">
-                      <ReadinessTrendChart data={analyticsData.trendData || []} height={240} />
+                      <ReadinessTrendChart data={analyticsData.trendData || []} height={240} timezone={timezone} />
                     </Card>
 
                     {/* Right Column - Status & Metrics */}

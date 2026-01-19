@@ -20,6 +20,7 @@ export interface StatCardProps {
   onClick?: () => void;
   tooltip?: string;
   subtext?: string;
+  description?: string;
   trend?: StatCardTrend;
 }
 
@@ -99,6 +100,7 @@ export function StatCard({
   onClick,
   tooltip,
   subtext,
+  description,
   trend,
 }: StatCardProps) {
   const styles = colorStyles[color];
@@ -133,6 +135,9 @@ export function StatCard({
             </p>
           )}
           <p className={cn('text-sm font-medium', styles.labelColor)}>{label}</p>
+          {description && (
+            <p className="text-xs text-gray-500 mt-0.5">{description}</p>
+          )}
         </div>
         {trend && (
           <div

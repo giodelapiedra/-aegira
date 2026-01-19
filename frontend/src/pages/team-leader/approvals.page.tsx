@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { exceptionService } from '../../services/exception.service';
 import { Button } from '../../components/ui/Button';
-import { Card } from '../../components/ui/Card';
 import { Pagination } from '../../components/ui/Pagination';
 import { ConfirmModal } from '../../components/ui/ConfirmModal';
+import { EndLeaveEarlyModal } from '../../components/ui/EndLeaveEarlyModal';
 import { useToast } from '../../components/ui/Toast';
 import { Avatar } from '../../components/ui/Avatar';
 import { formatDisplayDate } from '../../lib/date-utils';
@@ -13,7 +13,6 @@ import { useAuthStore } from '../../store/auth.store';
 import { cn } from '../../lib/utils';
 import { SkeletonTable } from '../../components/ui/Skeleton';
 import {
-  
   CheckCircle,
   XCircle,
   Clock,
@@ -21,10 +20,10 @@ import {
   StopCircle,
   Trash2,
   X,
-  
-  CalendarDays,
-  ChevronRight,
   Inbox,
+  MoreHorizontal,
+  ChevronDown,
+  Filter,
 } from 'lucide-react';
 import type { Exception } from '../../types/user';
 
@@ -34,10 +33,28 @@ export function ApprovalsPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { company } = useAuthStore();
-  const [filter, setFilter] = useState<FilterStatus>('PENDING');
+  const [filter, setFilter] = useState<FilterStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [activeRowMenu, setActiveRowMenu] = useState<string | null>(null);
+  const filterRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) {
+        setShowFilterDropdown(false);
+      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setActiveRowMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Debounce search
   useEffect(() => {
@@ -47,6 +64,7 @@ export function ApprovalsPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
   const [selectedException, setSelectedException] = useState<Exception | null>(null);
   const [approveException, setApproveException] = useState<Exception | null>(null);
   const [rejectException, setRejectException] = useState<Exception | null>(null);
@@ -82,6 +100,7 @@ export function ApprovalsPage() {
   const handleFilterChange = (value: FilterStatus) => {
     setFilter(value);
     setPage(1);
+    setShowFilterDropdown(false);
   };
 
   const approveMutation = useMutation({
@@ -90,7 +109,7 @@ export function ApprovalsPage() {
       invalidateRelatedQueries(queryClient, 'exceptions');
       setSelectedException(null);
       setApproveException(null);
-      toast.success('Request approved successfully');
+      toast.success('Request approved');
     },
     onError: () => {
       toast.error('Failed to approve request');
@@ -111,16 +130,17 @@ export function ApprovalsPage() {
   });
 
   const endEarlyMutation = useMutation({
-    mutationFn: (id: string) => exceptionService.endEarly(id),
+    mutationFn: ({ id, returnDate, notes }: { id: string; returnDate: string; notes?: string }) =>
+      exceptionService.endEarly(id, { returnDate, notes }),
     onSuccess: () => {
       invalidateRelatedQueries(queryClient, 'exceptions');
       invalidateRelatedQueries(queryClient, 'leave-status');
       invalidateRelatedQueries(queryClient, 'approved-leave-today');
       setSelectedException(null);
       setEndEarlyException(null);
-      toast.success('Exception ended early');
+      toast.success('Leave ended early');
     },
-    onError: (error: any) => {
+    onError: (error: Error & { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error || 'Failed to end early');
       setEndEarlyException(null);
     },
@@ -134,9 +154,9 @@ export function ApprovalsPage() {
       invalidateRelatedQueries(queryClient, 'approved-leave-today');
       setSelectedException(null);
       setCancelException(null);
-      toast.success('Exception cancelled');
+      toast.success('Leave cancelled');
     },
-    onError: (error: any) => {
+    onError: (error: Error & { response?: { data?: { error?: string } } }) => {
       toast.error(error?.response?.data?.error || 'Failed to cancel');
       setCancelException(null);
     },
@@ -192,147 +212,266 @@ export function ApprovalsPage() {
     return `${start} - ${end}`;
   };
 
-  const tabs = [
+  const getFilterLabel = () => {
+    if (filter === 'all') return 'All Status';
+    if (filter === 'PENDING') return 'Pending';
+    if (filter === 'APPROVED') return 'Approved';
+    if (filter === 'REJECTED') return 'Rejected';
+    return 'Status';
+  };
+
+  const filterOptions = [
+    { value: 'all' as FilterStatus, label: 'All Status', count: counts.all },
     { value: 'PENDING' as FilterStatus, label: 'Pending', count: counts.PENDING },
     { value: 'APPROVED' as FilterStatus, label: 'Approved', count: counts.APPROVED },
     { value: 'REJECTED' as FilterStatus, label: 'Rejected', count: counts.REJECTED },
-    { value: 'all' as FilterStatus, label: 'All', count: counts.all },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Approvals</h1>
-        <p className="text-gray-500 mt-1">Review and manage leave requests</p>
-      </div>
-
       {/* Main Card */}
-      <Card>
-        {/* Tabs & Search */}
-        <div className="border-b border-gray-100">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4">
-            {/* Tabs */}
-            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-              {tabs.map((tab) => (
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+        {/* Header */}
+        <div className="p-5 border-b border-gray-100">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <h1 className="text-lg font-semibold text-gray-900">Leave Requests</h1>
+
+            {/* Right side: Filters and Search */}
+            <div className="flex items-center gap-3">
+              {/* Status Filter Dropdown */}
+              <div className="relative" ref={filterRef}>
                 <button
-                  key={tab.value}
-                  onClick={() => handleFilterChange(tab.value)}
+                  onClick={() => setShowFilterDropdown(!showFilterDropdown)}
                   className={cn(
-                    'px-4 py-2 text-sm font-medium rounded-md transition-all',
-                    filter === tab.value
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
+                    'flex items-center gap-2 px-3 py-1.5 text-sm rounded-full border transition-colors',
+                    filter !== 'all'
+                      ? 'bg-primary-50 border-primary-200 text-primary-700'
+                      : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
                   )}
                 >
-                  {tab.label}
-                  {tab.count > 0 && (
-                    <span className={cn(
-                      'ml-2 px-1.5 py-0.5 text-xs rounded-full',
-                      filter === tab.value
-                        ? tab.value === 'PENDING' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
-                        : 'bg-gray-200 text-gray-600'
-                    )}>
-                      {tab.count}
+                  <Filter className="h-3.5 w-3.5" />
+                  {getFilterLabel()}
+                  {filter !== 'all' && counts[filter] > 0 && (
+                    <span className="px-1.5 py-0.5 text-xs bg-primary-100 text-primary-700 rounded-full">
+                      {counts[filter]}
                     </span>
                   )}
+                  <ChevronDown className="h-3.5 w-3.5" />
                 </button>
-              ))}
-            </div>
 
-            {/* Search */}
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search..."
-                className="w-full pl-9 pr-8 py-2 text-sm rounded-lg border border-gray-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+                {showFilterDropdown && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                    {filterOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => handleFilterChange(option.value)}
+                        className={cn(
+                          'w-full px-4 py-2 text-left text-sm flex items-center justify-between hover:bg-gray-50',
+                          filter === option.value && 'bg-primary-50 text-primary-700'
+                        )}
+                      >
+                        <span>{option.label}</span>
+                        {option.count > 0 && (
+                          <span className="text-xs text-gray-400">{option.count}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Search */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search"
+                  className="w-48 pl-9 pr-8 py-1.5 text-sm rounded-lg border border-gray-200 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 bg-gray-50 focus:bg-white"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* List */}
+        {/* Table */}
         {isLoading ? (
-          <SkeletonTable rows={5} columns={4} />
+          <SkeletonTable rows={5} columns={5} />
         ) : exceptions?.data?.length === 0 ? (
-          <div className="py-16 text-center">
+          <div className="py-20 text-center">
             <Inbox className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">
-              {searchQuery ? 'No results found' : 'No requests'}
+            <p className="text-gray-500 font-medium">
+              {searchQuery ? 'No results found' : 'No leave requests'}
+            </p>
+            <p className="text-sm text-gray-400 mt-1">
+              {searchQuery ? 'Try a different search term' : 'Leave requests will appear here'}
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {exceptions?.data?.map((exception) => (
-              <div
-                key={exception.id}
-                className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                onClick={() => setSelectedException(exception)}
-              >
-                {/* Avatar */}
-                <Avatar
-                  firstName={exception.user?.firstName}
-                  lastName={exception.user?.lastName}
-                  size="md"
-                />
+          <>
+            {/* Table Header */}
+            <div className="grid grid-cols-12 gap-4 px-5 py-3 border-b border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <div className="col-span-4">Name</div>
+              <div className="col-span-2">Type</div>
+              <div className="col-span-3">Duration</div>
+              <div className="col-span-2">Status</div>
+              <div className="col-span-1"></div>
+            </div>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900">
-                      {exception.user?.firstName} {exception.user?.lastName}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+            {/* Table Body */}
+            <div className="divide-y divide-gray-50">
+              {exceptions?.data?.map((exception) => (
+                <div
+                  key={exception.id}
+                  className="grid grid-cols-12 gap-4 px-5 py-4 items-center hover:bg-gray-50/50 transition-colors"
+                >
+                  {/* Name */}
+                  <div className="col-span-4 flex items-center gap-3 min-w-0">
+                    <Avatar
+                      firstName={exception.user?.firstName}
+                      lastName={exception.user?.lastName}
+                      size="sm"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {exception.user?.firstName} {exception.user?.lastName}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {exception.user?.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Type */}
+                  <div className="col-span-2">
+                    <span className="text-sm text-gray-600">
                       {getTypeLabel(exception.type)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-3 mt-0.5 text-sm text-gray-500">
-                    <span className="flex items-center gap-1">
-                      <CalendarDays className="h-3.5 w-3.5" />
+
+                  {/* Duration */}
+                  <div className="col-span-3">
+                    <span className="text-sm text-gray-600">
                       {getDurationText(exception)}
                     </span>
                   </div>
-                </div>
 
-                {/* Status */}
-                <div className="flex items-center gap-3">
-                  {exception.status === 'PENDING' ? (
-                    <span className="flex items-center gap-1 text-sm text-amber-600">
-                      <Clock className="h-4 w-4" />
-                      <span className="hidden sm:inline">Pending</span>
-                    </span>
-                  ) : exception.status === 'APPROVED' ? (
-                    <span className="flex items-center gap-1 text-sm text-emerald-600">
-                      <CheckCircle className="h-4 w-4" />
-                      <span className="hidden sm:inline">Approved</span>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-sm text-red-600">
-                      <XCircle className="h-4 w-4" />
-                      <span className="hidden sm:inline">Rejected</span>
-                    </span>
-                  )}
-                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                  {/* Status */}
+                  <div className="col-span-2">
+                    {exception.status === 'PENDING' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-50 text-amber-700">
+                        <Clock className="h-3 w-3" />
+                        Pending
+                      </span>
+                    ) : exception.status === 'APPROVED' ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700">
+                        <CheckCircle className="h-3 w-3" />
+                        Approved
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-red-50 text-red-700">
+                        <XCircle className="h-3 w-3" />
+                        Rejected
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Actions Menu */}
+                  <div className="col-span-1 flex justify-end relative" ref={activeRowMenu === exception.id ? menuRef : null}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveRowMenu(activeRowMenu === exception.id ? null : exception.id);
+                      }}
+                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+
+                    {activeRowMenu === exception.id && (
+                      <div className="absolute right-0 top-8 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                        <button
+                          onClick={() => {
+                            setSelectedException(exception);
+                            setActiveRowMenu(null);
+                          }}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          View Details
+                        </button>
+
+                        {exception.status === 'PENDING' && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setApproveException(exception);
+                                setActiveRowMenu(null);
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-emerald-600 hover:bg-emerald-50"
+                            >
+                              <CheckCircle className="h-4 w-4 inline mr-2" />
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => {
+                                setRejectException(exception);
+                                setActiveRowMenu(null);
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                            >
+                              <XCircle className="h-4 w-4 inline mr-2" />
+                              Reject
+                            </button>
+                          </>
+                        )}
+
+                        {exception.status === 'APPROVED' && isActive(exception) && (
+                          <>
+                            {canEndEarly(exception) && (
+                              <button
+                                onClick={() => {
+                                  setEndEarlyException(exception);
+                                  setActiveRowMenu(null);
+                                }}
+                                className="w-full px-4 py-2 text-left text-sm text-amber-600 hover:bg-amber-50"
+                              >
+                                <StopCircle className="h-4 w-4 inline mr-2" />
+                                End Early
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                setCancelException(exception);
+                                setActiveRowMenu(null);
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4 inline mr-2" />
+                              Cancel
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </>
         )}
 
         {/* Pagination */}
         {exceptions?.pagination && exceptions.pagination.totalPages > 1 && (
-          <div className="border-t border-gray-100 p-4">
+          <div className="border-t border-gray-100 px-5 py-4">
             <Pagination
               currentPage={page}
               totalPages={exceptions.pagination.totalPages}
@@ -342,15 +481,15 @@ export function ApprovalsPage() {
             />
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Detail Modal */}
       {selectedException && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setSelectedException(null)} />
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setSelectedException(null)} />
           <div className="relative w-full max-w-md bg-white rounded-xl shadow-xl">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-100">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <div className="flex items-center gap-3">
                 <Avatar
                   firstName={selectedException.user?.firstName}
@@ -373,22 +512,30 @@ export function ApprovalsPage() {
             </div>
 
             {/* Content */}
-            <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs text-gray-500 mb-1">Type</p>
                   <p className="text-sm font-medium text-gray-900">{getTypeLabel(selectedException.type)}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 mb-1">Status</p>
-                  <p className={cn(
-                    'text-sm font-medium',
-                    selectedException.status === 'PENDING' && 'text-amber-600',
-                    selectedException.status === 'APPROVED' && 'text-emerald-600',
-                    selectedException.status === 'REJECTED' && 'text-red-600'
-                  )}>
-                    {selectedException.status}
-                  </p>
+                  {selectedException.status === 'PENDING' ? (
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-amber-600">
+                      <Clock className="h-4 w-4" />
+                      Pending
+                    </span>
+                  ) : selectedException.status === 'APPROVED' ? (
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600">
+                      <CheckCircle className="h-4 w-4" />
+                      Approved
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600">
+                      <XCircle className="h-4 w-4" />
+                      Rejected
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -411,9 +558,9 @@ export function ApprovalsPage() {
             </div>
 
             {/* Actions */}
-            <div className="p-4 border-t border-gray-100">
+            <div className="p-5 border-t border-gray-100">
               {selectedException.status === 'PENDING' ? (
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                   <Button
                     variant="success"
                     className="flex-1"
@@ -432,7 +579,7 @@ export function ApprovalsPage() {
                   </Button>
                 </div>
               ) : selectedException.status === 'APPROVED' && isActive(selectedException) ? (
-                <div className="flex gap-2">
+                <div className="flex gap-3">
                   {canEndEarly(selectedException) && (
                     <Button
                       variant="warning"
@@ -463,23 +610,26 @@ export function ApprovalsPage() {
       )}
 
       {/* End Early Modal */}
-      <ConfirmModal
+      <EndLeaveEarlyModal
         isOpen={!!endEarlyException}
         onClose={() => setEndEarlyException(null)}
-        onConfirm={() => endEarlyException && endEarlyMutation.mutate(endEarlyException.id)}
-        title="End Exception Early?"
-        message={
-          <p className="text-gray-600">
-            {endEarlyException && toDateStr(endEarlyException.startDate) === todayStr
-              ? 'This will make it a single-day record. They will be expected to check in tomorrow.'
-              : 'The record will end yesterday. They will be expected to check in today.'}
-          </p>
-        }
-        confirmText="End Early"
-        cancelText="Cancel"
-        type="warning"
-        action="custom"
+        onConfirm={(returnDate, notes) => {
+          if (endEarlyException) {
+            endEarlyMutation.mutate({
+              id: endEarlyException.id,
+              returnDate,
+              notes,
+            });
+          }
+        }}
         isLoading={endEarlyMutation.isPending}
+        timezone={company?.timezone || 'UTC'}
+        user={{
+          firstName: endEarlyException?.user?.firstName,
+          lastName: endEarlyException?.user?.lastName,
+        }}
+        currentEndDate={endEarlyException?.endDate || null}
+        leaveType={endEarlyException ? getTypeLabel(endEarlyException.type) : undefined}
       />
 
       {/* Cancel Modal */}
@@ -487,13 +637,13 @@ export function ApprovalsPage() {
         isOpen={!!cancelException}
         onClose={() => setCancelException(null)}
         onConfirm={() => cancelException && cancelMutation.mutate(cancelException.id)}
-        title="Cancel Exception?"
+        title="Cancel Leave?"
         message={
           <p className="text-gray-600">
-            This will delete the exception. They will be expected to check in immediately.
+            This will delete the leave record. The worker will be expected to check in immediately.
           </p>
         }
-        confirmText="Cancel Exception"
+        confirmText="Cancel Leave"
         cancelText="Go Back"
         type="danger"
         action="delete"
@@ -507,12 +657,12 @@ export function ApprovalsPage() {
         onConfirm={() => approveException && approveMutation.mutate(approveException.id)}
         title="Approve Request?"
         message={
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-gray-600">
-              Are you sure you want to approve the leave request for{' '}
+              Approve leave request for{' '}
               <strong>{approveException?.user?.firstName} {approveException?.user?.lastName}</strong>?
             </p>
-            <div className="p-3 bg-gray-50 rounded-lg text-sm">
+            <div className="p-3 bg-gray-50 rounded-lg text-sm space-y-1">
               <p><span className="text-gray-500">Type:</span> {approveException && getTypeLabel(approveException.type)}</p>
               <p><span className="text-gray-500">Duration:</span> {approveException && getDurationText(approveException)}</p>
             </div>
@@ -532,12 +682,12 @@ export function ApprovalsPage() {
         onConfirm={() => rejectException && rejectMutation.mutate(rejectException.id)}
         title="Reject Request?"
         message={
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-gray-600">
-              Are you sure you want to reject the leave request for{' '}
+              Reject leave request for{' '}
               <strong>{rejectException?.user?.firstName} {rejectException?.user?.lastName}</strong>?
             </p>
-            <div className="p-3 bg-gray-50 rounded-lg text-sm">
+            <div className="p-3 bg-gray-50 rounded-lg text-sm space-y-1">
               <p><span className="text-gray-500">Type:</span> {rejectException && getTypeLabel(rejectException.type)}</p>
               <p><span className="text-gray-500">Duration:</span> {rejectException && getDurationText(rejectException)}</p>
             </div>

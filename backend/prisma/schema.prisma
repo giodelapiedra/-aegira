@@ -143,8 +143,6 @@ model Company {
   exceptions     Exception[]
   schedules      Schedule[]
   rehabilitation Rehabilitation[]
-  pdfTemplates   PDFTemplate[]
-  filledForms    FilledPDFForm[]
   notifications  Notification[]
 
   // New feature relations
@@ -206,8 +204,6 @@ model User {
   reviewedExceptions Exception[]      @relation("ExceptionReviewer")
   schedules          Schedule[]
   rehabilitation     Rehabilitation[]
-  pdfTemplates       PDFTemplate[]    @relation("TemplateCreator")
-  filledForms        FilledPDFForm[]  @relation("FormFiller")
   notifications      Notification[]
 
   // New feature relations
@@ -303,7 +299,8 @@ model Checkin {
   @@index([companyId])
   @@index([userId])
   @@index([createdAt])
-  @@index([userId, createdAt]) // Composite index for analytics queries
+  @@index([userId, createdAt]) // Composite index for user analytics
+  @@index([companyId, createdAt]) // Composite index for dashboard date-range queries
   @@map("checkins")
 }
 
@@ -396,7 +393,6 @@ model Incident {
   team        Team?              @relation(fields: [teamId], references: [id])
   activities  IncidentActivity[]
   exception   Exception?         @relation("IncidentException") // Auto-created exception for this incident
-  filledForms FilledPDFForm[]    @relation("IncidentFilledForms")
 
   @@index([companyId])
   @@index([status])
@@ -535,77 +531,6 @@ model Rehabilitation {
   @@index([userId])
   @@index([status])
   @@map("rehabilitation")
-}
-
-// ===========================================
-// PDF TEMPLATE (For fillable PDF forms)
-// ===========================================
-
-model PDFTemplate {
-  id          String  @id @default(uuid())
-  companyId   String
-  name        String // "Certificate of Capacity", "Return to Work Form"
-  description String?
-  category    String? // "RTW", "Medical", "Safety"
-
-  // PDF file info
-  fileUrl  String // URL to the original PDF template
-  fileName String // Original filename
-  fileSize Int? // File size in bytes
-
-  // Detected form fields (JSON array)
-  // [{name: "employee_name", type: "text", page: 1, required: true}, ...]
-  fields Json @default("[]")
-
-  // Metadata
-  pageCount   Int      @default(1)
-  isActive    Boolean  @default(true)
-  createdById String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  createdBy   User            @relation("TemplateCreator", fields: [createdById], references: [id])
-  filledForms FilledPDFForm[]
-
-  @@unique([companyId, name])
-  @@index([companyId])
-  @@index([category])
-  @@index([createdById])
-  @@map("pdf_templates")
-}
-
-// ===========================================
-// FILLED PDF FORM (Generated from template)
-// ===========================================
-
-model FilledPDFForm {
-  id         String  @id @default(uuid())
-  templateId String
-  companyId  String
-  incidentId String? // Link to incident if RTW form
-
-  // Filled values (JSON object matching template fields)
-  // {employee_name: "John Doe", date: "2024-01-15", ...}
-  values Json @default("{}")
-
-  // Generated PDF
-  generatedUrl String? // URL to the filled PDF
-
-  // Tracking
-  filledById String
-  filledAt   DateTime @default(now())
-
-  template PDFTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  company  Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  incident Incident?   @relation("IncidentFilledForms", fields: [incidentId], references: [id])
-  filledBy User        @relation("FormFiller", fields: [filledById], references: [id])
-
-  @@index([templateId])
-  @@index([companyId])
-  @@index([incidentId])
-  @@index([filledById])
-  @@map("filled_pdf_forms")
 }
 
 // ===========================================
@@ -1018,8 +943,9 @@ model DailyTeamSummary {
 
   // === INDEXES ===
   @@unique([teamId, date])
-  @@index([companyId, date])
+  @@index([companyId, date]) // For company-wide dashboard queries
   @@index([date])
+  @@index([companyId, date, isWorkDay, isHoliday]) // For filtered analytics queries
   @@map("daily_team_summaries")
 }
 

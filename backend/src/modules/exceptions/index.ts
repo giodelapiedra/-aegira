@@ -1,13 +1,20 @@
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { prisma } from '../../config/prisma.js';
 import { createSystemLog } from '../system-logs/index.js';
 import { createExceptionSchema, updateExceptionSchema } from '../../utils/validator.js';
-import { getTodayStart, getTodayEnd, getNowDT, formatDisplayDate, DEFAULT_TIMEZONE } from '../../utils/date-helpers.js';
+import { getTodayStart, formatDisplayDate, DEFAULT_TIMEZONE } from '../../utils/date-helpers.js';
 import { recalculateSummariesForDateRange } from '../../utils/daily-summary.js';
 import { logger } from '../../utils/logger.js';
 import type { AppContext } from '../../types/context.js';
 
 const exceptionsRoutes = new Hono<AppContext>();
+
+// Schema for end early - requires return date
+const endEarlySchema = z.object({
+  returnDate: z.string(), // Return to work date (YYYY-MM-DD)
+  notes: z.string().max(500).optional(),
+});
 
 // GET /exceptions/my - Get current user's exceptions
 exceptionsRoutes.get('/my', async (c) => {
@@ -764,12 +771,13 @@ exceptionsRoutes.patch('/:id/reject', async (c) => {
 });
 
 // PATCH /exceptions/:id/end-early - End an approved exception early (company-scoped)
+// TL sets the return to work date
 exceptionsRoutes.patch('/:id/end-early', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const reviewerId = c.get('userId');
   const currentUser = c.get('user');
-  const body = await c.req.json();
+  const body = endEarlySchema.parse(await c.req.json());
 
   // Verify exception belongs to company and is approved
   const existing = await prisma.exception.findFirst({
@@ -814,53 +822,41 @@ exceptionsRoutes.patch('/:id/end-early', async (c) => {
   });
   const timezone = company?.timezone || DEFAULT_TIMEZONE;
 
-  // Use timezone-aware date calculations
-  const nowDT = getNowDT(timezone);
   const todayStart = getTodayStart(timezone);
-  const todayEnd = getTodayEnd(timezone);
 
-  const startDate = new Date(existing.startDate);
-  startDate.setHours(0, 0, 0, 0);
+  // Parse return date - this is when the worker should return to work
+  let returnDate = new Date(body.returnDate);
+  returnDate.setHours(0, 0, 0, 0);
+
+  // Tomorrow is the earliest return date
+  const tomorrow = new Date(todayStart);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  if (returnDate < tomorrow) {
+    return c.json({ error: 'Return date must be at least tomorrow' }, 400);
+  }
+
+  // The new endDate is the day BEFORE the return date
+  // e.g., if return date is Jan 20, endDate is Jan 19 (last day of exception)
+  const newEndDate = new Date(returnDate);
+  newEndDate.setDate(newEndDate.getDate() - 1);
+  newEndDate.setHours(23, 59, 59, 999);
 
   const existingEndDate = new Date(existing.endDate);
   existingEndDate.setHours(0, 0, 0, 0);
 
-  // Check if exception can be ended early (must have days remaining after today)
-  if (existingEndDate.getTime() === startDate.getTime()) {
-    return c.json({ error: 'Cannot end early - this is already a single-day exception' }, 400);
-  }
-
-  if (existingEndDate <= todayStart) {
-    return c.json({ error: 'Cannot end early - this exception has already ended or ends today' }, 400);
-  }
-
-  let newEndDate: Date;
-  if (body.endDate) {
-    // Use specified end date with proper timezone handling
-    const specifiedDT = nowDT.set({
-      year: new Date(body.endDate).getFullYear(),
-      month: new Date(body.endDate).getMonth() + 1,
-      day: new Date(body.endDate).getDate(),
-    }).endOf('day');
-    newEndDate = specifiedDT.toJSDate();
-  } else {
-    // If leave started today, make it a single-day record (end today)
-    // Otherwise, end as of yesterday
-    if (startDate.getTime() === todayStart.getTime()) {
-      newEndDate = todayEnd;
-    } else {
-      // Yesterday end of day in company timezone
-      newEndDate = nowDT.minus({ days: 1 }).endOf('day').toJSDate();
-    }
-  }
-
   // Validate new end date is before original end date
-  if (newEndDate >= existing.endDate) {
-    return c.json({ error: 'New end date must be before the original end date' }, 400);
+  if (newEndDate >= existingEndDate) {
+    return c.json({
+      error: 'New end date must be earlier than current end date. Use a sooner return date.',
+      currentEndDate: formatDisplayDate(existingEndDate, timezone),
+    }, 400);
   }
 
   // Validate new end date is not before start date
-  if (newEndDate < existing.startDate) {
+  const startDate = new Date(existing.startDate);
+  startDate.setHours(0, 0, 0, 0);
+  if (newEndDate < startDate) {
     return c.json({ error: 'New end date cannot be before the start date' }, 400);
   }
 
@@ -898,31 +894,38 @@ exceptionsRoutes.patch('/:id/end-early', async (c) => {
     },
   });
 
-  // Create notification for the user
+  // Format return date for notification
+  const returnDateDisplay = formatDisplayDate(returnDate, timezone);
+
+  // Create notification for the user with specific return date
   await prisma.notification.create({
     data: {
       userId: exception.userId,
       companyId,
-      title: 'Exception Ended Early',
-      message: `Your ${exception.type.toLowerCase().replace('_', ' ')} has been ended early by ${reviewer?.firstName} ${reviewer?.lastName}. You are expected to check in on your next work day.`,
+      title: 'Leave Ended Early',
+      message: `Your ${exception.type.toLowerCase().replace('_', ' ')} has been ended early by ${reviewer?.firstName} ${reviewer?.lastName}. You are expected to return to work and check in on ${returnDateDisplay}.`,
       type: 'EXCEPTION_UPDATED',
-      data: { exceptionId: exception.id },
+      data: {
+        exceptionId: exception.id,
+        returnDate: returnDate.toISOString(),
+      },
     },
   });
 
-  // Log exception end early
+  // Log exception end early with return date
   await createSystemLog({
     companyId,
     userId: reviewerId,
     action: 'EXCEPTION_ENDED_EARLY',
     entityType: 'exception',
     entityId: id,
-    description: `${reviewer?.firstName} ${reviewer?.lastName} ended ${exception.type.toLowerCase().replace('_', ' ')} early for ${exception.user.firstName} ${exception.user.lastName}`,
+    description: `${reviewer?.firstName} ${reviewer?.lastName} ended ${exception.type.toLowerCase().replace('_', ' ')} early for ${exception.user.firstName} ${exception.user.lastName} (return: ${returnDateDisplay})`,
     metadata: {
       type: exception.type,
       userId: exception.userId,
       originalEndDate: originalEndDate.toISOString(),
       newEndDate: newEndDate.toISOString(),
+      returnDate: returnDate.toISOString(),
       reason: body.notes,
     },
   });

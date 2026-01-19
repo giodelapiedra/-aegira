@@ -3,11 +3,22 @@
  */
 
 import type { TeamDetails } from '../../../services/team.service';
-import type { Checkin } from '../../../types/user';
 import type { Exemption } from '../../../services/exemption.service';
 
 // Re-export commonly used types
-export type { TeamDetails, Checkin, Exemption };
+export type { TeamDetails, Exemption };
+
+// Minimal checkin type for home page (subset of full Checkin)
+export interface MinimalCheckin {
+  id: string;
+  readinessScore: number;
+  readinessStatus: 'GREEN' | 'YELLOW' | 'RED';
+  createdAt: string;
+  mood?: number;
+  stress?: number;
+  sleep?: number;
+  physicalHealth?: number;
+}
 
 /**
  * Next check-in calculation result
@@ -29,7 +40,7 @@ export interface WeekCalendarDay {
   isToday: boolean;
   isWorkDay: boolean;
   isFuture: boolean;
-  checkin?: Checkin | null;
+  checkin?: MinimalCheckin | null;
   isExempted: boolean;
   absence?: AbsenceRecord | null;
 }
@@ -85,7 +96,7 @@ export interface ActiveExemption {
  * Recent checkins response from API
  */
 export interface RecentCheckinsResponse {
-  data: Checkin[];
+  data: MinimalCheckin[];
   pagination?: {
     page: number;
     limit: number;

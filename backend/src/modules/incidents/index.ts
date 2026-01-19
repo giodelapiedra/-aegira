@@ -731,6 +731,11 @@ incidentsRoutes.patch('/:id/status', async (c) => {
     return c.json({ error: 'Forbidden: You do not have permission to update this incident' }, 403);
   }
 
+  // Prevent reopening CLOSED incidents (CLOSED = FINAL)
+  if (existing.status === 'CLOSED') {
+    return c.json({ error: 'Cannot reopen a closed incident' }, 400);
+  }
+
   const updateData: any = { status: body.status };
   if (body.status === 'RESOLVED' || body.status === 'CLOSED') {
     updateData.resolvedAt = new Date();

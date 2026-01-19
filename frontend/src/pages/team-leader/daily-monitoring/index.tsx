@@ -28,6 +28,7 @@ import { StatsBar, MobileStatsCards } from './components/StatsBar';
 import { CriticalAlert } from './components/CriticalAlert';
 import { ApproveExemptionModal } from './components/ApproveExemptionModal';
 import { CreateExemptionModal } from './components/CreateExemptionModal';
+import { EndLeaveEarlyModal } from '../../../components/ui/EndLeaveEarlyModal';
 
 // Tabs (lazy-loaded based on active tab)
 import { CheckinsTab } from './tabs/CheckinsTab';
@@ -348,24 +349,28 @@ export function DailyMonitoringPage() {
       />
 
       {/* End Early Modal */}
-      <ConfirmModal
+      <EndLeaveEarlyModal
         isOpen={showEndEarlyModal && !!selectedExemption}
         onClose={() => {
           setShowEndEarlyModal(false);
           setSelectedExemption(null);
         }}
-        onConfirm={() => {
+        onConfirm={(returnDate, notes) => {
           if (selectedExemption) {
-            endEarlyMutation.mutate({ id: selectedExemption.id });
+            endEarlyMutation.mutate({
+              id: selectedExemption.id,
+              returnDate,
+              notes,
+            });
           }
         }}
-        title="End Exemption Early"
-        message={`Are you sure you want to end ${selectedExemption?.user.firstName}'s exemption early? They will be required to check in starting tomorrow.`}
-        confirmText="End Exemption"
-        cancelText="Cancel"
-        type="danger"
-        action="remove"
         isLoading={endEarlyMutation.isPending}
+        timezone={team.timezone}
+        user={{
+          firstName: selectedExemption?.user.firstName,
+          lastName: selectedExemption?.user.lastName,
+        }}
+        currentEndDate={selectedExemption?.endDate || null}
       />
     </>
   );

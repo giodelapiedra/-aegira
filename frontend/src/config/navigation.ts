@@ -369,24 +369,6 @@ export const adminSections: NavSection[] = [
     ],
   },
   {
-    id: 'templates',
-    title: 'PDF Templates',
-    items: [
-      {
-        id: 'all-templates',
-        label: 'All Templates',
-        href: '/admin/templates',
-        icon: FileText,
-      },
-      {
-        id: 'template-builder',
-        label: 'Template Builder',
-        href: '/admin/template-builder',
-        icon: ClipboardList,
-      },
-    ],
-  },
-  {
     id: 'system',
     title: 'System',
     items: [
@@ -492,6 +474,12 @@ export const whsControlSections: NavSection[] = [
         href: '/whs/my-incidents',
         icon: AlertTriangle,
       },
+      {
+        id: 'analytics',
+        label: 'Analytics',
+        href: '/whs/analytics',
+        icon: BarChart3,
+      },
     ],
   },
   {
@@ -499,9 +487,9 @@ export const whsControlSections: NavSection[] = [
     title: 'Forms',
     items: [
       {
-        id: 'fill-forms',
-        label: 'Fill Forms',
-        href: '/whs/fill-forms',
+        id: 'official-forms',
+        label: 'Official Forms',
+        href: '/whs/official-forms',
         icon: FileText,
       },
     ],

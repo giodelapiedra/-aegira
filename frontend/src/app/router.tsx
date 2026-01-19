@@ -4,6 +4,7 @@ import { AppLayout } from '../components/layout/AppLayout';
 import { ProtectedRoute } from './protected-route';
 import { RoleGuard } from './role-guard';
 import { SkeletonDashboard } from '../components/ui/Skeleton';
+import { NotFoundPage } from '../components/error';
 
 // ============================================
 // LAZY PAGE WRAPPER
@@ -91,8 +92,6 @@ const TeamsOverviewPage = lazy(() => import('../pages/executive/teams-overview.p
 // LAZY IMPORTS - Admin Pages
 // ============================================
 const AdminDashboard = lazy(() => import('../pages/admin/dashboard.page').then(m => ({ default: m.AdminDashboard })));
-const TemplatesPage = lazy(() => import('../pages/admin/templates.page').then(m => ({ default: m.TemplatesPage })));
-const TemplateBuilderPage = lazy(() => import('../pages/admin/template-builder.page').then(m => ({ default: m.TemplateBuilderPage })));
 
 // ============================================
 // LAZY IMPORTS - Shared Pages
@@ -103,9 +102,9 @@ const SystemLogsPage = lazy(() => import('../pages/shared/system-logs.page').the
 // LAZY IMPORTS - WHS Pages
 // ============================================
 const WHSDashboard = lazy(() => import('../pages/whs/dashboard.page').then(m => ({ default: m.WHSDashboard })));
-const FillFormsPage = lazy(() => import('../pages/whs/fill-forms.page').then(m => ({ default: m.FillFormsPage })));
-const VisualPDFFillPage = lazy(() => import('../pages/whs/visual-pdf-fill.page').then(m => ({ default: m.VisualPDFFillPage })));
 const WHSMyIncidentsPage = lazy(() => import('../pages/whs/my-incidents.page').then(m => ({ default: m.WHSMyIncidentsPage })));
+const WHSAnalyticsPage = lazy(() => import('../pages/whs/analytics.page').then(m => ({ default: m.WHSAnalyticsPage })));
+const OfficialFormsPage = lazy(() => import('../pages/whs/official-forms.page').then(m => ({ default: m.OfficialFormsPage })));
 
 // ============================================
 // ROUTER CONFIGURATION
@@ -391,23 +390,6 @@ export const router = createBrowserRouter([
           </RoleGuard>
         ),
       },
-      {
-        path: 'admin/templates',
-        element: (
-          <RoleGuard allowedRoles={['ADMIN']}>
-            <LazyPage><TemplatesPage /></LazyPage>
-          </RoleGuard>
-        ),
-      },
-      {
-        path: 'admin/template-builder',
-        element: (
-          <RoleGuard allowedRoles={['ADMIN']}>
-            <LazyPage><TemplateBuilderPage /></LazyPage>
-          </RoleGuard>
-        ),
-      },
-
       // ==========================================
       // EXECUTIVE ROUTES (All lazy loaded)
       // ==========================================
@@ -488,18 +470,18 @@ export const router = createBrowserRouter([
         ),
       },
       {
-        path: 'whs/fill-forms',
+        path: 'whs/analytics',
         element: (
-          <RoleGuard allowedRoles={['ADMIN', 'EXECUTIVE', 'WHS_CONTROL', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <LazyPage><FillFormsPage /></LazyPage>
+          <RoleGuard allowedRoles={['ADMIN', 'EXECUTIVE', 'WHS_CONTROL']}>
+            <LazyPage><WHSAnalyticsPage /></LazyPage>
           </RoleGuard>
         ),
       },
       {
-        path: 'whs/fill-forms/:id',
+        path: 'whs/official-forms',
         element: (
           <RoleGuard allowedRoles={['ADMIN', 'EXECUTIVE', 'WHS_CONTROL', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <LazyPage><VisualPDFFillPage /></LazyPage>
+            <LazyPage><OfficialFormsPage /></LazyPage>
           </RoleGuard>
         ),
       },
@@ -534,10 +516,10 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // Catch all - redirect to home
+  // Catch all - 404 Not Found
   {
     path: '*',
-    element: <Navigate to="/" replace />,
+    element: <NotFoundPage />,
   },
 ]);
 

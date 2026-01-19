@@ -32,7 +32,7 @@ import {
   rejectExemption,
   getExceptionTypeLabel,
 } from '../../services/exemption.service';
-import type { Incident, Exception } from '../../types/user';
+import type { Incident } from '../../types/user';
 
 // Status configuration with colors and icons
 const statusConfig: Record<string, {

@@ -37,16 +37,15 @@ export function WHSMyIncidentsPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Fetch stats
+  // Fetch stats (uses default 30s staleTime from App.tsx)
   const { data: stats } = useQuery({
-    queryKey: ['whs-my-incidents-stats'],
-    queryFn: () => whsService.getMyAssignedIncidentsStats(),
-    refetchInterval: 30000,
+    queryKey: ['whs', 'my-incidents', 'stats'],
+    queryFn: whsService.getMyAssignedIncidentsStats,
   });
 
   // Fetch incidents with server-side filtering
   const { data, isLoading } = useQuery({
-    queryKey: ['whs-my-incidents', statusFilter, debouncedSearch, page, limit],
+    queryKey: ['whs', 'my-incidents', { status: statusFilter, search: debouncedSearch, page, limit }],
     queryFn: () => whsService.getMyAssignedIncidents({
       status: statusFilter || undefined,
       search: debouncedSearch || undefined,
@@ -201,7 +200,7 @@ export function WHSMyIncidentsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <Badge variant={status.variant} className="inline-flex items-center gap-1">
+                        <Badge variant={status.variant as 'success' | 'warning' | 'danger' | 'primary' | 'secondary' | 'info' | 'default'} className="inline-flex items-center gap-1">
                           <StatusIcon className="h-3 w-3" />
                           {status.label}
                         </Badge>

@@ -177,14 +177,21 @@ export async function rejectExemption(
   return response.data;
 }
 
+export interface EndExemptionEarlyData {
+  returnDate: string; // Return to work date (YYYY-MM-DD)
+  notes?: string;
+}
+
 /**
  * End exemption early (TL)
+ * @param id - Exemption ID
+ * @param data - Return date and optional notes
  */
 export async function endExemptionEarly(
   id: string,
-  data?: { notes?: string }
+  data: EndExemptionEarlyData
 ): Promise<Exemption> {
-  const response = await api.patch(`/exemptions/${id}/end-early`, data || {});
+  const response = await api.patch(`/exemptions/${id}/end-early`, data);
   return response.data;
 }
 

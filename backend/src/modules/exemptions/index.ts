@@ -13,7 +13,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../../config/prisma.js';
 import { createSystemLog } from '../system-logs/index.js';
-import { adjustToWorkDay, formatDisplayDate, getTodayStart, getTodayEnd, DEFAULT_TIMEZONE } from '../../utils/date-helpers.js';
+import { adjustToWorkDay, formatDisplayDate, getTodayStart, DEFAULT_TIMEZONE } from '../../utils/date-helpers.js';
 import type { AppContext } from '../../types/context.js';
 
 const exemptionsRoutes = new Hono<AppContext>();
@@ -43,6 +43,11 @@ const approveExemptionSchema = z.object({
 });
 
 const rejectExemptionSchema = z.object({
+  notes: z.string().max(500).optional(),
+});
+
+const endEarlySchema = z.object({
+  returnDate: z.string(), // Return to work date (YYYY-MM-DD)
   notes: z.string().max(500).optional(),
 });
 
@@ -1071,13 +1076,14 @@ exemptionsRoutes.patch('/:id/reject', async (c) => {
 
 /**
  * PATCH /exemptions/:id/end-early - End exemption early
+ * TL sets the return to work date
  */
 exemptionsRoutes.patch('/:id/end-early', async (c) => {
   const id = c.req.param('id');
   const companyId = c.get('companyId');
   const reviewerId = c.get('userId');
   const currentUser = c.get('user');
-  const body = await c.req.json();
+  const body = endEarlySchema.parse(await c.req.json());
 
   const existing = await prisma.exception.findFirst({
     where: { id, companyId, isExemption: true },
@@ -1090,6 +1096,7 @@ exemptionsRoutes.patch('/:id/end-early', async (c) => {
           team: {
             select: {
               leaderId: true,
+              workDays: true,
             },
           },
         },
@@ -1115,26 +1122,43 @@ exemptionsRoutes.patch('/:id/end-early', async (c) => {
     return c.json({ error: 'Exemption has no end date set' }, 400);
   }
 
-  // Get company timezone from context (no DB query needed!)
+  // Get company timezone from context
   const timezone = c.get('timezone');
   const todayStart = getTodayStart(timezone);
-  const todayEnd = getTodayEnd(timezone);
 
+  // Parse return date - this is when the worker should return to work
+  let returnDate = new Date(body.returnDate);
+  returnDate.setHours(0, 0, 0, 0);
+
+  // Tomorrow is the earliest return date
+  const tomorrow = new Date(todayStart);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  if (returnDate < tomorrow) {
+    return c.json({ error: 'Return date must be at least tomorrow' }, 400);
+  }
+
+  // The new endDate is the day BEFORE the return date
+  // e.g., if return date is Jan 20, endDate is Jan 19 (last day of exemption)
+  const newEndDate = new Date(returnDate);
+  newEndDate.setDate(newEndDate.getDate() - 1);
+  newEndDate.setHours(23, 59, 59, 999);
+
+  // Check if the new end date is actually earlier than current end date
   const existingEndDate = new Date(existing.endDate);
   existingEndDate.setHours(0, 0, 0, 0);
 
-  if (existingEndDate <= todayStart) {
-    return c.json({ error: 'This exemption has already ended or ends today' }, 400);
+  if (newEndDate >= existingEndDate) {
+    return c.json({
+      error: 'New end date must be earlier than current end date. Use a sooner return date.',
+      currentEndDate: formatDisplayDate(existingEndDate, timezone),
+    }, 400);
   }
 
   const reviewer = await prisma.user.findUnique({
     where: { id: reviewerId },
     select: { firstName: true, lastName: true },
   });
-
-  // New end date is end of today in company timezone
-  // Using getTodayEnd ensures correct timezone handling
-  const newEndDate = todayEnd;
 
   const exemption = await prisma.exception.update({
     where: { id },
@@ -1155,29 +1179,36 @@ exemptionsRoutes.patch('/:id/end-early', async (c) => {
     },
   });
 
-  // Notify worker
+  // Format return date for notification
+  const returnDateDisplay = formatDisplayDate(returnDate, timezone);
+
+  // Notify worker with specific return date
   await prisma.notification.create({
     data: {
       userId: exemption.userId,
       companyId,
       title: 'Exemption Ended Early',
-      message: `Your exemption has been ended early by ${reviewer?.firstName} ${reviewer?.lastName}. You are expected to check in on your next work day.`,
+      message: `Your exemption has been ended early by ${reviewer?.firstName} ${reviewer?.lastName}. You are expected to return to work and check in on ${returnDateDisplay}.`,
       type: 'EXEMPTION_ENDED',
-      data: { exemptionId: exemption.id },
+      data: {
+        exemptionId: exemption.id,
+        returnDate: returnDate.toISOString(),
+      },
     },
   });
 
-  // Log end early
+  // Log end early with return date
   await createSystemLog({
     companyId,
     userId: reviewerId,
     action: 'EXCEPTION_ENDED_EARLY',
     entityType: 'exemption',
     entityId: id,
-    description: `${reviewer?.firstName} ${reviewer?.lastName} ended exemption early for ${existing.user.firstName} ${existing.user.lastName}`,
+    description: `${reviewer?.firstName} ${reviewer?.lastName} ended exemption early for ${existing.user.firstName} ${existing.user.lastName} (return: ${returnDateDisplay})`,
     metadata: {
       originalEndDate: existing.endDate.toISOString(),
       newEndDate: newEndDate.toISOString(),
+      returnDate: returnDate.toISOString(),
       reason: body.notes,
       isExemption: true,
     },

@@ -14,7 +14,6 @@ import {
   Users,
   AlertCircle,
   Building2,
-  User,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { formatDisplayDateTime } from '../../lib/date-utils';

@@ -20,8 +20,8 @@ import type {
   WeeklySummary,
   ActiveExemption,
   AbsenceRecord,
+  MinimalCheckin,
 } from './types';
-import type { Checkin } from '../../../types/user';
 
 /**
  * Check if a date is within an exemption/exception period
@@ -228,7 +228,7 @@ export function getNextCheckin(
     workDays: string;
     company?: { timezone?: string };
   } | null | undefined,
-  todayCheckin: Checkin | null | undefined,
+  todayCheckin: MinimalCheckin | null | undefined,
   activeExemptions: ActiveExemption[] | undefined,
   userId: string | undefined,
   returnToWorkDate: Date | null
@@ -388,7 +388,7 @@ export function getNextCheckin(
 export function getWeekCalendar(
   workDaysStr: string | undefined,
   timezone: string,
-  recentCheckins: Checkin[] | undefined,
+  recentCheckins: MinimalCheckin[] | undefined,
   activeExemptions: ActiveExemption[] | undefined,
   userId: string | undefined,
   absenceHistory: AbsenceRecord[] | undefined

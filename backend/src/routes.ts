@@ -17,13 +17,13 @@ import { notificationsRoutes } from './modules/notifications/index.js';
 import { systemLogsRoutes } from './modules/system-logs/index.js';
 import { companiesRoutes } from './modules/companies/index.js';
 import { whsRoutes } from './modules/whs/index.js';
-import { pdfTemplatesRoutes } from './modules/pdf-templates/index.js';
 import { chatbotRoutes } from './modules/chatbot/index.js';
 import { holidaysRoutes } from './modules/holidays/index.js';
 import { calendarRoutes } from './modules/calendar/index.js';
 import { absencesRoutes } from './modules/absences/index.js';
 import { workerRoutes } from './modules/worker/index.js';
 import { supervisorRoutes } from './modules/supervisor/index.js';
+import { formsRoutes } from './modules/forms/index.js';
 import { cronRoutes } from './cron/index.js';
 
 // Dev routes (only in development)
@@ -51,13 +51,13 @@ api.route('/analytics', analyticsRoutes);
 api.route('/notifications', notificationsRoutes);
 api.route('/system-logs', systemLogsRoutes);
 api.route('/whs', whsRoutes);
-api.route('/pdf-templates', pdfTemplatesRoutes);
 api.route('/chatbot', chatbotRoutes);
 api.route('/holidays', holidaysRoutes);
 api.route('/calendar', calendarRoutes);
 api.route('/absences', absencesRoutes);
 api.route('/worker', workerRoutes);
 api.route('/supervisor', supervisorRoutes);
+api.route('/forms', formsRoutes);
 api.route('/cron', cronRoutes);
 
 // Dev routes - only in development

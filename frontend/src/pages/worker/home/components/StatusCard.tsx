@@ -11,11 +11,16 @@ import { Badge } from '../../../../components/ui/Badge';
 import { Skeleton } from '../../../../components/ui/Skeleton';
 import { formatDisplayDateTime } from '../../../../lib/date-utils';
 import { STATUS_CONFIG } from '../../../../components/worker/StatusConfig';
-import type { Checkin } from '../../../../types/user';
+
+// Minimal type for what StatusCard actually needs
+interface MinimalCheckin {
+  readinessStatus: 'GREEN' | 'YELLOW' | 'RED';
+  createdAt: string;
+}
 
 interface StatusCardProps {
   isLoading: boolean;
-  todayCheckin: Checkin | null | undefined;
+  todayCheckin: MinimalCheckin | null | undefined;
   timezone?: string;
 }
 

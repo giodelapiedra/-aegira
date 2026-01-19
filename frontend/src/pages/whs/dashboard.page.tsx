@@ -1,202 +1,185 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { StatCard } from '../../components/ui/StatCard';
 import { SkeletonDashboard } from '../../components/ui/Skeleton';
-import { cn } from '../../lib/utils';
-import { formatDisplayDateTime } from '../../lib/date-utils';
+import { SeverityBadge, IncidentStatusBadge } from '../../components/ui/StatusBadge';
 import {
   Shield,
   FileText,
   AlertTriangle,
   CheckCircle2,
-  Users,
   Activity,
+  Clock,
+  ChevronRight,
+  Clipboard,
 } from 'lucide-react';
 import { whsService } from '../../services/whs.service';
+import { cn } from '../../lib/utils';
+
+// Calculate days since a date
+function getDaysAgo(dateString: string | null): number | null {
+  if (!dateString) return null;
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
 
 export function WHSDashboard() {
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['whs', 'dashboard'],
-    queryFn: () => whsService.getDashboard(),
-    staleTime: 5 * 60 * 1000, // 5 minutes - WHS dashboard is not real-time critical
+  // Fetch my analytics summary for KPIs
+  const { data: summary, isLoading: summaryLoading } = useQuery({
+    queryKey: ['whs', 'analytics', 'summary'],
+    queryFn: whsService.getAnalyticsSummary,
+    staleTime: 5 * 60 * 1000,
   });
+
+  // Fetch my assigned incidents
+  const { data: myIncidents, isLoading: incidentsLoading } = useQuery({
+    queryKey: ['whs', 'my-incidents', { limit: 7 }],
+    queryFn: () => whsService.getMyAssignedIncidents({ limit: 7 }),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const isLoading = summaryLoading || incidentsLoading;
 
   if (isLoading) {
     return <SkeletonDashboard />;
   }
 
-  if (error) {
-    return (
-      <div className="text-center py-8">
-        <AlertTriangle className="h-10 w-10 text-danger-500 mx-auto mb-3" />
-        <p className="text-gray-500">Failed to load WHS dashboard</p>
-      </div>
-    );
-  }
-
-  const stats = data?.stats;
-
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Shield className="h-7 w-7 text-primary-600" />
-            WHS Control Dashboard
+            <div className="p-2 bg-primary-100 rounded-lg">
+              <Shield className="h-6 w-6 text-primary-600" />
+            </div>
+            WHS Dashboard
           </h1>
-          <p className="text-gray-500 mt-1">Fill forms and manage safety compliance</p>
+          <p className="text-gray-500 mt-1">Manage safety incidents and compliance</p>
         </div>
-        <Link to="/whs/fill-forms">
+        <Link to="/whs/official-forms">
           <Button variant="primary">
             <FileText className="h-4 w-4 mr-2" />
-            Fill Forms
+            Official Forms
           </Button>
         </Link>
       </div>
 
-      {/* Quick Stats - Using Centralized StatCard */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* KPI Cards - 5 cards for enterprise view */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <StatCard
-          icon={Users}
-          value={stats?.totalMembers || 0}
-          label="Total Members"
+          icon={Clipboard}
+          value={summary?.total || 0}
+          label="My Cases"
           color="primary"
+          description="Total assigned"
+        />
+        <StatCard
+          icon={Activity}
+          value={summary?.active || 0}
+          label="Active"
+          color="warning"
+          description="Open + In Progress"
+        />
+        <StatCard
+          icon={CheckCircle2}
+          value={summary?.resolved || 0}
+          label="Resolved"
+          color="success"
+          description="Closed cases"
         />
         <StatCard
           icon={AlertTriangle}
-          value={stats?.openIncidents || 0}
-          label="Open Incidents"
-          color="warning"
+          value={summary?.overdue || 0}
+          label="Overdue"
+          color="danger"
+          description="Exceeds SLA"
+        />
+        <StatCard
+          icon={Clock}
+          value={summary?.pendingRTW || 0}
+          label="Pending RTW"
+          color="gray"
+          description="Need certificate"
         />
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Safety Incidents */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
+      {/* My Assigned Cases - Full width, main focus */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between border-b border-gray-100">
+          <div>
             <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-danger-500" />
-              Safety Incidents
+              <AlertTriangle className="h-5 w-5 text-warning-500" />
+              My Assigned Cases
             </CardTitle>
-            <Link to="/team/incidents" className="text-sm text-primary-600 hover:underline">
-              View all
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {data?.safetyIncidents && data.safetyIncidents.length > 0 ? (
-              <div className="space-y-3">
-                {data.safetyIncidents.slice(0, 5).map((incident) => (
+            <CardDescription>Cases requiring your attention</CardDescription>
+          </div>
+          <Link to="/whs/my-incidents">
+            <Button variant="ghost" size="sm">
+              View all <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </Link>
+        </CardHeader>
+        <CardContent className="p-0">
+          {myIncidents?.data && myIncidents.data.length > 0 ? (
+            <div className="divide-y divide-gray-100">
+              {myIncidents.data.map((incident) => {
+                const daysOpen = getDaysAgo(incident.whsAssignedAt);
+                const isOverdue = daysOpen !== null && (
+                  (incident.severity === 'CRITICAL' && daysOpen > 1) ||
+                  (incident.severity === 'HIGH' && daysOpen > 3) ||
+                  (incident.severity === 'MEDIUM' && daysOpen > 7) ||
+                  (incident.severity === 'LOW' && daysOpen > 14)
+                );
+
+                return (
                   <Link
                     key={incident.id}
                     to={`/incidents/${incident.id}`}
-                    className="block p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="block p-4 hover:bg-gray-50 transition-colors"
                   >
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 mb-1">
                           <span className="text-xs font-mono text-gray-500">{incident.caseNumber}</span>
+                          <SeverityBadge severity={incident.severity} size="sm" />
                         </div>
-                        <p className="font-medium text-gray-900 truncate mt-1">{incident.title}</p>
-                        <p className="text-sm text-gray-500">{incident.team}</p>
+                        <p className="font-medium text-gray-900 truncate">{incident.title}</p>
+                        <p className="text-sm text-gray-500">
+                          {incident.reporter?.firstName} {incident.reporter?.lastName}
+                          {incident.reporter?.team?.name && ` • ${incident.reporter.team.name}`}
+                        </p>
                       </div>
                       <div className="flex flex-col items-end gap-1">
-                        <span className={cn(
-                          'px-2 py-0.5 text-xs font-medium rounded-full',
-                          incident.severity === 'CRITICAL' && 'bg-danger-100 text-danger-700',
-                          incident.severity === 'HIGH' && 'bg-orange-100 text-orange-700',
-                          incident.severity === 'MEDIUM' && 'bg-warning-100 text-warning-700',
-                          incident.severity === 'LOW' && 'bg-gray-100 text-gray-700'
-                        )}>
-                          {incident.severity}
-                        </span>
-                        <span className={cn(
-                          'px-2 py-0.5 text-xs font-medium rounded-full',
-                          incident.status === 'OPEN' && 'bg-danger-100 text-danger-700',
-                          incident.status === 'IN_PROGRESS' && 'bg-warning-100 text-warning-700'
-                        )}>
-                          {incident.status.replace('_', ' ')}
-                        </span>
+                        <IncidentStatusBadge status={incident.status} size="sm" />
+                        {daysOpen !== null && (
+                          <span className={cn(
+                            'text-xs flex items-center gap-1',
+                            isOverdue ? 'text-danger-600 font-medium' : 'text-gray-400'
+                          )}>
+                            <Clock className="h-3 w-3" />
+                            {daysOpen}d
+                          </span>
+                        )}
                       </div>
                     </div>
                   </Link>
-                ))}
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <div className="bg-success-50 rounded-full p-3 w-12 h-12 flex items-center justify-center mx-auto mb-3">
+                <CheckCircle2 className="h-6 w-6 text-success-600" />
               </div>
-            ) : (
-              <div className="text-center py-8">
-                <CheckCircle2 className="h-10 w-10 text-success-300 mx-auto mb-3" />
-                <p className="text-gray-500">No open safety incidents</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Activity */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-primary-500" />
-              Recent Activity
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {data?.recentActivity && data.recentActivity.length > 0 ? (
-              <div className="space-y-3">
-                {data.recentActivity.map((activity) => (
-                  <div key={activity.id} className="flex items-start gap-3 p-2">
-                    <div className={cn(
-                      'p-1.5 rounded-full',
-                      activity.action.includes('VERIFIED') && 'bg-success-100',
-                      activity.action.includes('UPLOADED') && 'bg-primary-100',
-                      activity.action.includes('REJECTED') && 'bg-danger-100',
-                      activity.action.includes('GENERATED') && 'bg-primary-100'
-                    )}>
-                      <Activity className="h-4 w-4 text-primary-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900">{activity.description}</p>
-                      <p className="text-xs text-gray-400">{formatDisplayDateTime(activity.createdAt)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Activity className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No recent activity</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Link
-              to="/whs/fill-forms"
-              className="p-4 rounded-lg border border-gray-200 hover:border-primary-300 hover:bg-primary-50 transition-colors text-left"
-            >
-              <FileText className="h-6 w-6 text-primary-600 mb-2" />
-              <p className="font-medium text-gray-900">Fill Forms</p>
-              <p className="text-sm text-gray-500">Generate RTW certificates and other forms</p>
-            </Link>
-            <Link
-              to="/team/incidents"
-              className="p-4 rounded-lg border border-gray-200 hover:border-danger-300 hover:bg-danger-50 transition-colors text-left"
-            >
-              <AlertTriangle className="h-6 w-6 text-danger-600 mb-2" />
-              <p className="font-medium text-gray-900">Safety Incidents</p>
-              <p className="text-sm text-gray-500">View and manage incidents</p>
-            </Link>
-          </div>
+              <p className="text-gray-600 font-medium">No cases assigned</p>
+              <p className="text-sm text-gray-400 mt-1">You're all caught up!</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

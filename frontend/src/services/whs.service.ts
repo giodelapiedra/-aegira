@@ -63,4 +63,67 @@ export const whsService = {
     const response = await api.get('/whs/my-incidents/stats');
     return response.data;
   },
+
+  // ===== Analytics =====
+  getAnalyticsSummary: async (): Promise<{
+    total: number;
+    active: number;
+    resolved: number;
+    critical: number;
+    pendingRTW: number;
+    overdue: number;
+    avgResolutionDays: number | null;
+    byStatus: {
+      open: number;
+      inProgress: number;
+      resolved: number;
+      closed: number;
+    };
+  }> => {
+    const response = await api.get('/whs/analytics/summary');
+    return response.data;
+  },
+
+  getAnalyticsBreakdown: async (): Promise<{
+    byType: Array<{ type: string; _count: { type: number } }>;
+    bySeverity: Array<{ severity: string; _count: { severity: number } }>;
+    byStatus: Array<{ status: string; _count: { status: number } }>;
+  }> => {
+    const response = await api.get('/whs/analytics/breakdown');
+    return response.data;
+  },
+
+  getOverdueCases: async (): Promise<{
+    data: Array<{
+      id: string;
+      caseNumber: string;
+      type: string;
+      severity: string;
+      status: string;
+      title: string;
+      whsAssignedAt: string;
+      days_open: number;
+      reporter_first_name: string | null;
+      reporter_last_name: string | null;
+      team_name: string | null;
+    }>;
+  }> => {
+    const response = await api.get('/whs/analytics/overdue-cases');
+    return response.data;
+  },
+
+  getRTWPending: async (): Promise<{
+    data: Array<{
+      id: string;
+      caseNumber: string;
+      type: string;
+      resolvedAt: string;
+      daysSinceResolved: number | null;
+      reporter: { firstName: string; lastName: string };
+      team: { name: string } | null;
+    }>;
+  }> => {
+    const response = await api.get('/whs/analytics/rtw-pending');
+    return response.data;
+  },
 };

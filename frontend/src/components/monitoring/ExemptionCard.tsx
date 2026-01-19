@@ -33,6 +33,7 @@ interface PendingExemptionCardProps {
   onViewDetails?: (exemption: Exemption) => void;
   isLoading?: boolean;
   className?: string;
+  timezone?: string;
 }
 
 export function PendingExemptionCard({
@@ -42,6 +43,7 @@ export function PendingExemptionCard({
   onViewDetails: _onViewDetails,
   isLoading = false,
   className,
+  timezone = 'Asia/Manila',
 }: PendingExemptionCardProps) {
   const checkin = exemption.triggeredByCheckin;
 
@@ -60,7 +62,7 @@ export function PendingExemptionCard({
             <span className="text-sm font-medium text-warning-700">Pending Request</span>
           </div>
           <span className="text-xs text-warning-600">
-            {formatTimeAgo(exemption.createdAt)}
+            {formatTimeAgo(exemption.createdAt, timezone)}
           </span>
         </div>
       </div>
@@ -294,7 +296,7 @@ export function ExemptionRow({
       <div className="flex items-center gap-2">
         {isPending ? (
           <span className="text-sm text-warning-600">
-            {formatTimeAgo(exemption.createdAt)}
+            {formatTimeAgo(exemption.createdAt, timezone)}
           </span>
         ) : (
           <span className="text-sm text-success-600">

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { incidentService } from '../../services/incident.service';
 import type { CreateIncidentData } from '../../services/incident.service';
+import type { Incident } from '../../types/user';
 import { teamService } from '../../services/team.service';
 import { useUser } from '../../hooks/useUser';
 import { invalidateRelatedQueries } from '../../lib/query-utils';
@@ -351,7 +352,7 @@ export function ReportIncidentPage() {
       </Card>
 
       {/* My Incidents History */}
-      {myIncidents && myIncidents.length > 0 && (
+      {myIncidents?.data && myIncidents.data.length > 0 && (
         <Card>
           <CardHeader>
             <button
@@ -361,7 +362,7 @@ export function ReportIncidentPage() {
               <div className="flex items-center gap-2">
                 <Clock className="h-5 w-5 text-gray-400" />
                 <CardTitle>My Recent Reports</CardTitle>
-                <Badge>{myIncidents.length}</Badge>
+                <Badge>{myIncidents.data.length}</Badge>
               </div>
               {showHistory ? (
                 <ChevronUp className="h-5 w-5 text-gray-400" />
@@ -373,7 +374,7 @@ export function ReportIncidentPage() {
           {showHistory && (
             <CardContent>
               <div className="space-y-3">
-                {myIncidents.map((incident) => (
+                {myIncidents.data.map((incident: Incident) => (
                   <div
                     key={incident.id}
                     className="p-4 bg-gray-50 rounded-lg"
