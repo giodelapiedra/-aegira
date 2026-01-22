@@ -25,21 +25,8 @@ import {
   DynamicTipCard,
 } from './components';
 import { SkeletonDashboard } from '../../../components/ui/Skeleton';
-import type { AbsenceRecord, ActiveExemption } from './types';
-import type { WorkerDashboardAbsence, WorkerDashboardActiveExemption } from '../../../types/worker';
-
-// Map dashboard absence to home page format
-function mapAbsenceHistory(absences: WorkerDashboardAbsence[] | undefined): AbsenceRecord[] {
-  if (!absences) return [];
-  return absences.map((a) => ({
-    id: a.id,
-    userId: '', // Not needed for week calendar
-    absenceDate: a.absenceDate,
-    status: a.status,
-    reason: a.explanation || undefined,
-    createdAt: a.absenceDate,
-  }));
-}
+import type { ActiveExemption } from './types';
+import type { WorkerDashboardActiveExemption } from '../../../types/worker';
 
 // Map dashboard exemption to home page format
 function mapActiveExemptions(
@@ -66,11 +53,6 @@ export function HomePage() {
 
   // Map data to formats expected by useHomeCalculations
   // Hooks must be called unconditionally - handle undefined data inside
-  const mappedAbsenceHistory = useMemo(
-    () => mapAbsenceHistory(dashboardData?.absenceHistory),
-    [dashboardData?.absenceHistory]
-  );
-
   const mappedActiveExemptions = useMemo(
     () => mapActiveExemptions(dashboardData?.activeExemptions),
     [dashboardData?.activeExemptions]
@@ -103,7 +85,6 @@ export function HomePage() {
     todayCheckin: dashboardData?.todayCheckin,
     recentCheckins: dashboardData?.recentCheckins,
     activeExemptions: mappedActiveExemptions,
-    absenceHistory: mappedAbsenceHistory,
     userId: user?.id,
   });
 

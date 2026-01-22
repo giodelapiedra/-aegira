@@ -18,8 +18,6 @@ import {
   toDbDate,
   DEFAULT_TIMEZONE,
 } from '../../utils/date-helpers.js';
-import { calculatePerformanceScore } from '../../utils/attendance.js';
-import { MIN_CHECKIN_DAYS_THRESHOLD } from '../../utils/team-grades-optimized.js';
 import { generateWorkerHealthReport, getWorkerHistoryAroundDate } from '../../utils/daily-summary.js';
 
 const teamsRoutes = new Hono<AppContext>();
@@ -234,22 +232,8 @@ teamsRoutes.get('/my', async (c) => {
   const timezone = c.get('timezone');
   const { start: today, end: tomorrow } = getTodayRange(timezone);
 
-  // Get date range for check-in counts (last 30 days for performance)
-  const { start: thirtyDaysAgo } = getLastNDaysRange(30, timezone);
-
   // Run all queries in parallel for performance
-  const [checkinCounts, membersWithStreaks, membersOnLeave] = await Promise.all([
-    // Get check-in counts for each member (last 30 days only for performance)
-    prisma.checkin.groupBy({
-      by: ['userId'],
-      where: {
-        userId: { in: memberIds },
-        createdAt: { gte: thirtyDaysAgo }, // Limit to last 30 days for faster query
-      },
-      _count: {
-        userId: true,
-      },
-    }),
+  const [membersWithStreaks, membersOnLeave] = await Promise.all([
     // Get user streak data for all members
     prisma.user.findMany({
       where: {
@@ -280,7 +264,14 @@ teamsRoutes.get('/my', async (c) => {
   ]);
 
   // Create maps for quick lookup
-  const checkinCountMap = new Map(checkinCounts.map(c => [c.userId, c._count.userId]));
+  // Use pre-computed totalCheckins from User model (already selected in filteredMembers)
+  // This field is updated automatically when check-ins are created, so it's the source of truth
+  const checkinCountMap = new Map(
+    filteredMembers.map(member => [
+      member.id,
+      member.totalCheckins || 0
+    ])
+  );
   const streakMap = new Map(membersWithStreaks.map(u => [u.id, {
     currentStreak: u.currentStreak,
     longestStreak: u.longestStreak,
@@ -429,7 +420,6 @@ teamsRoutes.get('/:id/stats', async (c) => {
     return c.json({
       totalMembers: summary.totalMembers,
       checkedIn: summary.checkedInCount,
-      notCheckedIn: summary.notCheckedInCount,
       isWorkDay: summary.isWorkDay,
       isHoliday: summary.isHoliday,
       holidayName: holidayRecord?.name || null,
@@ -439,7 +429,7 @@ teamsRoutes.get('/:id/stats', async (c) => {
       pendingExceptions,
       openIncidents,
       checkinRate: summary.expectedToCheckIn > 0
-        ? Math.round((summary.checkedInCount / summary.expectedToCheckIn) * 100)
+        ? Math.min(100, Math.round((summary.checkedInCount / summary.expectedToCheckIn) * 100))
         : 0,
       avgReadinessScore: summary.avgReadinessScore,
       onLeaveCount: summary.onLeaveCount,
@@ -450,7 +440,6 @@ teamsRoutes.get('/:id/stats', async (c) => {
   return c.json({
     totalMembers: memberIds.length,
     checkedIn: 0,
-    notCheckedIn: 0,
     isWorkDay: true,
     isHoliday: false,
     holidayName: null,
@@ -521,7 +510,6 @@ teamsRoutes.get('/:id/summary', async (c) => {
   }
 
   // Get summaries for date range
-  // Note: absentCount and excusedCount exist in schema but Prisma types may be outdated
   const summaries = await prisma.dailyTeamSummary.findMany({
     where: {
       teamId: id,
@@ -531,30 +519,27 @@ teamsRoutes.get('/:id/summary', async (c) => {
       },
     },
     orderBy: { date: 'desc' },
-  }) as Array<{
-    absentCount?: number;
-    excusedCount?: number;
-    [key: string]: any;
-  }>;
+  });
 
-  // Calculate aggregates
-  const workDaySummaries = summaries.filter(s => s.isWorkDay && !s.isHoliday);
+  // Calculate aggregates (only include days with actual check-ins)
+  const workDaySummaries = summaries.filter(s => s.checkedInCount > 0);
   const totalWorkDays = workDaySummaries.length;
   const totalExpected = workDaySummaries.reduce((sum, s) => sum + s.expectedToCheckIn, 0);
   const totalCheckedIn = workDaySummaries.reduce((sum, s) => sum + s.checkedInCount, 0);
   const totalGreen = workDaySummaries.reduce((sum, s) => sum + s.greenCount, 0);
   const totalYellow = workDaySummaries.reduce((sum, s) => sum + s.yellowCount, 0);
   const totalRed = workDaySummaries.reduce((sum, s) => sum + s.redCount, 0);
-  const totalAbsent = workDaySummaries.reduce((sum, s) => sum + ((s as any).absentCount || 0), 0);
-  const totalExcused = workDaySummaries.reduce((sum, s) => sum + ((s as any).excusedCount || 0), 0);
+  
+  // Calculate On Leave (sum of onLeaveCount from summaries)
+  const totalExcused = workDaySummaries.reduce((sum, s) => sum + s.onLeaveCount, 0);
 
   const avgComplianceRate = totalExpected > 0
-    ? Math.round((totalCheckedIn / totalExpected) * 100)
+    ? Math.min(100, Math.round((totalCheckedIn / totalExpected) * 100))
     : null;
 
-  const scoresWithData = workDaySummaries.filter(s => s.avgReadinessScore !== null);
-  const avgReadinessScore = scoresWithData.length > 0
-    ? Math.round(scoresWithData.reduce((sum, s) => sum + (s.avgReadinessScore || 0), 0) / scoresWithData.length)
+  // Weighted average readiness score based on check-in count
+  const avgReadinessScore = totalCheckedIn > 0
+    ? Math.round(workDaySummaries.reduce((sum, s) => sum + (s.avgReadinessScore || 0) * s.checkedInCount, 0) / totalCheckedIn)
     : null;
 
   return c.json({
@@ -575,8 +560,7 @@ teamsRoutes.get('/:id/summary', async (c) => {
       totalGreen,
       totalYellow,
       totalRed,
-      totalAbsent,   // Total penalized absences in period
-      totalExcused,  // Total TL-approved absences in period
+      totalExcused,
     },
   });
 });
@@ -1082,9 +1066,9 @@ teamsRoutes.get('/members/:userId/profile', async (c) => {
     activeExemption,
     recentCheckins,
     exemptionsCount,
-    absencesCount,
     incidentsCount,
-    performance,
+    actualTotalCheckins,
+    allCheckinsForStreak,
   ] = await Promise.all([
     // Active exemption
     prisma.exception.findFirst({
@@ -1123,29 +1107,61 @@ teamsRoutes.get('/members/:userId/profile', async (c) => {
     prisma.exception.count({
       where: { userId: memberId },
     }),
-    // Absences count (unplanned)
-    prisma.absence.count({
-      where: { userId: memberId },
-    }),
     // Incidents count
     prisma.incident.count({
       where: { reportedBy: memberId },
     }),
-    // Performance score (last 30 days)
-    calculatePerformanceScore(memberId, thirtyDaysAgo, endDate),
+    // Actual total check-ins count (fallback if pre-computed is 0)
+    prisma.checkin.count({
+      where: { userId: memberId },
+    }),
+    // All check-ins for streak calculation (if longestStreak is 0)
+    member.longestStreak === 0
+      ? prisma.checkin.findMany({
+          where: { userId: memberId },
+          orderBy: { createdAt: 'asc' },
+          select: { createdAt: true },
+        })
+      : Promise.resolve([]),
   ]);
 
-  const attendanceScore = Math.round(performance.score);
+  // Calculate longest streak from actual check-ins if pre-computed value is 0
+  let calculatedLongestStreak = member.longestStreak;
+  if (member.longestStreak === 0 && allCheckinsForStreak.length > 0) {
+    // Calculate streak from check-in dates
+    let currentStreak = 1;
+    let maxStreak = 1;
+
+    for (let i = 1; i < allCheckinsForStreak.length; i++) {
+      const prevDate = new Date(allCheckinsForStreak[i - 1].createdAt);
+      const currDate = new Date(allCheckinsForStreak[i].createdAt);
+      const daysDiff = Math.floor((currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (daysDiff === 0 || daysDiff === 1) {
+        // Same day or consecutive day
+        currentStreak++;
+        maxStreak = Math.max(maxStreak, currentStreak);
+      } else {
+        // Streak broken
+        currentStreak = 1;
+      }
+    }
+
+    calculatedLongestStreak = maxStreak;
+  }
+
+  // Use actual count if pre-computed value is 0 or missing
+  const finalTotalCheckins = member.totalCheckins > 0 ? member.totalCheckins : actualTotalCheckins;
 
   return c.json({
     ...member,
+    longestStreak: calculatedLongestStreak,
     isOnLeave: !!activeExemption,
     activeExemption,
     stats: {
-      totalCheckins: member.totalCheckins, // Use pre-computed value from User model
-      attendanceScore,
+      totalCheckins: finalTotalCheckins, // Use actual count if pre-computed is 0
+      avgReadinessScore: member.avgReadinessScore || 0, // Use pre-computed wellness average
       exemptionsCount,
-      absencesCount,
       incidentsCount,
     },
     recentCheckins,
@@ -1340,76 +1356,6 @@ teamsRoutes.get('/members/:userId/incidents', async (c) => {
 
   return c.json({
     data: incidents,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-  });
-});
-
-// GET /teams/members/:userId/absences - Get absences for member (unplanned absences)
-// Shows days when worker didn't check in and the review status (EXCUSED/UNEXCUSED)
-teamsRoutes.get('/members/:userId/absences', async (c) => {
-  const memberId = c.req.param('userId');
-  const companyId = c.get('companyId');
-  const currentUser = c.get('user');
-  const page = parseInt(c.req.query('page') || '1');
-  const limit = Math.min(parseInt(c.req.query('limit') || '50'), 100);
-  const status = c.req.query('status'); // Optional: EXCUSED, UNEXCUSED, PENDING_REVIEW, PENDING_JUSTIFICATION
-
-  // Verify member exists and belongs to company
-  const member = await prisma.user.findFirst({
-    where: { id: memberId, companyId },
-    select: { id: true, teamId: true },
-  });
-
-  if (!member) {
-    return c.json({ error: 'Member not found' }, 404);
-  }
-
-  // Check permission: TL can only view own team members
-  if (currentUser.role === 'TEAM_LEAD') {
-    const leaderTeam = await prisma.team.findFirst({
-      where: { leaderId: currentUser.id, companyId, isActive: true },
-    });
-    if (!leaderTeam || member.teamId !== leaderTeam.id) {
-      return c.json({ error: 'You can only view members of your own team' }, 403);
-    }
-  }
-
-  const where: any = { userId: memberId };
-  if (status) {
-    where.status = status;
-  }
-
-  // Parallel fetch: data + count
-  const [absences, total] = await Promise.all([
-    prisma.absence.findMany({
-      where,
-      orderBy: { absenceDate: 'desc' },
-      select: {
-        id: true,
-        absenceDate: true,
-        reasonCategory: true,
-        explanation: true,
-        justifiedAt: true,
-        status: true,
-        reviewedAt: true,
-        reviewNotes: true,
-        createdAt: true,
-        reviewer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prisma.absence.count({ where }),
-  ]);
-
-  return c.json({
-    data: absences,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   });
 });
@@ -1789,25 +1735,9 @@ teamsRoutes.get('/my/analytics', async (c) => {
   const onLeaveUserIds = membersOnLeave.map((e) => e.userId);
   const activeMembers = totalMembers - onLeaveUserIds.length;
 
-  // Get TODAY's absence counts from DailyAttendance (for detailed breakdown)
-  // Uses toDbDate for proper DailyAttendance date comparison
-  const todayForDb = toDbDate(todayStart, timezone);
-  const [todayAbsentCount, todayExcusedCount] = await Promise.all([
-    prisma.dailyAttendance.count({
-      where: {
-        userId: { in: memberIds },
-        date: todayForDb,
-        status: 'ABSENT',
-      },
-    }),
-    prisma.dailyAttendance.count({
-      where: {
-        userId: { in: memberIds },
-        date: todayForDb,
-        status: 'EXCUSED',
-      },
-    }),
-  ]);
+  // OPTIMIZATION: Removed redundant queries for absentCount/excusedCount
+  // These are not needed since we already have daily_team_summaries with all the data
+  // If needed, can be calculated from daily_team_summaries or queried from daily_attendance
 
   // Create a map of exemption start dates to check if check-in was before exemption
   const exemptionStartDates = new Map<string, Date>();
@@ -1852,15 +1782,11 @@ teamsRoutes.get('/my/analytics', async (c) => {
       checkinCount: m._count.id,
     }));
 
-  // IMPORTANT: Filter out members with < MIN_CHECKIN_DAYS_THRESHOLD TOTAL check-ins EVER
-  // Uses pre-computed user.totalCheckins field instead of period count
-  // This ensures workers with 5+ historical check-ins are included even if
-  // the current filter only shows 1-2 check-ins
+  // Include all members with at least 1 check-in (actual metrics)
   const memberAverages = allMemberAverages.filter(m => {
     const totalCheckins = memberTotalCheckinsMap.get(m.userId) || 0;
-    return totalCheckins >= MIN_CHECKIN_DAYS_THRESHOLD;
+    return totalCheckins > 0;
   });
-  const onboardingCount = allMemberAverages.length - memberAverages.length;
   const includedMemberCount = memberAverages.length;
 
   // Calculate team average: sum of all member averages / number of members with check-ins
@@ -1869,34 +1795,9 @@ teamsRoutes.get('/my/analytics', async (c) => {
     ? memberAverages.reduce((sum, m) => sum + m.avgScore, 0) / memberAverages.length
     : 0;
 
-  // Get all check-ins in period for team members (for trend data, metrics, etc.)
-  // IMPORTANT: This query gets ALL check-ins within the date range (startDate to endDate)
-  // For '7days' period: includes check-ins from 6 days ago to today (7 days total)
-  // Absent workers (no check-in) are NOT included - they have no check-in record
-  // Filtering for holidays/exempted days happens AFTER this query
-  const checkins = await prisma.checkin.findMany({
-    where: {
-      userId: { in: memberIds },
-      companyId,
-      createdAt: {
-        gte: startDate, // Period start (e.g., 6 days ago for 7days)
-        lte: endDate,   // Period end (e.g., today end of day)
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      userId: true,
-      mood: true,
-      stress: true,
-      sleep: true,
-      physicalHealth: true,
-      readinessScore: true,
-      readinessStatus: true,
-      createdAt: true,
-      user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
-    },
-  });
+  // OPTIMIZATION: Removed redundant period checkins query
+  // Status distribution now comes from DailyTeamSummary (calculated below)
+  // This eliminates querying all individual check-ins when we have pre-computed summaries
 
   // Get TODAY's check-ins specifically (for compliance and current status)
   // Query separately to ensure we get all today's check-ins regardless of period filter
@@ -1920,26 +1821,14 @@ teamsRoutes.get('/my/analytics', async (c) => {
       physicalHealth: true,
       readinessScore: true,
       readinessStatus: true,
+      lowScoreReason: true,
       createdAt: true,
       user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
     },
   });
 
-  // Also filter from period check-ins as fallback (in case of timezone edge cases)
-  const todayCheckinsFromPeriod = checkins.filter((c) => {
-    const checkinDate = new Date(c.createdAt);
-    return isSameDay(checkinDate, todayStart, timezone);
-  });
-
-  // Combine both sources and deduplicate by check-in ID
-  const todayCheckinsMap = new Map();
-  for (const checkin of todayCheckinsFromDB) {
-    todayCheckinsMap.set(checkin.id, checkin);
-  }
-  for (const checkin of todayCheckinsFromPeriod) {
-    todayCheckinsMap.set(checkin.id, checkin);
-  }
-  const todayCheckins = Array.from(todayCheckinsMap.values());
+  // Use today's check-ins directly from DB query
+  const todayCheckins = todayCheckinsFromDB;
 
   // Get unique users who checked in today (latest check-in per user)
   const todayCheckinsByUser = new Map<string, typeof todayCheckins[0]>();
@@ -1984,17 +1873,27 @@ teamsRoutes.get('/my/analytics', async (c) => {
     ? todayScores.reduce((sum, s) => sum + s, 0) / todayScores.length
     : 0;
 
-  // Team grade will be calculated AFTER trendData is built (to get period compliance)
-  // See below after trendData generation
+  // Team grade will be calculated AFTER trendData is built (to get period avgReadiness)
+  // Grade = 100% avgReadiness (wellness data only) - see below after trendData generation
 
-  // Status distribution - use period check-ins for non-today periods, today's for 'today'
-  const distributionCheckins = period === 'today' ? uniqueTodayCheckins : checkins;
-  const statusDistribution = {
-    green: distributionCheckins.filter((c) => c.readinessStatus === 'GREEN').length,
-    yellow: distributionCheckins.filter((c) => c.readinessStatus === 'YELLOW').length,
-    red: distributionCheckins.filter((c) => c.readinessStatus === 'RED').length,
-    total: distributionCheckins.length,
+  // Status distribution - calculated below after DailyTeamSummary query
+  // For 'today': use uniqueTodayCheckins
+  // For other periods: use aggregated counts from DailyTeamSummary
+  let statusDistribution = {
+    green: 0,
+    yellow: 0,
+    red: 0,
+    total: 0,
   };
+
+  if (period === 'today') {
+    statusDistribution = {
+      green: uniqueTodayCheckins.filter((c) => c.readinessStatus === 'GREEN').length,
+      yellow: uniqueTodayCheckins.filter((c) => c.readinessStatus === 'YELLOW').length,
+      red: uniqueTodayCheckins.filter((c) => c.readinessStatus === 'RED').length,
+      total: uniqueTodayCheckins.length,
+    };
+  }
 
   // Get ALL holidays for the period (for holidayName lookup in trendData)
   const holidaysInPeriod = await prisma.holiday.findMany({
@@ -2016,7 +1915,7 @@ teamsRoutes.get('/my/analytics', async (c) => {
 
   // Trend data from DailyTeamSummary (pre-computed for data consistency with Team Summary page)
   // This ensures Team Analytics and Team Summary show the same numbers
-  const trendData: { date: string; score: number | null; compliance: number | null; checkedIn: number; expected: number; onExemption: number; isHoliday: boolean; holidayName?: string; hasData: boolean }[] = [];
+  const trendData: { date: string; score: number | null; checkedIn: number; onExemption: number; isHoliday: boolean; holidayName?: string; hasData: boolean }[] = [];
 
   if (period !== 'today') {
     // Convert date range to DB format for DailyTeamSummary query
@@ -2047,9 +1946,7 @@ teamsRoutes.get('/my/analytics', async (c) => {
         trendData.push({
           date: dateKey,
           score: null,
-          compliance: null,
           checkedIn: 0,
-          expected: 0,
           onExemption: 0,
           isHoliday: true,
           holidayName: dayHoliday?.name,
@@ -2059,43 +1956,20 @@ teamsRoutes.get('/my/analytics', async (c) => {
       }
 
       // Regular work day - use pre-computed values from DailyTeamSummary
-      // complianceRate is null when expectedToCheckIn is 0 (all on exemption)
-      const dayCompliance = summary.complianceRate !== null
-        ? Math.round(summary.complianceRate)
-        : null;
-
       trendData.push({
         date: dateKey,
         score: summary.avgReadinessScore !== null ? Math.round(summary.avgReadinessScore) : null,
-        compliance: dayCompliance,
         checkedIn: summary.checkedInCount,
-        expected: summary.expectedToCheckIn,
-        onExemption: summary.onLeaveCount, // Includes approved exceptions + EXCUSED absences
+        onExemption: summary.onLeaveCount, // Includes approved exceptions
         isHoliday: false,
         hasData: summary.checkedInCount > 0,
       });
-    }
-  }
 
-  // Calculate PERIOD-aggregated absent and excused counts from DailyTeamSummary
-  // For period views, sum up the absentCount and excusedCount across all days
-  let periodAbsentCount = 0;
-  let periodExcusedCount = 0;
-  if (period !== 'today' && trendData.length > 0) {
-    // Get DailyTeamSummary data for aggregation (already fetched above)
-    const dbStartDate = toDbDate(startDate, timezone);
-    const dbEndDate = toDbDate(endDate, timezone);
-    const summariesForCounts = await prisma.dailyTeamSummary.findMany({
-      where: {
-        teamId: team.id,
-        date: { gte: dbStartDate, lte: dbEndDate },
-        isWorkDay: true,
-        isHoliday: false,
-      },
-    });
-    for (const s of summariesForCounts) {
-      periodAbsentCount += (s as any).absentCount || 0;
-      periodExcusedCount += (s as any).excusedCount || 0;
+      // Aggregate status distribution from DailyTeamSummary
+      statusDistribution.green += summary.greenCount;
+      statusDistribution.yellow += summary.yellowCount;
+      statusDistribution.red += summary.redCount;
+      statusDistribution.total += summary.checkedInCount;
     }
   }
 
@@ -2107,29 +1981,9 @@ teamsRoutes.get('/my/analytics', async (c) => {
     ? Math.round(trendDataWithScores.reduce((sum, d) => sum + d.score!, 0) / trendDataWithScores.length)
     : Math.round(todayAvgReadiness);
 
-  // Period Compliance = TOTAL SUM method (totalCheckedIn / totalExpected)
-  // This is consistent with Team Summary / DailyTeamSummary calculation
-  // OLD (incorrect): Average of daily rates = avg(day1%, day2%...)
-  // NEW (correct): Total sum = totalCheckins / totalExpected
-  // IMPORTANT: Absent workers ARE included in totalExpected (they were expected but didn't check in)
-  // This means absent workers LOWER the compliance rate (correct behavior)
-  const trendDataWithCompliance = trendData.filter(d => d.compliance !== null);
-
-  // Calculate total check-ins and total expected across all work days
-  // expected includes absent workers (they were expected but didn't check in)
-  let periodTotalCheckins = 0;
-  let periodTotalExpected = 0;
-  for (const d of trendDataWithCompliance) {
-    periodTotalCheckins += d.checkedIn;
-    periodTotalExpected += d.expected; // Includes absent workers in expected count
-  }
-
-  const periodCompliance = period !== 'today' && periodTotalExpected > 0
-    ? Math.round((periodTotalCheckins / periodTotalExpected) * 100)
-    : compliance;
-
-  // Calculate Team Grade using MEMBER AVERAGES and PERIOD COMPLIANCE
-  // Formula: Team Score = (Team Avg Readiness × 0.60) + (Period Compliance × 0.40)
+  // Calculate Team Grade using ACTUAL WELLNESS DATA ONLY
+  // Formula: Team Score = Team Avg Readiness (100% wellness data)
+  // No check-in = no effect on grade (not counted, not penalized)
   let teamGradeScore: number | null = null;
   let teamGradeInfo: { color: string; label: string; letter: string } | null = null;
 
@@ -2140,19 +1994,23 @@ teamsRoutes.get('/my/analytics', async (c) => {
 
   // Calculate grade if we have any check-ins in period OR member averages
   if (trendDataWithScores.length > 0 || memberAverages.length > 0 || checkedInToday > 0) {
-    teamGradeScore = Math.round((readinessForGrade * 0.60) + (periodCompliance * 0.40));
+    // Grade is purely based on wellness data (avgReadiness)
+    teamGradeScore = Math.round(readinessForGrade);
     teamGradeInfo = getGradeInfo(teamGradeScore);
   }
 
-  // Top reasons - Automatic metric analysis from check-in data
-  // Count how many times each metric was "problematic" in the period
+  // Top reasons - Automatic metric analysis from TODAY's check-in data
+  // For 'today' period, analyze uniqueTodayCheckins
+  // For other periods, we skip detailed analysis (would require additional queries)
   const metricIssues = { HIGH_STRESS: 0, POOR_SLEEP: 0, LOW_MOOD: 0, LOW_PHYSICAL: 0 };
 
-  for (const checkin of checkins) {
-    if (checkin.stress > METRIC_THRESHOLDS.STRESS_HIGH) metricIssues.HIGH_STRESS++;
-    if (checkin.sleep < METRIC_THRESHOLDS.SLEEP_LOW) metricIssues.POOR_SLEEP++;
-    if (checkin.mood < METRIC_THRESHOLDS.MOOD_LOW) metricIssues.LOW_MOOD++;
-    if (checkin.physicalHealth < METRIC_THRESHOLDS.PHYSICAL_LOW) metricIssues.LOW_PHYSICAL++;
+  if (period === 'today') {
+    for (const checkin of uniqueTodayCheckins) {
+      if (checkin.stress > METRIC_THRESHOLDS.STRESS_HIGH) metricIssues.HIGH_STRESS++;
+      if (checkin.sleep < METRIC_THRESHOLDS.SLEEP_LOW) metricIssues.POOR_SLEEP++;
+      if (checkin.mood < METRIC_THRESHOLDS.MOOD_LOW) metricIssues.LOW_MOOD++;
+      if (checkin.physicalHealth < METRIC_THRESHOLDS.PHYSICAL_LOW) metricIssues.LOW_PHYSICAL++;
+    }
   }
 
   const topReasons = Object.entries(metricIssues)
@@ -2164,100 +2022,67 @@ teamsRoutes.get('/my/analytics', async (c) => {
     }))
     .sort((a, b) => b.count - a.count);
 
-  // Average metrics (from period) - use LATEST check-in per user per day for accuracy
-  // IMPORTANT: 
-  // 1. Only includes ACTUAL check-ins (workers who checked in) - absent workers have NO check-in, so NO metrics data
-  // 2. Filter out holidays and exempted days (same as compliance calculation)
-  // This ensures avgMetrics only includes VALID work days with actual check-in data, consistent with compliance
-  // Note: Absent workers don't affect metrics because they have no check-in record (no mood/stress/sleep/physicalHealth data)
-  // Build exempted dates map (user -> set of exempted date strings)
-  const exemptedDatesByUser = new Map<string, Set<string>>();
-  if (period !== 'today') {
-    const periodExemptions = await prisma.exception.findMany({
+  // Average metrics - use pre-computed DailyTeamSummary for periods, today's checkins for 'today'
+  let avgMetrics = { mood: 0, stress: 0, sleep: 0, physicalHealth: 0 };
+
+  if (period === 'today') {
+    // For today: calculate from today's check-ins
+    if (uniqueTodayCheckins.length > 0) {
+      avgMetrics = {
+        mood: Number((uniqueTodayCheckins.reduce((sum, c) => sum + c.mood, 0) / uniqueTodayCheckins.length).toFixed(1)),
+        stress: Number((uniqueTodayCheckins.reduce((sum, c) => sum + c.stress, 0) / uniqueTodayCheckins.length).toFixed(1)),
+        sleep: Number((uniqueTodayCheckins.reduce((sum, c) => sum + c.sleep, 0) / uniqueTodayCheckins.length).toFixed(1)),
+        physicalHealth: Number((uniqueTodayCheckins.reduce((sum, c) => sum + c.physicalHealth, 0) / uniqueTodayCheckins.length).toFixed(1)),
+      };
+    }
+  } else {
+    // For other periods: use pre-computed averages from DailyTeamSummary
+    // This avoids querying all individual check-ins
+    const dbStartDate = toDbDate(startDate, timezone);
+    const dbEndDate = toDbDate(endDate, timezone);
+
+    const dailySummariesForMetrics = await prisma.dailyTeamSummary.findMany({
       where: {
-        userId: { in: memberIds },
-        status: 'APPROVED',
-        startDate: { lte: endDate },
-        endDate: { gte: startDate },
+        teamId: team.id,
+        date: { gte: dbStartDate, lte: dbEndDate },
+        isWorkDay: true,
+        isHoliday: false,
+        checkedInCount: { gt: 0 },
       },
       select: {
-        userId: true,
-        startDate: true,
-        endDate: true,
+        avgMood: true,
+        avgStress: true,
+        avgSleep: true,
+        avgPhysical: true,
+        checkedInCount: true,
       },
     });
 
-    for (const exemption of periodExemptions) {
-      if (!exemption.startDate || !exemption.endDate) continue;
-      const userExemptions = exemptedDatesByUser.get(exemption.userId) || new Set<string>();
-      // Add all dates in exemption range
-      let current = new Date(exemption.startDate);
-      const end = new Date(exemption.endDate);
-      while (current <= end) {
-        const dateKey = formatLocalDate(current, timezone);
-        userExemptions.add(dateKey);
-        current = new Date(current);
-        current.setDate(current.getDate() + 1);
+    if (dailySummariesForMetrics.length > 0) {
+      // Weight each day's average by its check-in count for accurate period average
+      let totalWeight = 0;
+      let weightedMood = 0, weightedStress = 0, weightedSleep = 0, weightedPhysical = 0;
+
+      for (const summary of dailySummariesForMetrics) {
+        if (summary.avgMood !== null) {
+          weightedMood += summary.avgMood * summary.checkedInCount;
+          weightedStress += (summary.avgStress ?? 0) * summary.checkedInCount;
+          weightedSleep += (summary.avgSleep ?? 0) * summary.checkedInCount;
+          weightedPhysical += (summary.avgPhysical ?? 0) * summary.checkedInCount;
+          totalWeight += summary.checkedInCount;
+        }
       }
-      exemptedDatesByUser.set(exemption.userId, userExemptions);
+
+      if (totalWeight > 0) {
+        avgMetrics = {
+          mood: Number((weightedMood / totalWeight).toFixed(1)),
+          stress: Number((weightedStress / totalWeight).toFixed(1)),
+          sleep: Number((weightedSleep / totalWeight).toFixed(1)),
+          physicalHealth: Number((weightedPhysical / totalWeight).toFixed(1)),
+        };
+      }
     }
   }
-
-  // Build holiday date set for quick lookup
-  const holidayDateSet = new Set<string>();
-  for (const holiday of holidaysInPeriod) {
-    const dateKey = formatLocalDate(holiday.date, timezone);
-    holidayDateSet.add(dateKey);
-  }
-
-  // Get latest check-in per user per day, FILTERING out holidays and exempted days
-  // VERIFICATION: Only ACTUAL check-ins within the period are included
-  // - Absent workers: NOT included (no check-in record)
-  // - Holidays: EXCLUDED (filtered out)
-  // - Exempted days: EXCLUDED (filtered out)
-  // - Only valid work days with actual check-ins are counted
-  const latestCheckinsByUserDay = new Map<string, typeof checkins[0]>();
-  for (const checkin of checkins) {
-    const dateKey = formatLocalDate(checkin.createdAt, timezone);
-    
-    // Skip if holiday (not a valid work day)
-    if (holidayDateSet.has(dateKey)) continue;
-    
-    // Skip if exempted for this user (not expected to check in)
-    const userExemptions = exemptedDatesByUser.get(checkin.userId);
-    if (userExemptions && userExemptions.has(dateKey)) continue;
-    
-    // Keep only the latest check-in per user per day
-    const userDayKey = `${checkin.userId}_${dateKey}`;
-    const existing = latestCheckinsByUserDay.get(userDayKey);
-    // Keep the latest check-in (checkins are ordered DESC, so first one is latest)
-    if (!existing) {
-      latestCheckinsByUserDay.set(userDayKey, checkin);
-    }
-  }
-
-  // Extract metrics from FILTERED check-ins only
-  // This array contains ONLY actual check-ins from valid work days (no absent workers)
-  const latestScores = Array.from(latestCheckinsByUserDay.values()).map((c) => ({
-    mood: c.mood,
-    stress: c.stress,
-    sleep: c.sleep,
-    physicalHealth: c.physicalHealth,
-  }));
-
-  // Calculate avgMetrics from FILTERED check-ins only (excludes holidays & exempted days)
-  // VERIFICATION: When filtering by 7 days (or any period), only ACTUAL check-ins are counted
-  // - Absent workers: NOT included (no check-in = no metrics data)
-  // - Only workers who actually checked in and submitted mood/stress/sleep/physicalHealth scales
-  // This ensures consistency with compliance calculation - both use same filtering logic
-  const avgMetrics = latestScores.length > 0
-    ? {
-        mood: Number((latestScores.reduce((sum, s) => sum + s.mood, 0) / latestScores.length).toFixed(1)),
-        stress: Number((latestScores.reduce((sum, s) => sum + s.stress, 0) / latestScores.length).toFixed(1)),
-        sleep: Number((latestScores.reduce((sum, s) => sum + s.sleep, 0) / latestScores.length).toFixed(1)),
-        physicalHealth: Number((latestScores.reduce((sum, s) => sum + s.physicalHealth, 0) / latestScores.length).toFixed(1)),
-      }
-    : { mood: 0, stress: 0, sleep: 0, physicalHealth: 0 };
 
   // Members needing attention
   const membersNeedingAttention: {
@@ -2331,9 +2156,6 @@ teamsRoutes.get('/my/analytics', async (c) => {
           avgReadiness: Math.round(readinessForGrade),
           periodAvgReadiness,           // Period average readiness (from trendData)
           todayAvgReadiness: Math.round(todayAvgReadiness),
-          compliance: periodCompliance, // Period compliance (used for grade calculation)
-          todayCompliance: compliance,  // Today's compliance (for display)
-          onboardingCount,              // Members with < 3 check-ins (not included in grade)
           includedMemberCount,          // Members included in grade calculation
         }
       : null,
@@ -2343,17 +2165,13 @@ teamsRoutes.get('/my/analytics', async (c) => {
           activeMembers: activeMembers,
           onLeave: onLeaveUserIds.length,
           notCheckedIn: Math.max(0, activeMembers - (checkedInToday - onLeaveButCheckedIn.length)),
-          absentCount: todayAbsentCount,   // Penalized absences (DailyAttendance ABSENT)
-          excusedCount: todayExcusedCount, // TL-approved absences (DailyAttendance EXCUSED)
         }
       : {
-          // For period views, show unique members who checked in during the period
-          checkedIn: new Set(checkins.map((c) => c.userId)).size,
+          // For period views, use memberAverages count (members with check-ins in period)
+          checkedIn: memberAverages.length,
           activeMembers: totalMembers,
           onLeave: membersOnLeaveFormatted.length, // Members CURRENTLY on leave (today)
-          notCheckedIn: Math.max(0, totalMembers - new Set(checkins.map((c) => c.userId)).size),
-          absentCount: periodAbsentCount,   // Total penalized absences in period
-          excusedCount: periodExcusedCount, // Total TL-approved absences in period
+          notCheckedIn: Math.max(0, totalMembers - memberAverages.length),
         },
     statusDistribution,
     trendData,

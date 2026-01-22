@@ -127,21 +127,6 @@ export interface WorkerDashboardActiveExemption {
 }
 
 // ============================================
-// ABSENCE HISTORY
-// ============================================
-
-export interface WorkerDashboardAbsence {
-  id: string;
-  absenceDate: string;
-  status: 'PENDING_JUSTIFICATION' | 'EXCUSED' | 'UNEXCUSED';
-  reasonCategory: string | null;
-  explanation: string | null;
-  justifiedAt: string | null;
-  reviewedAt: string | null;
-  reviewNotes: string | null;
-}
-
-// ============================================
 // MAIN RESPONSE
 // ============================================
 
@@ -154,7 +139,6 @@ export interface WorkerDashboardResponse {
   recentCheckins: WorkerDashboardRecentCheckin[];
   pendingExemption: WorkerDashboardPendingExemption | null;
   activeExemptions: WorkerDashboardActiveExemption[];
-  absenceHistory: WorkerDashboardAbsence[];
   isHoliday: boolean;
   holidayName: string | null;
   isWorkDay: boolean;

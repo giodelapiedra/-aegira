@@ -21,7 +21,6 @@ import {
   MoreHorizontal,
   UserCheck,
   ChevronDown,
-  UserPlus,
 } from 'lucide-react';
 import { analyticsService, type TeamGradeSummary, type TeamsOverviewParams } from '../../services/analytics.service';
 import { Avatar } from '../../components/ui/Avatar';
@@ -135,18 +134,7 @@ function TeamCard({ team, onClick }: { team: TeamGradeSummary; onClick: () => vo
           <h3 className="font-semibold text-gray-900 group-hover:text-primary-600 transition-colors">
             {team.name}
           </h3>
-          <div className="flex items-center gap-2">
-            <p className="text-sm text-gray-500">{team.memberCount} members</p>
-            {team.onboardingCount > 0 && (
-              <span
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 text-xs font-medium"
-                title={`${team.onboardingCount} new member${team.onboardingCount > 1 ? 's' : ''} with < 3 check-ins (not included in grade)`}
-              >
-                <UserPlus className="h-3 w-3" />
-                {team.onboardingCount} new
-              </span>
-            )}
-          </div>
+          <p className="text-sm text-gray-500">{team.memberCount} members</p>
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); }}
@@ -247,14 +235,9 @@ function TeamCard({ team, onClick }: { team: TeamGradeSummary; onClick: () => vo
               {isNoData ? 'New Team' : `Grade ${team.grade}`}
             </span>
           </div>
-          {!isNoData && team.onboardingCount > 0 && (
+          {!isNoData && team.includedMemberCount !== undefined && team.includedMemberCount < team.memberCount && (
             <span className="text-xs text-gray-400">
               based on {team.includedMemberCount} of {team.memberCount}
-            </span>
-          )}
-          {isNoData && team.memberCount > 0 && (
-            <span className="text-xs text-gray-400">
-              {team.memberCount} member{team.memberCount > 1 ? 's' : ''} onboarding
             </span>
           )}
         </div>

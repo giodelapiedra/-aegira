@@ -180,7 +180,6 @@ workerRoutes.get('/dashboard', async (c) => {
       pendingExemption,
       holiday,
       activeExemptions,
-      absenceHistory,
     ] = await Promise.all([
       // User with team (for schedule and streak data)
       prisma.user.findUnique({
@@ -291,28 +290,6 @@ workerRoutes.get('/dashboard', async (c) => {
         },
         orderBy: { startDate: 'desc' },
       }),
-
-      // Absence history (last 14 days for week calendar)
-      prisma.absence.findMany({
-        where: {
-          userId,
-          absenceDate: {
-            gte: getNowDT(timezone).minus({ days: 14 }).startOf('day').toJSDate(),
-            lte: todayEnd,
-          },
-        },
-        select: {
-          id: true,
-          absenceDate: true,
-          status: true,
-          reasonCategory: true,
-          explanation: true,
-          justifiedAt: true,
-          reviewedAt: true,
-          reviewNotes: true,
-        },
-        orderBy: { absenceDate: 'desc' },
-      }),
     ]);
 
     // Handle user not found
@@ -354,7 +331,6 @@ workerRoutes.get('/dashboard', async (c) => {
         recentCheckins: [],
         pendingExemption: null,
         activeExemptions: [],
-        absenceHistory: [],
         isHoliday: !!holiday,
         holidayName: holiday?.name || null,
         isWorkDay: false,
@@ -403,7 +379,6 @@ workerRoutes.get('/dashboard', async (c) => {
       recentCheckins: recentCheckins.slice(0, 7), // Return only 7 most recent
       pendingExemption,
       activeExemptions,
-      absenceHistory,
       isHoliday: !!holiday,
       holidayName: holiday?.name || null,
       isWorkDay,

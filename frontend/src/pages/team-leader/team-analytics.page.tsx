@@ -11,14 +11,11 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
-  
   Legend,
 } from 'recharts';
 import {
   BarChart3,
-  Users,
   TrendingUp,
-  TrendingDown,
   CheckCircle2,
   AlertTriangle,
   Activity,
@@ -30,20 +27,13 @@ import {
   Moon,
   Heart,
   BrainCircuit,
-  Gauge,
-  Clock,
-  XCircle,
-  CheckCheck,
   ChevronDown,
   CalendarDays,
-  Shield,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { teamService, type TeamAnalytics } from '../../services/team.service';
 import { SkeletonDashboard } from '../../components/ui/Skeleton';
 import { Avatar } from '../../components/ui/Avatar';
-import { StatCard } from '../../components/ui/StatCard';
-import { getComplianceColorClasses, getComplianceGradientClasses } from '../../lib/status-config';
 
 type PeriodOption = 'today' | '7days' | '14days' | 'alltime' | 'custom';
 
@@ -106,14 +96,6 @@ export function TeamAnalyticsPage() {
     RED: 'bg-danger-50 text-danger-700 border-danger-200',
   };
 
-  // Get emoticon based on grade score
-  const getGradeEmoji = (score: number) => {
-    if (score >= 90) return '😊'; // A grades - Happy
-    if (score >= 80) return '😐'; // B grades - Neutral
-    if (score >= 70) return '😰'; // C grades - Worried
-    if (score >= 60) return '😰'; // D grades - Worried
-    return '😱'; // F grades - Very worried
-  };
 
   return (
     <div className="space-y-6">
@@ -227,90 +209,29 @@ export function TeamAnalyticsPage() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="flex items-center justify-center gap-8">
               {/* Letter Grade */}
               <div className="text-center">
                 <div className={cn(
-                  'w-24 h-24 mx-auto rounded-2xl bg-gradient-to-br flex items-center justify-center mb-3 shadow-lg relative overflow-hidden',
+                  'w-24 h-24 mx-auto rounded-2xl bg-gradient-to-br flex items-center justify-center shadow-lg',
                   gradeColorMap[analytics.teamGrade.color]
                 )}>
-                  <span className="text-5xl animate-bounce-slow relative z-10">
-                    {getGradeEmoji(analytics.teamGrade.score)}
-                  </span>
-                  <div className={cn(
-                    'absolute inset-0 opacity-20 animate-pulse',
-                    gradeColorMap[analytics.teamGrade.color].split(' ')[1]
-                  )} />
-                </div>
-                <div className="mt-2">
-                  <span className="text-2xl font-black text-gray-900">
+                  <span className="text-5xl font-black text-white">
                     {analytics.teamGrade.letter}
                   </span>
                 </div>
-                <p className="text-sm text-gray-500">Letter Grade</p>
-                <p className="text-xs text-gray-400 mt-1">Score: {analytics.teamGrade.score}/100</p>
               </div>
 
-              {/* Team Avg Readiness (All-time) */}
-              <div className="text-center p-4 bg-primary-50 rounded-xl border border-primary-100">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <Gauge className="h-5 w-5 text-primary-600" />
-                  <span className="text-2xl font-bold text-primary-700">
-                    {analytics.teamGrade.avgReadiness}%
-                  </span>
-                </div>
-                <p className="text-sm text-primary-600 font-medium">Team Avg Score</p>
-                <p className="text-xs text-primary-400 mt-1">Based on member averages</p>
-              </div>
-
-              {/* Period/Today's Avg Readiness */}
-              <div className="text-center p-4 bg-gray-50 rounded-xl">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <Activity className="h-5 w-5 text-gray-600" />
-                  <span className="text-2xl font-bold text-gray-900">
-                    {period === 'today' ? analytics.teamGrade.todayAvgReadiness : analytics.teamGrade.periodAvgReadiness}%
-                  </span>
-                </div>
-                <p className="text-sm text-gray-500">
-                  {period === 'today' ? "Today's Avg" : 'Period Avg'}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  {period === 'today' ? "From today's check-ins" : `${period === '7days' ? '7-day' : period === '14days' ? '14-day' : 'Period'} average`}
+              {/* Score */}
+              <div className="text-center">
+                <span className="text-5xl font-bold text-gray-900">
+                  {analytics.teamGrade.score}
+                </span>
+                <span className="text-2xl text-gray-400">/100</span>
+                <p className="text-sm text-gray-500 mt-1">
+                  {period === 'today' ? "Today's Score" : `${periodLabels[period]} Avg`}
                 </p>
               </div>
-
-              {/* Period Compliance */}
-              {(() => {
-                const compliance = analytics.teamGrade.compliance;
-                const complianceColorClasses = getComplianceColorClasses(compliance);
-
-                return (
-                  <div className={cn('text-center p-4 rounded-xl border', complianceColorClasses.bg, complianceColorClasses.border)}>
-                    <div className="flex items-center justify-center gap-2 mb-2">
-                      <CheckCircle2 className={cn('h-5 w-5', complianceColorClasses.icon)} />
-                      <span className={cn('text-2xl font-bold', complianceColorClasses.text)}>
-                        {compliance}%
-                      </span>
-                    </div>
-                    <p className={cn('text-sm font-medium', complianceColorClasses.label)}>Compliance</p>
-                    <p className={cn('text-xs mt-1', complianceColorClasses.subtext)}>
-                      {period === 'today' ? "Today's rate" : `${period === '7days' ? '7-day' : period === '14days' ? '14-day' : 'Period'} average`}
-                    </p>
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Grade Formula Explanation */}
-            <div className="mt-6 pt-4 border-t border-gray-100">
-              <p className="text-xs text-gray-400 text-center">
-                Grade = (Team Avg Score × 60%) + (Period Compliance × 40%)
-              </p>
-              {analytics.teamGrade?.onboardingCount && analytics.teamGrade.onboardingCount > 0 && (
-                <p className="text-xs text-blue-500 text-center mt-2">
-                  {analytics.teamGrade.onboardingCount} new member{analytics.teamGrade.onboardingCount > 1 ? 's' : ''} with &lt;3 check-ins not yet included in grade calculation
-                </p>
-              )}
             </div>
           </div>
         </div>
@@ -322,52 +243,9 @@ export function TeamAnalyticsPage() {
           <h3 className="text-lg font-semibold text-gray-900 mb-2">No Grade Data Yet</h3>
           <p className="text-sm text-gray-500 max-w-md mx-auto">
             Team grade will be calculated once team members start checking in.
-            The grade is based on individual member average scores and compliance rate.
           </p>
         </div>
       )}
-
-      {/* Compliance Breakdown - Using Centralized StatCard */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <StatCard
-          icon={CheckCircle2}
-          value={analytics.complianceDetails?.checkedIn ?? 0}
-          label="Checked In"
-          color="success"
-        />
-        <StatCard
-          icon={Users}
-          value={analytics.complianceDetails?.activeMembers ?? 0}
-          label="Active Members"
-          color="primary"
-        />
-        <StatCard
-          icon={Calendar}
-          value={analytics.complianceDetails?.onLeave ?? 0}
-          label="On Leave"
-          color="warning"
-        />
-        <StatCard
-          icon={Clock}
-          value={analytics.complianceDetails?.notCheckedIn ?? 0}
-          label="Not Checked In"
-          color="gray"
-        />
-        <StatCard
-          icon={CheckCheck}
-          value={analytics.complianceDetails?.excusedCount ?? 0}
-          label="Excused"
-          color="primary"
-          tooltip="TL-approved absences (not penalized)"
-        />
-        <StatCard
-          icon={XCircle}
-          value={analytics.complianceDetails?.absentCount ?? 0}
-          label="Absent"
-          color="danger"
-          tooltip="Penalized absences (0 points)"
-        />
-      </div>
 
       {/* Status Distribution & Trend Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -483,64 +361,26 @@ export function TeamAnalyticsPage() {
           <TrendChart
             data={analytics.trendData}
             timezone={analytics.team?.timezone || 'UTC'}
-            periodCompliance={analytics.teamGrade?.compliance || 0}
           />
         </div>
       )}
 
-      {/* Top Metric Issues */}
-      {analytics.topReasons && analytics.topReasons.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-900">Common Issues in Check-ins</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Based on {period === 'today' ? "today's" : 'period'} check-in data</p>
-          </div>
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium text-gray-600 w-10">#</th>
-                <th className="text-left px-4 py-2 font-medium text-gray-600">Issue</th>
-                <th className="text-right px-4 py-2 font-medium text-gray-600 w-28">Occurrences</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {analytics.topReasons.map((reason, index) => (
-                <tr key={reason.reason} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-500">{index + 1}</td>
-                  <td className="px-4 py-3 text-gray-900">{reason.label}</td>
-                  <td className="px-4 py-3 text-right">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 text-gray-700 text-xs font-medium">
-                      {reason.count}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Members Needing Attention & On Leave */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Members Needing Attention */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-danger-500" />
-              Needs Attention
-            </h3>
-            <span className="bg-danger-100 text-danger-700 text-xs font-medium px-2 py-1 rounded-full">
-              {analytics.membersNeedingAttention?.length ?? 0}
-            </span>
-          </div>
-          <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
-            {!analytics.membersNeedingAttention || analytics.membersNeedingAttention.length === 0 ? (
-              <div className="p-6 text-center text-gray-500">
-                <CheckCircle2 className="h-10 w-10 text-success-300 mx-auto mb-2" />
-                <p>All team members are doing well!</p>
-              </div>
-            ) : (
-              (analytics.membersNeedingAttention || []).map((member) => (
+      {/* Members At Risk (RED status only) */}
+      {(() => {
+        const atRiskMembers = (analytics.membersNeedingAttention || []).filter(m => m.issue === 'RED_STATUS');
+        return atRiskMembers.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-danger-500" />
+                Members At Risk
+              </h3>
+              <span className="bg-danger-100 text-danger-700 text-xs font-medium px-2 py-1 rounded-full">
+                {atRiskMembers.length}
+              </span>
+            </div>
+            <div className="divide-y divide-gray-100 max-h-64 overflow-y-auto">
+              {atRiskMembers.map((member) => (
                 <button
                   key={member.id}
                   onClick={() => navigate(`/team/members/${member.id}`)}
@@ -556,65 +396,16 @@ export function TeamAnalyticsPage() {
                     <p className="font-medium text-gray-900 truncate">{member.name}</p>
                     <p className="text-sm text-gray-500 truncate">{member.details}</p>
                   </div>
-                  <span className={cn(
-                    'flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium',
-                    member.issue === 'RED_STATUS' ? 'bg-danger-100 text-danger-700' : 'bg-gray-100 text-gray-700'
-                  )}>
-                    {member.issue === 'RED_STATUS' ? 'Red Status' : 'No Check-in'}
+                  <span className="flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium bg-danger-100 text-danger-700">
+                    At Risk
                   </span>
                   <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
                 </button>
-              ))
-            )}
+              ))}
+            </div>
           </div>
-        </div>
-
-        {/* Members On Leave */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-warning-500" />
-              Currently On Leave
-            </h3>
-            <span className="bg-warning-100 text-warning-700 text-xs font-medium px-2 py-1 rounded-full">
-              {analytics.membersOnLeave?.length ?? 0}
-            </span>
-          </div>
-          <div className="divide-y divide-gray-100 max-h-80 overflow-y-auto">
-            {!analytics.membersOnLeave || analytics.membersOnLeave.length === 0 ? (
-              <div className="p-6 text-center text-gray-500">
-                <Users className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-                <p>No members currently on leave</p>
-              </div>
-            ) : (
-              (analytics.membersOnLeave || []).map((member) => (
-                <button
-                  key={member.id}
-                  onClick={() => navigate(`/team/members/${member.id}`)}
-                  className="w-full p-3 flex items-center gap-3 hover:bg-gray-50 transition-colors text-left"
-                >
-                  <Avatar
-                    src={member.avatar}
-                    firstName={member.name.split(' ')[0]}
-                    lastName={member.name.split(' ').slice(1).join(' ')}
-                    size="md"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">{member.name}</p>
-                    <p className="text-sm text-gray-500">
-                      {new Date(member.startDate).toLocaleDateString('en-US', { timeZone: analytics.team?.timezone })} - {new Date(member.endDate).toLocaleDateString('en-US', { timeZone: analytics.team?.timezone })}
-                    </p>
-                  </div>
-                  <span className="flex-shrink-0 px-2 py-1 rounded-full text-xs font-medium bg-warning-100 text-warning-700">
-                    {member.leaveType}
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
+        );
+      })()}
     </div>
   );
 }
@@ -676,7 +467,7 @@ function MetricCard({
 }
 
 // Professional Trend Chart Component using Recharts
-function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics['trendData']; timezone: string; periodCompliance: number }) {
+function TrendChart({ data, timezone }: { data: TeamAnalytics['trendData']; timezone: string }) {
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400">
@@ -688,22 +479,11 @@ function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics[
     );
   }
 
-  // Prepare chart data
+  // Prepare chart data - only date and readiness needed
   const chartData = data.map((d) => ({
     date: d.date,
     readiness: d.score !== null ? Math.round(d.score) : null,
-    compliance: d.compliance !== null ? Math.round(d.compliance) : null, // null when all on exemption
-    checkedIn: d.checkedIn,
-    expected: d.expected || 0,
-    onExemption: d.onExemption || 0,
-    hasData: d.hasData,
   }));
-
-  // Calculate trend indicators
-  const validScores = chartData.filter(d => d.readiness !== null).map(d => d.readiness!);
-  const latestScore = validScores.length > 0 ? validScores[validScores.length - 1] : null;
-  const previousScore = validScores.length > 1 ? validScores[validScores.length - 2] : null;
-  const scoreChange = latestScore && previousScore ? latestScore - previousScore : 0;
 
   // Format date helper
   const formatDate = (dateStr: string) => {
@@ -714,54 +494,17 @@ function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics[
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: timezone });
   };
 
-  // Custom tooltip
-  const CustomTooltip = ({ active, payload }: any) => {
+  // Tooltip render function
+  const renderTooltip = (props: { active?: boolean; payload?: Array<{ payload: { date: string; readiness: number | null } }> }) => {
+    const { active, payload } = props;
     if (active && payload && payload.length) {
-      const data = payload[0].payload;
+      const item = payload[0].payload;
       return (
-        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-[160px]">
-          <p className="text-xs text-gray-500 mb-2 font-medium">{formatDate(data.date)}</p>
-          {data.readiness !== null && (
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-600 flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-indigo-500" />
-                Readiness
-              </span>
-              <span className="text-sm font-bold text-indigo-600">{data.readiness}%</span>
-            </div>
+        <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3">
+          <p className="text-xs text-gray-500 mb-1 font-medium">{formatDate(item.date)}</p>
+          {item.readiness !== null && (
+            <p className="text-lg font-bold text-indigo-600">{item.readiness}%</p>
           )}
-          {data.compliance !== null ? (
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-600 flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                Compliance
-              </span>
-              <span className="text-sm font-bold text-emerald-600">{data.compliance}%</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-gray-600 flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-blue-500" />
-                All Exempted
-              </span>
-              <span className="text-xs font-medium text-blue-600">N/A</span>
-            </div>
-          )}
-          <div className="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">Checked In</span>
-              <span className="text-xs font-medium text-gray-700">{data.checkedIn}/{data.expected} members</span>
-            </div>
-            {data.onExemption > 0 && (
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500 flex items-center gap-1.5">
-                  <Shield className="h-3 w-3 text-blue-500" />
-                  Exempted
-                </span>
-                <span className="text-xs font-medium text-blue-600">{data.onExemption} members</span>
-              </div>
-            )}
-          </div>
         </div>
       );
     }
@@ -769,44 +512,10 @@ function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics[
   };
 
   return (
-    <div className="space-y-4">
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-gradient-to-br from-primary-50 to-primary-100/50 rounded-xl p-4 border border-primary-200">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-primary-600 font-medium">Avg Readiness</span>
-            {scoreChange !== 0 && (
-              <span className={cn(
-                'text-xs font-semibold flex items-center gap-1 px-2 py-0.5 rounded-full',
-                scoreChange > 0 
-                  ? 'text-success-700 bg-success-100' 
-                  : 'text-danger-700 bg-danger-100'
-              )}>
-                {scoreChange > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {Math.abs(scoreChange)}%
-              </span>
-            )}
-          </div>
-          <p className="text-3xl font-bold text-primary-700">
-            {latestScore !== null ? `${latestScore}%` : 'N/A'}
-          </p>
-        </div>
-        {(() => {
-          const complianceColorClasses = getComplianceGradientClasses(periodCompliance);
-
-          return (
-            <div className={cn('bg-gradient-to-br rounded-xl p-4 border', complianceColorClasses.bg, complianceColorClasses.border)}>
-              <span className={cn('text-xs font-medium block mb-2', complianceColorClasses.label)}>Check-in Compliance</span>
-              <p className={cn('text-3xl font-bold', complianceColorClasses.value)}>{periodCompliance}%</p>
-              <p className={cn('text-xs mt-1', complianceColorClasses.subtext)}>Period Average</p>
-            </div>
-          );
-        })()}
-      </div>
-
+    <div>
       {/* Chart */}
-      <div className="h-80 -mx-2 min-h-[320px] w-full">
-        <ResponsiveContainer width="100%" height="100%" minHeight={320}>
+      <div className="h-72">
+        <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 30 }}>
             {/* Gradient Definitions */}
             <defs>
@@ -814,11 +523,6 @@ function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics[
                 <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
                 <stop offset="50%" stopColor="#6366f1" stopOpacity={0.15} />
                 <stop offset="100%" stopColor="#6366f1" stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="complianceGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
-                <stop offset="50%" stopColor="#10b981" stopOpacity={0.1} />
-                <stop offset="100%" stopColor="#10b981" stopOpacity={0.02} />
               </linearGradient>
             </defs>
 
@@ -863,7 +567,7 @@ function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics[
             />
 
             {/* Tooltip */}
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={renderTooltip} />
 
             {/* Readiness Gradient Area */}
             <Area
@@ -874,83 +578,16 @@ function TrendChart({ data, timezone, periodCompliance }: { data: TeamAnalytics[
               connectNulls={true}
             />
 
-            {/* Compliance Gradient Area */}
-            <Area
-              type="monotone"
-              dataKey="compliance"
-              stroke="transparent"
-              fill="url(#complianceGradient)"
-              connectNulls={true}
-            />
-
             {/* Readiness Line */}
             <Line
               type="monotone"
               dataKey="readiness"
               stroke="#6366f1"
               strokeWidth={3}
-              dot={(props: any) => {
-                const { cx, cy, payload } = props;
-                if (cy === undefined || cy === null || payload.readiness === null) {
-                  return <g />;
-                }
-                if (payload.onExemption > 0) {
-                  return (
-                    <g>
-                      <circle cx={cx} cy={cy} r={5} fill="#6366f1" stroke="#fff" strokeWidth={2} />
-                      <circle cx={cx} cy={cy} r={8} fill="none" stroke="#3b82f6" strokeWidth={2} opacity={0.6} />
-                      <text x={cx} y={cy - 15} textAnchor="middle" fontSize="10" fill="#3b82f6" fontWeight="600">
-                        {payload.onExemption}E
-                      </text>
-                    </g>
-                  );
-                }
-                return <circle cx={cx} cy={cy} r={5} fill="#6366f1" stroke="#fff" strokeWidth={2} />;
-              }}
-              activeDot={(props: any) => {
-                const { cx, cy, payload } = props;
-                if (cy === undefined || cy === null || payload.readiness === null) {
-                  return <g />;
-                }
-                if (payload.onExemption > 0) {
-                  return (
-                    <g>
-                      <circle cx={cx} cy={cy} r={7} fill="#6366f1" stroke="#fff" strokeWidth={2} />
-                      <circle cx={cx} cy={cy} r={10} fill="none" stroke="#3b82f6" strokeWidth={2.5} opacity={0.7} />
-                      <text x={cx} y={cy - 18} textAnchor="middle" fontSize="11" fill="#3b82f6" fontWeight="700">
-                        {payload.onExemption}E
-                      </text>
-                    </g>
-                  );
-                }
-                return <circle cx={cx} cy={cy} r={7} fill="#6366f1" stroke="#fff" strokeWidth={2} />;
-              }}
+              dot={{ r: 4, fill: '#6366f1', stroke: '#fff', strokeWidth: 2 }}
+              activeDot={{ r: 6, fill: '#6366f1', stroke: '#fff', strokeWidth: 2 }}
               connectNulls={true}
               name="Readiness Score"
-            />
-
-            {/* Compliance Line */}
-            <Line
-              type="monotone"
-              dataKey="compliance"
-              stroke="#10b981"
-              strokeWidth={2.5}
-              dot={(props: any) => {
-                const { cx, cy, payload } = props;
-                if (cy === undefined || cy === null || payload.compliance === null) {
-                  return <g />;
-                }
-                return <circle cx={cx} cy={cy} r={4} fill="#10b981" stroke="#fff" strokeWidth={2} />;
-              }}
-              activeDot={(props: any) => {
-                const { cx, cy, payload } = props;
-                if (cy === undefined || cy === null || payload.compliance === null) {
-                  return <g />;
-                }
-                return <circle cx={cx} cy={cy} r={6} fill="#10b981" stroke="#fff" strokeWidth={2} />;
-              }}
-              connectNulls={true}
-              name="Compliance %"
             />
 
             {/* Legend */}

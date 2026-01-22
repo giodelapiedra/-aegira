@@ -42,19 +42,6 @@ export interface WeekCalendarDay {
   isFuture: boolean;
   checkin?: MinimalCheckin | null;
   isExempted: boolean;
-  absence?: AbsenceRecord | null;
-}
-
-/**
- * Absence record from API
- */
-export interface AbsenceRecord {
-  id: string;
-  userId: string;
-  absenceDate: string;
-  status: 'PENDING_JUSTIFICATION' | 'EXCUSED' | 'UNEXCUSED';
-  reason?: string;
-  createdAt: string;
 }
 
 /**
@@ -64,9 +51,6 @@ export interface WeeklySummary {
   checkinsThisWeek: number;
   workDaysThisWeek: number;
   workDaysPassed: number;
-  excusedAbsences: number;
-  unexcusedAbsences: number;
-  pendingAbsences: number;
 }
 
 /**
@@ -103,11 +87,4 @@ export interface RecentCheckinsResponse {
     total: number;
     totalPages: number;
   };
-}
-
-/**
- * Absence history response from API
- */
-export interface AbsenceHistoryResponse {
-  data: AbsenceRecord[];
 }

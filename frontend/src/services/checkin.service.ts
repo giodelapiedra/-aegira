@@ -26,23 +26,7 @@ export interface LeaveStatus {
   lastException?: LeaveException;
 }
 
-// Attendance types
-export type AttendanceStatus = 'GREEN' | 'YELLOW' | 'ABSENT' | 'EXCUSED';
-
-export interface AttendanceRecord {
-  date: string;
-  status: AttendanceStatus;
-  score: number | null;
-  isCounted: boolean;
-  checkInTime?: string | null;
-  exceptionType?: string | null;
-}
-
 export interface CheckinWithAttendance extends Checkin {
-  attendance?: {
-    status: AttendanceStatus;
-    score: number;
-  };
   isReturning?: boolean;
 }
 
@@ -123,17 +107,6 @@ export const checkinService = {
 
   async getLeaveStatus(): Promise<LeaveStatus> {
     const response = await api.get<LeaveStatus>('/checkins/leave-status');
-    return response.data;
-  },
-
-  // Attendance endpoints
-  async getAttendanceHistory(days: number = 30, status?: string): Promise<{
-    data: AttendanceRecord[];
-    period: { days: number; startDate: string; endDate: string };
-  }> {
-    const response = await api.get('/checkins/attendance/history', {
-      params: { days, status },
-    });
     return response.data;
   },
 

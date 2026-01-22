@@ -56,7 +56,6 @@ const TeamMemberHistoryPage = lazy(() => import('../pages/team-leader/team-membe
 const AIInsightsHistoryPage = lazy(() => import('../pages/team-leader/ai-insights-history.page').then(m => ({ default: m.AIInsightsHistoryPage })));
 const AIInsightsDetailPage = lazy(() => import('../pages/team-leader/ai-insights-detail.page').then(m => ({ default: m.AIInsightsDetailPage })));
 const AIChatPage = lazy(() => import('../pages/team-leader/ai-chat.page').then(m => ({ default: m.AIChatPage })));
-const DailyMonitoringPage = lazy(() => import('../pages/team-leader/daily-monitoring').then(m => ({ default: m.DailyMonitoringPage })));
 const TeamMembersPage = lazy(() => import('../pages/team-leader/team-members').then(m => ({ default: m.TeamMembersPage })));
 const MemberProfilePage = lazy(() => import('../pages/team-leader/member-profile.page').then(m => ({ default: m.MemberProfilePage })));
 const TeamAnalyticsPage = lazy(() => import('../pages/team-leader/team-analytics.page').then(m => ({ default: m.TeamAnalyticsPage })));
@@ -227,14 +226,6 @@ export const router = createBrowserRouter([
         element: (
           <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
             <LazyPage><TeamOverviewPage /></LazyPage>
-          </RoleGuard>
-        ),
-      },
-      {
-        path: 'team/daily-monitoring',
-        element: (
-          <RoleGuard allowedRoles={['EXECUTIVE', 'ADMIN', 'SUPERVISOR', 'TEAM_LEAD']}>
-            <LazyPage><DailyMonitoringPage /></LazyPage>
           </RoleGuard>
         ),
       },

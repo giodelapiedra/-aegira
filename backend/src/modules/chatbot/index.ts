@@ -302,28 +302,6 @@ async function handleGenerateSummary(
     },
   });
 
-  // Fetch EXCUSED absences for all team members (TL approved = no penalty)
-  const excusedAbsences = await prisma.absence.findMany({
-    where: {
-      userId: { in: memberIds },
-      status: 'EXCUSED',
-      absenceDate: { gte: startDate, lte: endDate },
-    },
-    select: {
-      userId: true,
-      absenceDate: true,
-    },
-  });
-
-  // Build excused absences map by user
-  const excusedAbsencesByUser = new Map<string, Set<string>>();
-  for (const absence of excusedAbsences) {
-    const dateStr = formatLocalDate(absence.absenceDate, timezone);
-    const userAbsences = excusedAbsencesByUser.get(absence.userId) || new Set();
-    userAbsences.add(dateStr);
-    excusedAbsencesByUser.set(absence.userId, userAbsences);
-  }
-
   // Build exemption map by user
   const exemptionsByUser = new Map<string, typeof memberExemptions>();
   for (const exemption of memberExemptions) {
@@ -390,15 +368,7 @@ async function handleGenerateSummary(
       }
     }
 
-    // Also add EXCUSED absences (TL approved = no penalty)
-    const userExcusedAbsences = excusedAbsencesByUser.get(member.id);
-    if (userExcusedAbsences) {
-      for (const dateStr of userExcusedAbsences) {
-        exemptedDatesSet.add(dateStr);
-      }
-    }
-
-    // Calculate expected work days (excluding holidays, exemptions, and EXCUSED absences)
+    // Calculate expected work days (excluding holidays and exemptions)
     const workDaysBeforeExemptions = countWorkDaysInRange(effectiveStartDate, endDate, teamWorkDays, timezone, holidayDates);
     const expectedWorkDays = Math.max(0, workDaysBeforeExemptions - exemptedDatesSet.size);
 
@@ -412,7 +382,6 @@ async function handleGenerateSummary(
 
     // Calculate stats
     const greenCount = checkins.filter((c: any) => c.readinessStatus === 'GREEN').length;
-    const yellowCount = checkins.filter((c: any) => c.readinessStatus === 'YELLOW').length;
     const redCount = checkins.filter((c: any) => c.readinessStatus === 'RED').length;
 
     const avgScore = checkins.length > 0
@@ -476,7 +445,6 @@ async function handleGenerateSummary(
       missedWorkDays,
       checkinRate,
       greenCount,
-      yellowCount,
       redCount,
       avgScore,
       avgMood,
@@ -564,17 +532,9 @@ async function handleGenerateSummary(
     ? Math.round(summaryWeightedReadiness / summaryTotalCheckins)
     : rawTeamAvgReadiness;
 
-  // Use DailyTeamSummary for compliance (consistent with Team Analytics)
-  // Fallback to raw calculation if no summary data available
-  const rawTeamCompliance = memberAnalytics.length > 0
-    ? memberAnalytics.reduce((sum: number, m: any) => sum + m.checkinRate, 0) / memberAnalytics.length
-    : 0;
-  const teamCompliance = summaryTotalExpected > 0
-    ? Math.round((summaryTotalCheckins / summaryTotalExpected) * 100)
-    : rawTeamCompliance;
-
-  // Grade formula: (Avg Readiness × 60%) + (Compliance × 40%)
-  const gradeScore = Math.round((teamAvgReadiness * 0.6) + (teamCompliance * 0.4));
+  // Grade is 100% wellness-based - only from actual health data points
+  // No compliance factor - workers who didn't check in are not counted (not penalized)
+  const gradeScore = Math.round(teamAvgReadiness);
 
   // Calculate letter grade
   const getLetterGrade = (score: number): { letter: string; label: string } => {
@@ -599,7 +559,6 @@ async function handleGenerateSummary(
     letter,
     label,
     avgReadiness: Math.round(teamAvgReadiness),
-    compliance: Math.round(teamCompliance),
   };
 
   // Calculate top reasons for low scores
@@ -860,7 +819,6 @@ async function handleTeamStatus(c: any, team: any, companyId: string) {
   });
 
   const greenCount = todayCheckins.filter((c) => c.readinessStatus === 'GREEN').length;
-  const yellowCount = todayCheckins.filter((c) => c.readinessStatus === 'YELLOW').length;
   const redCount = todayCheckins.filter((c) => c.readinessStatus === 'RED').length;
   const checkinRate = memberIds.length > 0
     ? Math.round((todayCheckins.length / memberIds.length) * 100)
@@ -886,7 +844,7 @@ async function handleTeamStatus(c: any, team: any, companyId: string) {
     message: {
       id: generateId(),
       role: 'assistant',
-      content: `**${team.name} - Today's Status**\n\n👥 **Members:** ${memberIds.length}\n📋 **Check-in Rate:** ${checkinRate}% (${todayCheckins.length}/${memberIds.length})\n\n🟢 Green: ${greenCount}\n🟡 Yellow: ${yellowCount}\n🔴 Red: ${redCount}\n\n📝 Pending Approvals: ${pendingExceptions}\n⚠️ Open Incidents: ${openIncidents}`,
+      content: `**${team.name} - Today's Status**\n\n👥 **Members:** ${memberIds.length}\n📋 **Check-in Rate:** ${checkinRate}% (${todayCheckins.length}/${memberIds.length})\n\n🟢 Ready: ${greenCount}\n🔴 At Risk: ${redCount}\n\n📝 Pending Approvals: ${pendingExceptions}\n⚠️ Open Incidents: ${openIncidents}`,
       timestamp: new Date(),
       links: [
         {
@@ -940,28 +898,6 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
     },
   });
 
-  // Fetch EXCUSED absences for all team members (TL approved = no penalty)
-  const excusedAbsences = await prisma.absence.findMany({
-    where: {
-      userId: { in: memberIds },
-      status: 'EXCUSED',
-      absenceDate: { gte: startDate, lte: endDate },
-    },
-    select: {
-      userId: true,
-      absenceDate: true,
-    },
-  });
-
-  // Build excused absences map by user
-  const excusedAbsencesByUser = new Map<string, Set<string>>();
-  for (const absence of excusedAbsences) {
-    const dateStr = formatLocalDate(absence.absenceDate, timezone);
-    const userAbsences = excusedAbsencesByUser.get(absence.userId) || new Set();
-    userAbsences.add(dateStr);
-    excusedAbsencesByUser.set(absence.userId, userAbsences);
-  }
-
   // Build exemption map
   const exemptionsByUser = new Map<string, typeof memberExemptions>();
   for (const exemption of memberExemptions) {
@@ -993,7 +929,7 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
     checkinsByUser.set(checkin.userId, userCheckins);
   }
 
-  // Helper to check if date is exempted for user (includes exemptions + EXCUSED absences)
+  // Helper to check if date is exempted for user
   const isDateExemptedForUser = (userId: string, dateStr: string): boolean => {
     // Check exemptions (Exception model - leave requests)
     const userExemptions = exemptionsByUser.get(userId) || [];
@@ -1005,11 +941,6 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
         return true;
       }
     }
-    // Check EXCUSED absences (Absence model - TL approved absences)
-    const userExcusedAbsences = excusedAbsencesByUser.get(userId);
-    if (userExcusedAbsences?.has(dateStr)) {
-      return true;
-    }
     return false;
   };
 
@@ -1020,7 +951,6 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
     missedDays: number;
     avgScore: number;
     redCount: number;
-    yellowCount: number;
     greenCount: number;
     riskLevel: 'low' | 'medium' | 'high';
     issues: string[];
@@ -1051,14 +981,6 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
       }
     }
 
-    // Also add EXCUSED absences (TL approved = no penalty)
-    const userExcusedAbsences = excusedAbsencesByUser.get(member.id);
-    if (userExcusedAbsences) {
-      for (const dateStr of userExcusedAbsences) {
-        exemptedDatesSet.add(dateStr);
-      }
-    }
-
     const workDaysBeforeExemptions = countWorkDaysInRange(effectiveStartDate, endDate, teamWorkDays, timezone, holidayDates);
     const expectedWorkDays = Math.max(0, workDaysBeforeExemptions - exemptedDatesSet.size);
 
@@ -1073,7 +995,6 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
     });
 
     const greenCount = validCheckins.filter(c => c.readinessStatus === 'GREEN').length;
-    const yellowCount = validCheckins.filter(c => c.readinessStatus === 'YELLOW').length;
     const redCount = validCheckins.filter(c => c.readinessStatus === 'RED').length;
 
     const avgScore = validCheckins.length > 0
@@ -1108,12 +1029,6 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
       issues.push(`${redCount} RED check-ins`);
     }
 
-    // Check for yellow status
-    if (yellowCount >= 3) {
-      if (riskLevel === 'low') riskLevel = 'medium';
-      issues.push(`${yellowCount} YELLOW check-ins`);
-    }
-
     // Check for low average score
     if (avgScore > 0 && avgScore < 50) {
       if (riskLevel === 'low') riskLevel = 'medium';
@@ -1132,7 +1047,6 @@ async function handleAtRisk(c: any, team: any, companyId: string) {
       missedDays,
       avgScore,
       redCount,
-      yellowCount,
       greenCount,
       riskLevel,
       issues,

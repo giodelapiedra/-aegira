@@ -76,19 +76,11 @@ export function DailySummaryCard({ summary, isToday, onClick }: DailySummaryCard
         </div>
       ) : (
         <>
-          {/* Compliance */}
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-600">Compliance</span>
-            <span className={cn('font-bold', colors.text)}>
-              {summary.complianceRate !== null ? `${Math.round(summary.complianceRate)}%` : '—'}
-            </span>
-          </div>
-
           {/* Check-in Stats */}
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-gray-600">Checked In</span>
             <span className="font-medium">
-              {summary.checkedInCount}/{summary.expectedToCheckIn}
+              {summary.checkedInCount}
             </span>
           </div>
 

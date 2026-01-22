@@ -6,7 +6,6 @@
  */
 
 import { useMemo } from 'react';
-import { Minus } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import type { DailyTeamSummary } from '../../../types/summary';
 import { getDayStatus, dayStatusColors } from '../../../types/summary';
@@ -32,29 +31,26 @@ function parseDateString(dateStr: string): Date {
 export function WeeklySummaryTable({ summaries, onRowClick }: WeeklySummaryTableProps) {
   const today = getTodayDateString();
 
-  // Memoize sorted summaries to avoid re-sorting on every render
+  // Memoize sorted summaries - only show actual work days (no rest days/holidays)
   const sortedSummaries = useMemo(() => {
-    return [...summaries].sort(
-      (a, b) => parseDateString(b.date).getTime() - parseDateString(a.date).getTime()
-    );
+    return [...summaries]
+      .filter((s) => s.isWorkDay && !s.isHoliday)
+      .sort((a, b) => parseDateString(b.date).getTime() - parseDateString(a.date).getTime());
   }, [summaries]);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden overflow-x-auto">
-      <table className="w-full text-sm min-w-[800px]">
+      <table className="w-full text-sm min-w-[700px]">
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Date</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">Status</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">Checked In</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">On Leave</th>
-            <th className="text-center px-4 py-3 font-medium text-gray-600">Excused</th>
-            <th className="text-center px-4 py-3 font-medium text-gray-600">Absent</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">Ready</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">Caution</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">At Risk</th>
             <th className="text-center px-4 py-3 font-medium text-gray-600">Compliance</th>
-            <th className="text-center px-4 py-3 font-medium text-gray-600">Avg Score</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -107,131 +103,64 @@ export function WeeklySummaryTable({ summaries, onRowClick }: WeeklySummaryTable
 
                 {/* Status Badge */}
                 <td className="px-4 py-3 text-center">
-                  {summary.isHoliday ? (
-                    <span className="inline-flex px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-700">
-                      Holiday
-                    </span>
-                  ) : !summary.isWorkDay ? (
-                    <span className="inline-flex px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-500">
-                      Rest Day
-                    </span>
-                  ) : (
-                    <span
-                      className={cn(
-                        'inline-flex px-2 py-1 rounded text-xs font-medium',
-                        colors.bg,
-                        colors.text
-                      )}
-                    >
-                      {status === 'perfect' && 'Perfect'}
-                      {status === 'good' && 'Good'}
-                      {status === 'warning' && 'Warning'}
-                      {status === 'poor' && 'Poor'}
-                      {status === 'no-data' && 'No Data'}
-                    </span>
-                  )}
+                  <span
+                    className={cn(
+                      'inline-flex px-2 py-1 rounded text-xs font-medium',
+                      colors.bg,
+                      colors.text
+                    )}
+                  >
+                    {status === 'perfect' && 'Perfect'}
+                    {status === 'good' && 'Good'}
+                    {status === 'warning' && 'Warning'}
+                    {status === 'poor' && 'Poor'}
+                    {status === 'no-data' && 'No Data'}
+                  </span>
                 </td>
 
                 {/* Checked In */}
                 <td className="px-4 py-3 text-center">
-                  {summary.isWorkDay && !summary.isHoliday ? (
-                    <span>
-                      {summary.checkedInCount}/{summary.expectedToCheckIn}
-                    </span>
-                  ) : (
-                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
-                  )}
+                  <span>{summary.checkedInCount}/{summary.expectedToCheckIn}</span>
                 </td>
 
                 {/* On Leave */}
                 <td className="px-4 py-3 text-center">
-                  {summary.isWorkDay && !summary.isHoliday ? (
-                    <span className={cn(
-                      'inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded text-sm font-medium',
-                      summary.onLeaveCount > 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-400'
-                    )}>
-                      {summary.onLeaveCount}
-                    </span>
-                  ) : (
-                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
-                  )}
+                  <span className={cn(
+                    'inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded text-sm font-medium',
+                    summary.onLeaveCount > 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-400'
+                  )}>
+                    {summary.onLeaveCount}
+                  </span>
                 </td>
 
-                {/* Excused */}
+                {/* Green/Ready */}
                 <td className="px-4 py-3 text-center">
-                  {summary.isWorkDay && !summary.isHoliday ? (
-                    <span className={cn(
-                      'inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded text-sm font-medium',
-                      summary.excusedCount > 0 ? 'bg-primary-100 text-primary-700' : 'text-gray-400'
-                    )}>
-                      {summary.excusedCount}
-                    </span>
-                  ) : (
-                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
-                  )}
+                  <span className="text-green-600 font-medium">{summary.greenCount}</span>
                 </td>
 
-                {/* Absent */}
+                {/* Yellow/Caution */}
                 <td className="px-4 py-3 text-center">
-                  {summary.isWorkDay && !summary.isHoliday ? (
-                    <span className={cn(
-                      'inline-flex items-center justify-center min-w-[1.5rem] px-1.5 py-0.5 rounded text-sm font-medium',
-                      summary.absentCount > 0 ? 'bg-red-100 text-red-700' : 'text-gray-400'
-                    )}>
-                      {summary.absentCount}
-                    </span>
-                  ) : (
-                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
-                  )}
+                  <span className="text-yellow-600 font-medium">{summary.yellowCount}</span>
                 </td>
 
-                {/* Green */}
+                {/* Red/At Risk */}
                 <td className="px-4 py-3 text-center">
-                  {summary.isWorkDay && !summary.isHoliday ? (
-                    <span className="text-green-600 font-medium">{summary.greenCount}</span>
-                  ) : (
-                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
-                  )}
-                </td>
-
-                {/* Yellow */}
-                <td className="px-4 py-3 text-center">
-                  {summary.isWorkDay && !summary.isHoliday ? (
-                    <span className="text-yellow-600 font-medium">{summary.yellowCount}</span>
-                  ) : (
-                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
-                  )}
-                </td>
-
-                {/* Red */}
-                <td className="px-4 py-3 text-center">
-                  {summary.isWorkDay && !summary.isHoliday ? (
-                    <span className="text-red-600 font-medium">{summary.redCount}</span>
-                  ) : (
-                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
-                  )}
+                  <span className="text-red-600 font-medium">{summary.redCount}</span>
                 </td>
 
                 {/* Compliance */}
                 <td className="px-4 py-3 text-center">
-                  {summary.isWorkDay && !summary.isHoliday ? (
-                    <span className={cn('font-medium', colors.text)}>
-                      {summary.complianceRate !== null
-                        ? `${Math.round(summary.complianceRate)}%`
-                        : '—'}
-                    </span>
-                  ) : (
-                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
-                  )}
-                </td>
-
-                {/* Avg Score */}
-                <td className="px-4 py-3 text-center">
-                  {summary.isWorkDay && !summary.isHoliday && summary.avgReadinessScore !== null ? (
-                    <span className="text-gray-700">{Math.round(summary.avgReadinessScore)}</span>
-                  ) : (
-                    <Minus className="h-4 w-4 text-gray-300 mx-auto" />
-                  )}
+                  <span className={cn(
+                    'font-medium',
+                    summary.complianceRate === null ? 'text-gray-400' :
+                    summary.complianceRate >= 90 ? 'text-green-600' :
+                    summary.complianceRate >= 70 ? 'text-gray-900' :
+                    'text-red-600'
+                  )}>
+                    {summary.complianceRate !== null
+                      ? `${Math.min(100, Math.round(summary.complianceRate))}%`
+                      : '—'}
+                  </span>
                 </td>
               </tr>
             );

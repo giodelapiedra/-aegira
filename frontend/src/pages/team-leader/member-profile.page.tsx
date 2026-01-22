@@ -7,7 +7,6 @@ import {
   type MemberCheckin,
   type MemberExemption,
   type MemberIncident,
-  type MemberAbsence,
 } from '../../services/team.service';
 import { ReadinessTrendChart } from '../../components/charts/ReadinessTrendChart';
 import { StatusDistributionChart } from '../../components/charts/StatusDistributionChart';
@@ -34,7 +33,6 @@ import {
   Clock,
   Flame,
   Calendar,
-  CalendarX2,
   Mail,
   Phone,
   Shield,
@@ -123,14 +121,6 @@ export function MemberProfilePage() {
   const { data: exemptionsData, isLoading: exemptionsLoading } = useQuery({
     queryKey: ['member-exemptions', userId],
     queryFn: () => teamService.getMemberExemptions(userId!),
-    enabled: !!userId && activeTab === 'attendance',
-    staleTime: 1000 * 60 * 5, // 5 minutes
-  });
-
-  // Get member absences (unplanned - missed check-ins)
-  const { data: absencesData, isLoading: absencesLoading } = useQuery({
-    queryKey: ['member-absences', userId],
-    queryFn: () => teamService.getMemberAbsences(userId!),
     enabled: !!userId && activeTab === 'attendance',
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
@@ -342,9 +332,9 @@ export function MemberProfilePage() {
           <div className="p-4 text-center">
             <div className="flex items-center justify-center gap-2 mb-1">
               <TrendingUp className="h-5 w-5 text-primary-500" />
-              <span className="text-2xl font-bold text-gray-900">{member.stats.attendanceScore}%</span>
+              <span className="text-2xl font-bold text-gray-900">{Math.round(member.stats.avgReadinessScore)}%</span>
             </div>
-            <p className="text-xs text-gray-500">Attendance Score</p>
+            <p className="text-xs text-gray-500">Avg Readiness</p>
           </div>
           <div className="p-4 text-center">
             <div className="flex items-center justify-center gap-2 mb-1">
@@ -422,15 +412,15 @@ export function MemberProfilePage() {
           >
             <div className="relative">
               <Shield className="h-5 w-5 md:h-4 md:w-4" />
-              {(member.stats.exemptionsCount + member.stats.absencesCount) > 0 && (
+              {member.stats.exemptionsCount > 0 && (
                 <span className="absolute -top-1 -right-1 md:hidden h-4 w-4 text-[10px] rounded-full bg-warning-500 text-white flex items-center justify-center">
-                  {(member.stats.exemptionsCount + member.stats.absencesCount) > 99 ? '99+' : (member.stats.exemptionsCount + member.stats.absencesCount)}
+                  {member.stats.exemptionsCount > 99 ? '99+' : member.stats.exemptionsCount}
                 </span>
               )}
             </div>
             <span className="truncate">Leave</span>
             <span className="hidden md:inline px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
-              {member.stats.exemptionsCount + member.stats.absencesCount}
+              {member.stats.exemptionsCount}
             </span>
           </button>
           <button
@@ -756,61 +746,6 @@ export function MemberProfilePage() {
                 )}
               </div>
 
-              {/* Unplanned Absences Section */}
-              <div className="p-6">
-                <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-4">
-                  <CalendarX2 className="h-4 w-4 text-warning-500" />
-                  Unplanned Absences
-                </h3>
-                {absencesLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <SkeletonList items={3} />
-                  </div>
-                ) : absencesData?.data && absencesData.data.length > 0 ? (
-                  <div className="space-y-2">
-                    {absencesData.data.map((absence: MemberAbsence) => (
-                      <div
-                        key={absence.id}
-                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="flex-shrink-0">
-                            <CalendarX2 className="h-4 w-4 text-gray-400" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-gray-900">
-                              {formatDisplayDate(absence.absenceDate)}
-                            </p>
-                            <p className="text-xs text-gray-500 truncate">
-                              {absence.reasonCategory
-                                ? absence.reasonCategory.replace('_', ' ')
-                                : 'No reason provided'}
-                              {absence.explanation && ` - ${absence.explanation}`}
-                            </p>
-                          </div>
-                        </div>
-                        <Badge
-                          variant={
-                            absence.status === 'EXCUSED'
-                              ? 'success'
-                              : absence.status === 'UNEXCUSED'
-                              ? 'danger'
-                              : 'warning'
-                          }
-                        >
-                          {absence.status === 'PENDING_JUSTIFICATION'
-                            ? 'PENDING'
-                            : absence.status === 'PENDING_REVIEW'
-                            ? 'REVIEW'
-                            : absence.status}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500 text-center py-4">No unplanned absences recorded</p>
-                )}
-              </div>
             </div>
           )}
 

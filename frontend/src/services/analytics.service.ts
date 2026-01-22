@@ -15,7 +15,6 @@ export interface TeamAnalytics {
   totalMembers: number;
   checkedIn: number;
   greenCount: number;
-  yellowCount: number;
   redCount: number;
   checkinRate: number;
 }
@@ -106,7 +105,6 @@ export interface AISummaryDetail extends AISummaryHistoryItem {
         atRiskCount: number;
         totalCheckins: number;
         greenCount: number;
-        yellowCount: number;
         redCount: number;
       };
       previous: {
@@ -117,7 +115,6 @@ export interface AISummaryDetail extends AISummaryHistoryItem {
         atRiskCount: number;
         totalCheckins: number;
         greenCount: number;
-        yellowCount: number;
         redCount: number;
       };
       changes: {
@@ -136,7 +133,6 @@ export interface AISummaryDetail extends AISummaryHistoryItem {
       expectedWorkDays: number;
       exemptionDaysCount?: number;
       greenCount: number;
-      yellowCount: number;
       redCount: number;
     }>;
   };
@@ -173,8 +169,6 @@ export interface TeamGradeSummary {
   scoreDelta: number;
   atRiskCount: number;
   membersNeedingAttention: number;
-  // Onboarding members (members with < 3 check-in days, excluded from grade calculation)
-  onboardingCount: number;
   includedMemberCount: number;
 }
 

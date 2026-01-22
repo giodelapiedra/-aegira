@@ -23,7 +23,6 @@ interface CompanyStats {
   todayCheckins: number;
   checkinRate: number;
   greenCount: number;
-  yellowCount: number;
   redCount: number;
   openIncidents: number;
   pendingExceptions: number;
@@ -40,10 +39,9 @@ export function ExecutiveDashboard() {
       return {
         totalUsers: dashboardStats.totalMembers,
         activeUsers: dashboardStats.totalMembers,
-        todayCheckins: dashboardStats.greenCount + dashboardStats.yellowCount + dashboardStats.redCount,
+        todayCheckins: dashboardStats.greenCount + dashboardStats.redCount,
         checkinRate: dashboardStats.checkinRate,
         greenCount: dashboardStats.greenCount,
-        yellowCount: dashboardStats.yellowCount,
         redCount: dashboardStats.redCount,
         openIncidents: dashboardStats.openIncidents,
         pendingExceptions: dashboardStats.pendingExceptions,

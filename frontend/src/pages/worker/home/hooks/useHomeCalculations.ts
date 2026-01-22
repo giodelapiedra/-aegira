@@ -26,7 +26,7 @@ import {
   getNextCheckin,
   isDateExempted,
 } from '../utils';
-import type { DynamicTip, ActiveExemption, AbsenceRecord } from '../types';
+import type { DynamicTip, ActiveExemption } from '../types';
 
 // Minimal checkin type for calculations (subset of full Checkin)
 interface MinimalCheckin {
@@ -51,7 +51,6 @@ interface UseHomeCalculationsParams {
   todayCheckin: MinimalCheckin | null | undefined;
   recentCheckins: MinimalCheckin[] | undefined;
   activeExemptions: ActiveExemption[] | undefined;
-  absenceHistory: AbsenceRecord[] | undefined;
   userId: string | undefined;
 }
 
@@ -60,7 +59,6 @@ export function useHomeCalculations({
   todayCheckin,
   recentCheckins,
   activeExemptions,
-  absenceHistory,
   userId,
 }: UseHomeCalculationsParams) {
   // Centralized timezone - comes from company settings via dashboard
@@ -84,10 +82,9 @@ export function useHomeCalculations({
         timezone,
         recentCheckins,
         activeExemptions,
-        userId,
-        absenceHistory
+        userId
       ),
-    [team?.workDays, timezone, recentCheckins, activeExemptions, userId, absenceHistory]
+    [team?.workDays, timezone, recentCheckins, activeExemptions, userId]
   );
 
   // Weekly summary

@@ -2,14 +2,6 @@ import { Hono } from 'hono';
 import { prisma } from '../../config/prisma.js';
 import { calculateReadiness } from '../../utils/readiness.js';
 import { getUserLeaveStatus, getDaysCoveredByLeave } from '../../utils/leave.js';
-import {
-  calculateAttendanceStatus,
-  calculatePerformanceScore,
-  getPerformanceGrade,
-  getDateOnly,
-  getAttendanceHistory,
-  ATTENDANCE_SCORES,
-} from '../../utils/attendance.js';
 import { createSystemLog } from '../system-logs/index.js';
 import { createCheckinSchema } from '../../utils/validator.js';
 import type { AppContext } from '../../types/context.js';
@@ -360,11 +352,8 @@ checkinsRoutes.post('/', async (c) => {
   // Determine if this is a "returning from leave" check-in
   const isReturning = leaveStatus.isReturning;
 
-  // Calculate attendance status - simplified, no more late penalty
-  // Basta within shift hours = GREEN
-  const attendanceResult = calculateAttendanceStatus(now, team.shiftStart, team.shiftEnd, timezone);
-
   // Create checkin and attendance record in transaction
+  // Attendance is always GREEN when checked in (simplified - no more penalties)
   const [checkin, attendance] = await prisma.$transaction([
     prisma.checkin.create({
       data: {
@@ -390,15 +379,15 @@ checkinsRoutes.post('/', async (c) => {
         date: todayForDb,
         scheduledStart: team.shiftStart,
         checkInTime: now,
-        status: attendanceResult.status,
-        score: attendanceResult.score,
-        isCounted: attendanceResult.isCounted,
+        status: 'GREEN',
+        score: 100,
+        isCounted: true,
       },
       update: {
         checkInTime: now,
-        status: attendanceResult.status,
-        score: attendanceResult.score,
-        isCounted: attendanceResult.isCounted,
+        status: 'GREEN',
+        score: 100,
+        isCounted: true,
       },
     }),
   ]);
@@ -480,22 +469,16 @@ checkinsRoutes.post('/', async (c) => {
     action: 'CHECKIN_SUBMITTED',
     entityType: 'checkin',
     entityId: checkin.id,
-    description: `${user.firstName} ${user.lastName} submitted daily check-in (Readiness: ${status}, Attendance: ${attendanceResult.status})${isReturning ? ' - returning from leave' : ''}`,
+    description: `${user.firstName} ${user.lastName} submitted daily check-in (Readiness: ${status})${isReturning ? ' - returning from leave' : ''}`,
     metadata: {
       readinessScore: score,
       readinessStatus: status,
-      attendanceStatus: attendanceResult.status,
-      attendanceScore: attendanceResult.score,
       isReturning,
     },
   });
 
   return c.json({
     ...checkin,
-    attendance: {
-      status: attendanceResult.status,
-      score: attendanceResult.score,
-    },
     isReturning,
   }, 201);
 });
@@ -635,81 +618,6 @@ checkinsRoutes.get('/attendance/today', async (c) => {
   return c.json({
     attendance,
     checkedIn: !!attendance?.checkInTime,
-  });
-});
-
-// GET /checkins/attendance/history - Get attendance history (lazy evaluation)
-checkinsRoutes.get('/attendance/history', async (c) => {
-  const userId = c.get('userId');
-  const companyId = c.get('companyId');
-  const days = parseInt(c.req.query('days') || '30');
-  const status = c.req.query('status');
-
-  // Get company timezone from context (no DB query needed!)
-  const timezone = c.get('timezone');
-
-  // Use timezone-aware date range to avoid off-by-one errors at timezone boundaries
-  const { start: startDate, end: endDate } = getLastNDaysRange(days, timezone);
-
-  // Get attendance history with lazy evaluation (use company timezone)
-  let records = await getAttendanceHistory(userId, startDate, endDate, timezone);
-
-  // Filter by status if provided
-  if (status) {
-    records = records.filter(r => r.status === status.toUpperCase());
-  }
-
-  return c.json({
-    data: records,
-    period: {
-      days,
-      startDate: formatLocalDate(startDate, timezone),
-      endDate: formatLocalDate(endDate, timezone),
-    },
-  });
-});
-
-// GET /checkins/attendance/performance - Get performance score
-checkinsRoutes.get('/attendance/performance', async (c) => {
-  const userId = c.get('userId');
-  const companyId = c.get('companyId');
-  const daysParam = c.req.query('days');
-
-  // Get company timezone from context (no DB query needed!)
-  const timezone = c.get('timezone');
-
-  // Max cap: 2 years (730 days) for performance safety
-  const MAX_DAYS = 730;
-
-  // Handle "all time" - cap at MAX_DAYS for safety
-  // The calculatePerformanceScore will still adjust to first check-in date if earlier
-  let days: number;
-  let isAllTime = false;
-
-  if (daysParam === 'all' || daysParam === null || daysParam === undefined) {
-    days = MAX_DAYS; // Cap at 2 years
-    isAllTime = true;
-  } else {
-    days = Math.min(parseInt(daysParam) || 30, MAX_DAYS); // Cap user input too
-  }
-
-  // Use timezone-aware date range to avoid off-by-one errors at timezone boundaries
-  const { start: startDate, end: endDate } = getLastNDaysRange(days, timezone);
-
-  // Use company timezone for performance calculation
-  const performance = await calculatePerformanceScore(userId, startDate, endDate, timezone);
-  const { grade, label } = getPerformanceGrade(performance.score);
-
-  return c.json({
-    ...performance,
-    grade,
-    label,
-    period: {
-      days: isAllTime ? 'all' : days,
-      maxDays: MAX_DAYS,
-      startDate: formatLocalDate(startDate, timezone),
-      endDate: formatLocalDate(endDate, timezone),
-    },
   });
 });
 

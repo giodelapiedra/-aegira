@@ -41,7 +41,6 @@ interface AdminStats {
   totalTeams: number;
   checkinRate: number;
   greenCount: number;
-  yellowCount: number;
   redCount: number;
   openIncidents: number;
   pendingExceptions: number;
@@ -89,7 +88,6 @@ export function AdminDashboard() {
         totalTeams: teamsRes.data?.length || 0,
         checkinRate: dashboardStats.checkinRate,
         greenCount: dashboardStats.greenCount,
-        yellowCount: dashboardStats.yellowCount,
         redCount: dashboardStats.redCount,
         openIncidents: dashboardStats.openIncidents,
         pendingExceptions: dashboardStats.pendingExceptions,
@@ -144,16 +142,9 @@ export function AdminDashboard() {
           isLoading={statsLoading}
         />
         <StatCard
-          icon={AlertTriangle}
-          value={stats?.yellowCount || 0}
-          label="Yellow Status"
-          color="warning"
-          isLoading={statsLoading}
-        />
-        <StatCard
           icon={XCircle}
           value={stats?.redCount || 0}
-          label="Red Status"
+          label="At Risk"
           color="danger"
           isLoading={statsLoading}
         />
@@ -393,9 +384,8 @@ function CompanyOverviewCard({
 
 function ReadinessDistributionCard({ stats }: { stats?: AdminStats }) {
   const distribution = [
-    { label: 'Green', sublabel: 'Ready', count: stats?.greenCount || 0, bgColor: 'bg-success-50', textColor: 'text-success-600', labelColor: 'text-success-700' },
-    { label: 'Yellow', sublabel: 'Caution', count: stats?.yellowCount || 0, bgColor: 'bg-warning-50', textColor: 'text-warning-600', labelColor: 'text-warning-700' },
-    { label: 'Red', sublabel: 'At Risk', count: stats?.redCount || 0, bgColor: 'bg-danger-50', textColor: 'text-danger-600', labelColor: 'text-danger-700' },
+    { label: 'Ready', count: stats?.greenCount || 0, textColor: 'text-success-600' },
+    { label: 'At Risk', count: stats?.redCount || 0, textColor: 'text-danger-600' },
   ];
 
   return (
@@ -405,12 +395,8 @@ function ReadinessDistributionCard({ stats }: { stats?: AdminStats }) {
         {distribution.map((item) => (
           <div key={item.label}>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">
-                {item.label === 'Green' ? 'Ready (Green)' : item.label === 'Yellow' ? 'Caution (Yellow)' : 'Not Ready (Red)'}
-              </span>
-              <span className="text-sm text-gray-500">
-                {item.count} personnel
-              </span>
+              <span className="text-sm font-medium text-gray-700">{item.label}</span>
+              <span className="text-sm text-gray-500">{item.count} personnel</span>
             </div>
             <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
               <div

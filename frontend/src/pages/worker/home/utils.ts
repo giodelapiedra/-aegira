@@ -19,7 +19,6 @@ import type {
   WeekCalendarDay,
   WeeklySummary,
   ActiveExemption,
-  AbsenceRecord,
   MinimalCheckin,
 } from './types';
 
@@ -390,8 +389,7 @@ export function getWeekCalendar(
   timezone: string,
   recentCheckins: MinimalCheckin[] | undefined,
   activeExemptions: ActiveExemption[] | undefined,
-  userId: string | undefined,
-  absenceHistory: AbsenceRecord[] | undefined
+  userId: string | undefined
 ): WeekCalendarDay[] {
   const days: WeekCalendarDay[] = [];
 
@@ -443,17 +441,6 @@ export function getWeekCalendar(
       return checkinDateStr === dateStr;
     });
 
-    // Find absence record for this date
-    const absence = absenceHistory?.find((a) => {
-      const absenceDateObj = new Date(a.absenceDate);
-      const absenceParts = dateFormatter.formatToParts(absenceDateObj);
-      const absenceYear = parseInt(absenceParts.find((p) => p.type === 'year')!.value);
-      const absenceMonth = parseInt(absenceParts.find((p) => p.type === 'month')!.value) - 1;
-      const absenceDay = parseInt(absenceParts.find((p) => p.type === 'day')!.value);
-      const absenceDateStr = `${absenceYear}-${String(absenceMonth + 1).padStart(2, '0')}-${String(absenceDay).padStart(2, '0')}`;
-      return absenceDateStr === dateStr;
-    });
-
     // Check if this date is in the future
     const isFuture = dateStr > todayStr;
 
@@ -470,7 +457,6 @@ export function getWeekCalendar(
       isFuture,
       checkin: checkin || null,
       isExempted,
-      absence: absence || null,
     });
   }
 
@@ -484,20 +470,10 @@ export function calculateWeeklySummary(weekCalendar: WeekCalendarDay[]): WeeklyS
   const checkinsThisWeek = weekCalendar.filter((day) => day.checkin).length;
   const workDaysThisWeek = weekCalendar.filter((day) => day.isWorkDay).length;
   const workDaysPassed = weekCalendar.filter((day) => day.isWorkDay && !day.isFuture).length;
-  const excusedAbsences = weekCalendar.filter((day) => day.absence?.status === 'EXCUSED').length;
-  const unexcusedAbsences = weekCalendar.filter(
-    (day) => day.absence?.status === 'UNEXCUSED'
-  ).length;
-  const pendingAbsences = weekCalendar.filter(
-    (day) => day.absence?.status === 'PENDING_JUSTIFICATION'
-  ).length;
 
   return {
     checkinsThisWeek,
     workDaysThisWeek,
     workDaysPassed,
-    excusedAbsences,
-    unexcusedAbsences,
-    pendingAbsences,
   };
 }

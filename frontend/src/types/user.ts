@@ -259,7 +259,6 @@ export interface WHSOfficer {
 export interface DashboardStats {
   totalMembers: number;
   greenCount: number;
-  yellowCount: number;
   redCount: number;
   pendingExceptions: number;
   openIncidents: number;

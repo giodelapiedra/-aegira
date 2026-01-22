@@ -129,7 +129,9 @@
       "Bash(npm run test:unit:*)",
       "Bash(npm run test:integration:*)",
       "Bash(npm run test:coverage:*)",
-      "WebFetch(domain:www.sira.nsw.gov.au)"
+      "WebFetch(domain:www.sira.nsw.gov.au)",
+      "Bash(PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION=\"yes\" npx prisma db push:*)",
+      "Bash(node:*)"
     ]
   }
 }

@@ -50,7 +50,6 @@ interface TeamMember {
 interface TeamStats {
   totalMembers: number;
   checkedIn: number;
-  notCheckedIn: number;
   isWorkDay?: boolean;
   isHoliday?: boolean;
   holidayName?: string | null;

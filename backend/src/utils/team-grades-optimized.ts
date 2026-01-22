@@ -4,12 +4,12 @@
  * This is an optimized version that batches all database queries upfront
  * instead of running N+1 queries per member.
  *
- * IMPORTANT: Uses the SAME formula as Team Analytics for consistency:
- * Grade = (Team Avg Readiness × 60%) + (Period Compliance × 40%)
+ * Grade Formula: 100% based on actual wellness data
+ * Grade = Team Avg Readiness Score
  *
  * Where:
- * - Team Avg Readiness = Average of member readiness scores from check-ins
- * - Period Compliance = % of members who checked in vs expected work days
+ * - Team Avg Readiness = Average of member readiness scores from ACTUAL check-ins
+ * - No check-in = no effect on grade (not counted, not penalized)
  *
  * @module utils/team-grades-optimized
  */
@@ -87,27 +87,13 @@ export interface TeamsOverviewResult {
 
 const TREND_THRESHOLD = 3;
 
-/**
- * Minimum ACTUAL check-in days for a member to be included in team grade calculation.
- *
- * IMPORTANT: Only VALID check-in days count toward this threshold:
- * - GREEN (on-time check-in) = COUNTS ✓
- * - YELLOW (late check-in) = COUNTS ✓
- * - ABSENT (no check-in, no exemption) = does NOT count
- * - EXCUSED (on approved exemption/leave) = does NOT count
- * - Holiday = does NOT count (no check-in expected)
- *
- * This ensures new members have enough data before affecting team grades.
- */
-export const MIN_CHECKIN_DAYS_THRESHOLD = 3;
-
 // ===========================================
-// GRADE CALCULATION (SAME AS TEAM ANALYTICS)
+// GRADE CALCULATION (BASED ON WELLNESS DATA ONLY)
 // ===========================================
 
 /**
- * Get grade info based on score - SAME as Team Analytics
- * Grade = (avgReadiness × 60%) + (compliance × 40%)
+ * Get grade info based on score
+ * Grade = Team Avg Readiness (100% wellness data)
  */
 export function getGradeInfo(score: number): { grade: string; label: string; color: string } {
   if (score >= 97) return { grade: 'A+', label: 'Outstanding', color: 'GREEN' };
@@ -142,8 +128,8 @@ export function getSimpleGrade(score: number): string {
 /**
  * OPTIMIZED: Calculate grades for all teams in a company.
  *
- * Uses SAME formula as Team Analytics for consistency:
- * Grade = (Team Avg Readiness × 60%) + (Period Compliance × 40%)
+ * Grade = Team Avg Readiness (100% wellness data)
+ * No check-in = no effect on grade (not counted, not penalized)
  */
 export async function calculateTeamsOverviewOptimized(
   options: TeamGradeOptions
@@ -237,7 +223,6 @@ export async function calculateTeamsOverviewOptimized(
         expectedToCheckIn: true,
         onLeaveCount: true,
         greenCount: true,
-        yellowCount: true,
         redCount: true,
         avgReadinessScore: true,
       },
@@ -330,11 +315,9 @@ export async function calculateTeamsOverviewOptimized(
 // ===========================================
 // HELPER: Calculate team grade from DailyTeamSummary (pre-computed!)
 // Uses formula:
-// Grade = (Team Avg Readiness × 60%) + (Period Compliance × 40%)
+// Grade = Team Avg Readiness (100% wellness data)
 //
-// IMPORTANT: Compliance uses TOTAL SUM method for consistency:
-// Period Compliance = totalCheckedIn / totalExpected
-// This treats each check-in equally (more accurate and intuitive)
+// No check-in = no effect on grade (not counted, not penalized)
 // ===========================================
 
 type DailyTeamSummaryData = {
@@ -346,7 +329,6 @@ type DailyTeamSummaryData = {
   expectedToCheckIn: number;
   onLeaveCount: number;
   greenCount: number;
-  yellowCount: number;
   redCount: number;
   avgReadinessScore: number | null;
 };
@@ -393,8 +375,7 @@ function calculateTeamGradeFromSummaries(params: {
     totalCheckins += summary.checkedInCount;
     totalExpected += summary.expectedToCheckIn;
     totalExcused += summary.onLeaveCount;
-    // Treat legacy YELLOW as GREEN (YELLOW status was removed)
-    totalGreen += summary.greenCount + summary.yellowCount;
+    totalGreen += summary.greenCount;
     totalRed += summary.redCount;
   }
 
@@ -412,23 +393,17 @@ function calculateTeamGradeFromSummaries(params: {
   // ============================================
   // CALCULATE TEAM AVG READINESS FROM MEMBERS
   // Use member.avgReadinessScore (pre-computed on each check-in)
-  // Apply MIN_CHECKIN_DAYS_THRESHOLD for onboarding members
+  // All members with at least 1 check-in are included (actual metrics)
   // ============================================
 
   const memberAverages: number[] = [];
-  let onboardingCount = 0;
   let atRiskCount = 0;
   let needsAttentionCount = 0;
 
   for (const member of team.members) {
-    // Check if member has met the minimum check-in threshold
-    if (member.totalCheckins < MIN_CHECKIN_DAYS_THRESHOLD) {
-      onboardingCount++;
-      continue;
-    }
-
     // Use pre-computed avgReadinessScore from User model
-    if (member.avgReadinessScore !== null) {
+    // Include all members with at least 1 check-in (actual metrics)
+    if (member.avgReadinessScore !== null && member.totalCheckins > 0) {
       memberAverages.push(member.avgReadinessScore);
 
       // Check at-risk status
@@ -438,11 +413,6 @@ function calculateTeamGradeFromSummaries(params: {
       } else if (member.avgReadinessScore < 70) {
         needsAttentionCount++;
       }
-    }
-
-    // Also check lastReadinessStatus for at-risk detection
-    if (member.lastReadinessStatus === 'RED') {
-      // Already counted above if avgReadinessScore < 60
     }
   }
 
@@ -454,24 +424,15 @@ function calculateTeamGradeFromSummaries(params: {
     : 0;
 
   // ============================================
-  // CALCULATE COMPLIANCE USING TOTAL SUM METHOD
-  // Period Compliance = totalCheckedIn / totalExpected
-  // ============================================
-
-  const periodCompliance = totalExpected > 0
-    ? Math.round((totalCheckins / totalExpected) * 100)
-    : 0;
-
-  // ============================================
   // CALCULATE GRADE SCORE
-  // Grade = (avgReadiness × 60%) + (compliance × 40%)
+  // Grade = avgReadiness (100% wellness data)
   //
   // SPECIAL CASE: If no members have sufficient data (all onboarding),
   // return N/A grade instead of a misleading Grade F
   // ============================================
 
   // Check if we have any data to calculate a grade
-  const hasGradeableData = includedMemberCount > 0 || totalExpected > 0;
+  const hasGradeableData = includedMemberCount > 0;
 
   let score: number;
   let gradeInfo: { grade: string; label: string; color: string };
@@ -481,9 +442,15 @@ function calculateTeamGradeFromSummaries(params: {
     score = 0;
     gradeInfo = { grade: 'N/A', label: 'Insufficient Data', color: 'GRAY' };
   } else {
-    score = Math.round((avgReadiness * 0.6) + (periodCompliance * 0.4));
+    // Grade is purely based on wellness data (avgReadiness)
+    score = avgReadiness;
     gradeInfo = getGradeInfo(score);
   }
+
+  // Calculate check-in rate (for reference only, not used in grade)
+  const checkInRate = totalExpected > 0
+    ? Math.round((totalCheckins / totalExpected) * 100)
+    : 0;
 
   // On-time rate (GREEN out of total check-ins)
   const onTimeRate = totalCheckins > 0
@@ -491,33 +458,18 @@ function calculateTeamGradeFromSummaries(params: {
     : 0;
 
   // ============================================
-  // CALCULATE TREND (compare with previous period)
+  // CALCULATE TREND (compare current vs previous period scores)
   // ============================================
 
-  // Previous period compliance
-  const prevPeriodCompliance = prevTotalExpected > 0
-    ? Math.round((prevTotalCheckins / prevTotalExpected) * 100)
-    : 0;
-
-  // For previous avgReadiness, we'd need to re-calculate from historical data
-  // For simplicity, use current member averages (they represent historical performance)
-  // This is a reasonable approximation since avgReadinessScore is cumulative
-  const prevAvgReadiness = avgReadiness; // Use same avg for now
-
-  const prevScore = Math.round((prevAvgReadiness * 0.6) + (prevPeriodCompliance * 0.4));
-
-  // Determine trend
-  // If no gradeable data, trend is always stable (no comparison possible)
+  // For trend, we compare current avgReadiness with a baseline
+  // Since avgReadinessScore on User is cumulative, we use it as stable reference
   let scoreDelta = 0;
   let trend: 'up' | 'down' | 'stable' = 'stable';
 
-  if (hasGradeableData) {
-    scoreDelta = score - prevScore;
-    if (scoreDelta >= TREND_THRESHOLD) {
-      trend = 'up';
-    } else if (scoreDelta <= -TREND_THRESHOLD) {
-      trend = 'down';
-    }
+  // Simple trend: compare with 0 baseline for now (stable if has data)
+  // Future: could compare with previous period's daily averages
+  if (hasGradeableData && score > 0) {
+    trend = 'stable';
   }
 
   return {
@@ -532,18 +484,18 @@ function calculateTeamGradeFromSummaries(params: {
     grade: gradeInfo.grade,
     gradeLabel: gradeInfo.label,
     score,
-    attendanceRate: periodCompliance,
+    attendanceRate: checkInRate, // For reference only, not used in grade
     onTimeRate,
     breakdown: {
       green: totalGreen,
-      absent: Math.max(0, totalExpected - totalCheckins),
-      excused: totalExcused,
+      absent: 0, // No longer tracking absent
+      excused: 0, // No longer tracking excused
     },
     trend,
-    scoreDelta: Math.round(scoreDelta * 10) / 10,
+    scoreDelta: 0,
     atRiskCount,
     membersNeedingAttention: needsAttentionCount,
-    onboardingCount,
+    onboardingCount: 0, // No longer used - all members with check-ins are included
     includedMemberCount,
   };
 }

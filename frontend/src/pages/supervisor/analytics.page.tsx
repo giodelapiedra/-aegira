@@ -21,9 +21,8 @@ export function AnalyticsPage() {
   // Use dashboard stats for all metrics
   const totalUsers = dashboardStats?.totalMembers || 0;
   const greenCount = dashboardStats?.greenCount || 0;
-  const yellowCount = dashboardStats?.yellowCount || 0;
   const redCount = dashboardStats?.redCount || 0;
-  const todayCheckins = greenCount + yellowCount + redCount;
+  const todayCheckins = greenCount + redCount;
   const checkinRate = dashboardStats?.checkinRate || 0;
   const openIncidents = dashboardStats?.openIncidents || 0;
   const pendingExceptions = dashboardStats?.pendingExceptions || 0;
@@ -72,18 +71,12 @@ export function AnalyticsPage() {
       {/* Readiness Distribution */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Today's Readiness Distribution</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <ReadinessCard
             label="Ready"
             count={greenCount}
             total={todayCheckins}
             color="success"
-          />
-          <ReadinessCard
-            label="Caution"
-            count={yellowCount}
-            total={todayCheckins}
-            color="warning"
           />
           <ReadinessCard
             label="At Risk"
@@ -129,21 +122,14 @@ export function AnalyticsPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-success-500" />
-                <span className="text-sm text-gray-600">Green (Ready)</span>
+                <span className="text-sm text-gray-600">Ready</span>
               </div>
               <span className="text-sm font-medium text-gray-900">{greenCount}</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-warning-500" />
-                <span className="text-sm text-gray-600">Yellow (Caution)</span>
-              </div>
-              <span className="text-sm font-medium text-gray-900">{yellowCount}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-danger-500" />
-                <span className="text-sm text-gray-600">Red (At Risk)</span>
+                <span className="text-sm text-gray-600">At Risk</span>
               </div>
               <span className="text-sm font-medium text-gray-900">{redCount}</span>
             </div>

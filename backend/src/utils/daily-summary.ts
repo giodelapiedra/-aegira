@@ -29,14 +29,16 @@ interface DailyTeamSummaryData {
   onLeaveCount: number;      // Exception APPROVED only (planned leave)
   expectedToCheckIn: number;
   checkedInCount: number;
-  notCheckedInCount: number; // Legacy: for backwards compat
   greenCount: number;
   yellowCount: number;
   redCount: number;
-  absentCount: number;       // DailyAttendance status='ABSENT' (penalized)
-  excusedCount: number;      // DailyAttendance status='EXCUSED' (TL approved)
   avgReadinessScore: number | null;
   complianceRate: number | null;
+  // Wellness metrics (averages from check-ins)
+  avgMood: number | null;
+  avgStress: number | null;
+  avgSleep: number | null;
+  avgPhysical: number | null;
 }
 
 // ============================================
@@ -106,42 +108,18 @@ export async function recalculateDailyTeamSummary(
     });
   }
 
-  // 5. Count ABSENT and EXCUSED from DailyAttendance (source of truth, no duplication)
-  let absentCount = 0;
-  let excusedCount = 0;
-  if (memberIds.length > 0) {
-    // Count ABSENT status (penalized, 0 points)
-    absentCount = await prisma.dailyAttendance.count({
-      where: {
-        userId: { in: memberIds },
-        date: dbDate,
-        status: 'ABSENT',
-      },
-    });
-
-    // Count EXCUSED status (TL approved, not counted)
-    excusedCount = await prisma.dailyAttendance.count({
-      where: {
-        userId: { in: memberIds },
-        date: dbDate,
-        status: 'EXCUSED',
-      },
-    });
-  }
-
-  // 6. Calculate expected to check in
-  // Expected = totalMembers - onLeave - excused (not counted in expected)
-  // IMPORTANT: Absent workers ARE included in expectedToCheckIn (they're expected but didn't check in)
-  // This affects compliance rate: compliance = checkedIn / expected
-  const expectedToCheckIn = (!isWorkDay || isHoliday) ? 0 : (totalMembers - onLeaveCount - excusedCount);
+  // 5. Calculate expected to check in
+  // Expected = totalMembers - onLeave (approved exemptions)
+  const expectedToCheckIn = (!isWorkDay || isHoliday) ? 0 : (totalMembers - onLeaveCount);
 
   // 7. Get check-in stats for this date
   // IMPORTANT: Only actual check-ins are included (absent workers have NO check-in record)
   // This means absent workers DON'T affect avgReadinessScore or metrics (mood/stress/sleep/physicalHealth)
+  // NOTE: API enforces 1 check-in per user per day
   const dayStart = getStartOfDay(date, tz);
   const dayEnd = getEndOfDay(date, tz);
 
-  let checkins: { readinessScore: number; readinessStatus: string }[] = [];
+  let checkins: { readinessScore: number; readinessStatus: string; mood: number; stress: number; sleep: number; physicalHealth: number }[] = [];
   if (memberIds.length > 0) {
     checkins = await prisma.checkin.findMany({
       where: {
@@ -151,12 +129,15 @@ export async function recalculateDailyTeamSummary(
       select: {
         readinessScore: true,
         readinessStatus: true,
+        mood: true,
+        stress: true,
+        sleep: true,
+        physicalHealth: true,
       },
     });
   }
 
   const checkedInCount = checkins.length;
-  const notCheckedInCount = Math.max(0, expectedToCheckIn - checkedInCount);
   const greenCount = checkins.filter(c => c.readinessStatus === 'GREEN').length;
   const yellowCount = checkins.filter(c => c.readinessStatus === 'YELLOW').length;
   const redCount = checkins.filter(c => c.readinessStatus === 'RED').length;
@@ -171,11 +152,27 @@ export async function recalculateDailyTeamSummary(
   // Compliance rate = checkedIn / expected
   // Absent workers ARE included in expected (they were expected but didn't check in)
   // This means absent workers LOWER the compliance rate (correct behavior)
+  // Cap at 100% - if more people checked in than expected (e.g., people on leave still checked in),
+  // compliance is still 100% (everyone expected checked in, plus extras)
   const complianceRate = expectedToCheckIn > 0
-    ? (checkedInCount / expectedToCheckIn) * 100
+    ? Math.min(100, (checkedInCount / expectedToCheckIn) * 100)
     : null;
 
-  // 9. Upsert summary
+  // 9. Calculate wellness metric averages
+  const avgMood = checkins.length > 0
+    ? checkins.reduce((sum, c) => sum + c.mood, 0) / checkins.length
+    : null;
+  const avgStress = checkins.length > 0
+    ? checkins.reduce((sum, c) => sum + c.stress, 0) / checkins.length
+    : null;
+  const avgSleep = checkins.length > 0
+    ? checkins.reduce((sum, c) => sum + c.sleep, 0) / checkins.length
+    : null;
+  const avgPhysical = checkins.length > 0
+    ? checkins.reduce((sum, c) => sum + c.physicalHealth, 0) / checkins.length
+    : null;
+
+  // 6. Upsert summary
   const summaryData: DailyTeamSummaryData = {
     teamId,
     companyId: team.companyId,
@@ -183,29 +180,26 @@ export async function recalculateDailyTeamSummary(
     isWorkDay,
     isHoliday,
     totalMembers,
-    onLeaveCount,       // Exception APPROVED only (planned leave)
+    onLeaveCount,
     expectedToCheckIn,
     checkedInCount,
-    notCheckedInCount,  // Legacy for backwards compat
     greenCount,
     yellowCount,
     redCount,
-    absentCount,        // DailyAttendance ABSENT (penalized)
-    excusedCount,       // DailyAttendance EXCUSED (TL approved)
     avgReadinessScore,
     complianceRate,
+    avgMood,
+    avgStress,
+    avgSleep,
+    avgPhysical,
   };
 
-  // Note: absentCount and excusedCount exist in schema but Prisma types may be outdated
   await prisma.dailyTeamSummary.upsert({
     where: {
       teamId_date: { teamId, date: dbDate },
     },
     create: summaryData,
-    update: {
-      ...summaryData,
-      // Explicitly include all fields (absentCount and excusedCount exist in schema)
-    } as any, // Type assertion needed - fields exist in schema but Prisma types outdated
+    update: summaryData,
   });
 
   return summaryData;
@@ -327,8 +321,8 @@ export async function getCompanySummariesForDate(
  * Calculate aggregate stats from summaries
  */
 export function aggregateSummaries(summaries: DailyTeamSummaryData[]) {
-  // Filter to only work days that are not holidays
-  const workDaySummaries = summaries.filter(s => s.isWorkDay && !s.isHoliday);
+  // Only include days with actual check-ins (pure data - no holiday/weekend filtering)
+  const workDaySummaries = summaries.filter(s => s.checkedInCount > 0);
 
   if (workDaySummaries.length === 0) {
     return {
@@ -340,6 +334,10 @@ export function aggregateSummaries(summaries: DailyTeamSummaryData[]) {
       totalGreen: 0,
       totalYellow: 0,
       totalRed: 0,
+      avgMood: null,
+      avgStress: null,
+      avgSleep: null,
+      avgPhysical: null,
     };
   }
 
@@ -351,15 +349,46 @@ export function aggregateSummaries(summaries: DailyTeamSummaryData[]) {
 
   // Calculate compliance rate (NOT an average - it's a percentage rate)
   // Compliance = (totalCheckedIn / totalExpected) * 100
-  // This is different from Average Metrics (mood, stress, sleep, physicalHealth)
+  // Cap at 100% - if more people checked in than expected, compliance is still 100%
   const avgComplianceRate = totalExpected > 0
-    ? (totalCheckedIn / totalExpected) * 100
+    ? Math.min(100, (totalCheckedIn / totalExpected) * 100)
     : null;
 
-  // Calculate average readiness (only from days with check-ins)
-  const daysWithCheckins = workDaySummaries.filter(s => s.avgReadinessScore !== null);
-  const avgReadinessScore = daysWithCheckins.length > 0
-    ? daysWithCheckins.reduce((sum, s) => sum + (s.avgReadinessScore || 0), 0) / daysWithCheckins.length
+  // Calculate WEIGHTED averages based on actual check-in count per day
+  // This gives the true average across all individual check-ins in the period
+  // (days with more check-ins have proportionally more influence)
+
+  // Filter days with check-ins for weighted calculations
+  const daysWithCheckins = workDaySummaries.filter(s => s.checkedInCount > 0 && s.avgReadinessScore !== null);
+
+  // Weighted average for readiness score
+  const avgReadinessScore = totalCheckedIn > 0
+    ? daysWithCheckins.reduce((sum, s) => sum + (s.avgReadinessScore || 0) * s.checkedInCount, 0) / totalCheckedIn
+    : null;
+
+  // Calculate wellness metric averages (weighted by check-in count)
+  const daysWithMood = workDaySummaries.filter(s => s.checkedInCount > 0 && s.avgMood !== null);
+  const moodWeight = daysWithMood.reduce((sum, s) => sum + s.checkedInCount, 0);
+  const avgMood = moodWeight > 0
+    ? daysWithMood.reduce((sum, s) => sum + (s.avgMood || 0) * s.checkedInCount, 0) / moodWeight
+    : null;
+
+  const daysWithStress = workDaySummaries.filter(s => s.checkedInCount > 0 && s.avgStress !== null);
+  const stressWeight = daysWithStress.reduce((sum, s) => sum + s.checkedInCount, 0);
+  const avgStress = stressWeight > 0
+    ? daysWithStress.reduce((sum, s) => sum + (s.avgStress || 0) * s.checkedInCount, 0) / stressWeight
+    : null;
+
+  const daysWithSleep = workDaySummaries.filter(s => s.checkedInCount > 0 && s.avgSleep !== null);
+  const sleepWeight = daysWithSleep.reduce((sum, s) => sum + s.checkedInCount, 0);
+  const avgSleep = sleepWeight > 0
+    ? daysWithSleep.reduce((sum, s) => sum + (s.avgSleep || 0) * s.checkedInCount, 0) / sleepWeight
+    : null;
+
+  const daysWithPhysical = workDaySummaries.filter(s => s.checkedInCount > 0 && s.avgPhysical !== null);
+  const physicalWeight = daysWithPhysical.reduce((sum, s) => sum + s.checkedInCount, 0);
+  const avgPhysical = physicalWeight > 0
+    ? daysWithPhysical.reduce((sum, s) => sum + (s.avgPhysical || 0) * s.checkedInCount, 0) / physicalWeight
     : null;
 
   return {
@@ -371,6 +400,10 @@ export function aggregateSummaries(summaries: DailyTeamSummaryData[]) {
     totalGreen,
     totalYellow,
     totalRed,
+    avgMood,
+    avgStress,
+    avgSleep,
+    avgPhysical,
   };
 }
 

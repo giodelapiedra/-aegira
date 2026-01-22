@@ -22,18 +22,19 @@ export interface DailyTeamSummary {
 
   // Check-in stats
   checkedInCount: number;
-  notCheckedInCount: number;
   greenCount: number;
   yellowCount: number;
   redCount: number;
 
-  // Absence breakdown (from DailyAttendance)
-  absentCount: number;   // Penalized absences (DailyAttendance ABSENT)
-  excusedCount: number;  // TL-approved absences (DailyAttendance EXCUSED)
-
   // Scores
   avgReadinessScore: number | null;
   complianceRate: number | null;
+
+  // Wellness metrics (averages from check-ins)
+  avgMood: number | null;
+  avgStress: number | null;
+  avgSleep: number | null;
+  avgPhysical: number | null;
 
   // Metadata
   createdAt: string;
@@ -44,7 +45,6 @@ export interface DailyTeamSummary {
 export interface TeamDailyStats {
   totalMembers: number;
   checkedIn: number;
-  notCheckedIn: number;
   isWorkDay: boolean;
   isHoliday: boolean;
   holidayName: string | null;
@@ -80,28 +80,32 @@ export interface WeeklySummaryResponse {
     totalWorkDays: number;
     totalExpected: number;
     totalCheckedIn: number;
-    avgComplianceRate: number | null;
+    avgComplianceRate?: number | null;
     avgReadinessScore: number | null;
     totalGreen: number;
     totalYellow: number;
     totalRed: number;
-    totalAbsent: number;   // Total penalized absences
-    totalExcused: number;  // Total TL-approved absences
+    // Wellness metrics (period averages)
+    avgMood?: number | null;
+    avgStress?: number | null;
+    avgSleep?: number | null;
+    avgPhysical?: number | null;
   };
 }
 
 // Day status for calendar view
 export type DayStatus = 'perfect' | 'good' | 'warning' | 'poor' | 'holiday' | 'weekend' | 'no-data';
 
-// Helper to get day status from compliance rate
+// Helper to get day status from avgReadinessScore (wellness-based, not compliance)
 export function getDayStatus(summary: DailyTeamSummary | null): DayStatus {
   if (!summary) return 'no-data';
   if (summary.isHoliday) return 'holiday';
   if (!summary.isWorkDay) return 'weekend';
-  if (summary.complianceRate === null) return 'no-data';
-  if (summary.complianceRate >= 100) return 'perfect';
-  if (summary.complianceRate >= 80) return 'good';
-  if (summary.complianceRate >= 60) return 'warning';
+  // Use avgReadinessScore (wellness) instead of complianceRate (attendance)
+  if (summary.avgReadinessScore === null) return 'no-data';
+  if (summary.avgReadinessScore >= 80) return 'perfect';
+  if (summary.avgReadinessScore >= 70) return 'good';
+  if (summary.avgReadinessScore >= 60) return 'warning';
   return 'poor';
 }
 

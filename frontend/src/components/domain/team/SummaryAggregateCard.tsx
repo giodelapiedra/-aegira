@@ -16,7 +16,6 @@ interface AggregateData {
   totalGreen: number;
   totalYellow: number;
   totalRed: number;
-  totalAbsent: number;
   totalExcused: number;
 }
 
@@ -34,8 +33,8 @@ export function SummaryAggregateCard({ aggregate, periodLabel }: SummaryAggregat
         <span className="text-sm text-gray-500">{periodLabel}</span>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 divide-x divide-y sm:divide-y-0 divide-gray-200">
+      {/* Stats Grid - Check-in metrics only */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 divide-x divide-y sm:divide-y-0 divide-gray-200">
         {/* Work Days */}
         <div className="px-6 py-4">
           <p className="text-sm text-gray-500 mb-1">Work Days</p>
@@ -44,52 +43,17 @@ export function SummaryAggregateCard({ aggregate, periodLabel }: SummaryAggregat
 
         {/* Check-ins */}
         <div className="px-6 py-4">
-          <p className="text-sm text-gray-500 mb-1">Check-ins</p>
+          <p className="text-sm text-gray-500 mb-1">Checked In</p>
           <p className="text-2xl font-semibold text-gray-900">
             {aggregate.totalCheckedIn}
             <span className="text-base font-normal text-gray-400">/{aggregate.totalExpected}</span>
           </p>
         </div>
 
-        {/* Compliance */}
+        {/* On Leave */}
         <div className="px-6 py-4">
-          <p className="text-sm text-gray-500 mb-1">Compliance</p>
-          <p className={cn(
-            'text-2xl font-semibold',
-            aggregate.avgComplianceRate === null ? 'text-gray-400' :
-            aggregate.avgComplianceRate >= 80 ? 'text-gray-900' : 'text-red-600'
-          )}>
-            {aggregate.avgComplianceRate !== null ? `${aggregate.avgComplianceRate}%` : '—'}
-          </p>
-        </div>
-
-        {/* Avg Score */}
-        <div className="px-6 py-4">
-          <p className="text-sm text-gray-500 mb-1">Avg Score</p>
-          <p className={cn(
-            'text-2xl font-semibold',
-            aggregate.avgReadinessScore === null ? 'text-gray-400' :
-            aggregate.avgReadinessScore >= 70 ? 'text-gray-900' : 'text-red-600'
-          )}>
-            {aggregate.avgReadinessScore !== null ? aggregate.avgReadinessScore : '—'}
-          </p>
-        </div>
-
-        {/* Excused */}
-        <div className="px-6 py-4">
-          <p className="text-sm text-gray-500 mb-1">Excused</p>
+          <p className="text-sm text-gray-500 mb-1">On Leave</p>
           <p className="text-2xl font-semibold text-gray-900">{aggregate.totalExcused}</p>
-        </div>
-
-        {/* Absent */}
-        <div className="px-6 py-4">
-          <p className="text-sm text-gray-500 mb-1">Absent</p>
-          <p className={cn(
-            'text-2xl font-semibold',
-            aggregate.totalAbsent > 0 ? 'text-red-600' : 'text-gray-900'
-          )}>
-            {aggregate.totalAbsent}
-          </p>
         </div>
       </div>
 

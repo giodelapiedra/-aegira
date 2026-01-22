@@ -85,21 +85,6 @@ enum LowScoreReason {
   OTHER
 }
 
-enum AbsenceReason {
-  SICK
-  EMERGENCY
-  PERSONAL
-  FORGOT_CHECKIN
-  TECHNICAL_ISSUE
-  OTHER
-}
-
-enum AbsenceStatus {
-  PENDING_JUSTIFICATION // Worker hasn't explained yet
-  EXCUSED               // TL approved - no penalty
-  UNEXCUSED             // TL rejected - 0 points
-}
-
 enum IncidentActivityType {
   CREATED // Incident was created
   STATUS_CHANGED // Status was updated
@@ -154,7 +139,6 @@ model Company {
   aiSummaries       AISummary[]
   dailyAttendance   DailyAttendance[]
   holidays          Holiday[]
-  absences          Absence[]
   dailyTeamSummaries DailyTeamSummary[]
 
   @@map("companies")
@@ -183,7 +167,7 @@ model User {
   currentStreak   Int       @default(0)
   longestStreak   Int       @default(0)
   lastCheckinDate DateTime?
-  totalCheckins   Int       @default(0)  // Total valid check-ins EVER (for onboarding threshold)
+  totalCheckins   Int       @default(0)  // Total check-ins EVER (for metrics inclusion check)
 
   // Pre-computed readiness stats (updated on each check-in)
   avgReadinessScore   Float   @default(0)   // Running average of all check-ins (0-100)
@@ -216,8 +200,6 @@ model User {
   aiSummaries          AISummary[]
   dailyAttendance      DailyAttendance[]
   createdHolidays      Holiday[]          @relation("HolidayCreator")
-  absences             Absence[]
-  absenceReviews       Absence[]          @relation("AbsenceReviewer")
   whsAssignedIncidents Incident[]         @relation("WHSHandler")    // Incidents assigned to this WHS officer
   whsAssignedByMe      Incident[]         @relation("WHSAssigner")   // Incidents this supervisor assigned
 
@@ -262,7 +244,6 @@ model Team {
   incidents       Incident[]
   aiSummaries     AISummary[]
   dailyAttendance DailyAttendance[]
-  absences        Absence[]
   dailyTeamSummaries DailyTeamSummary[]
 
   @@index([companyId])
@@ -916,22 +897,23 @@ model DailyTeamSummary {
   // === MEMBER COUNTS ===
   totalMembers      Int // Active WORKER/MEMBER in team (snapshot)
   onLeaveCount      Int // Members with APPROVED Exception (planned leave only)
-  expectedToCheckIn Int // totalMembers - onLeaveCount - excusedCount (0 if !isWorkDay or isHoliday)
+  expectedToCheckIn Int // totalMembers - onLeaveCount (0 if !isWorkDay or isHoliday)
 
   // === CHECK-IN STATS ===
-  checkedInCount    Int @default(0)
-  notCheckedInCount Int @default(0) // Legacy: expectedToCheckIn - checkedInCount
-  greenCount        Int @default(0)
-  yellowCount       Int @default(0)
-  redCount          Int @default(0)
-
-  // === ABSENCE BREAKDOWN (no duplication) ===
-  absentCount       Int @default(0) // DailyAttendance status='ABSENT' (penalized, 0 points)
-  excusedCount      Int @default(0) // DailyAttendance status='EXCUSED' (TL approved, not counted)
+  checkedInCount Int @default(0)
+  greenCount     Int @default(0)
+  yellowCount    Int @default(0)
+  redCount       Int @default(0)
 
   // === SCORES ===
   avgReadinessScore Float? // Average of all check-in scores (null if no check-ins)
   complianceRate    Float? // checkedIn / expected * 100 (null if expected = 0)
+
+  // === WELLNESS METRICS (averages from check-ins) ===
+  avgMood     Float? // Average mood score (1-10)
+  avgStress   Float? // Average stress score (1-10)
+  avgSleep    Float? // Average sleep score (1-10)
+  avgPhysical Float? // Average physical health score (1-10)
 
   // === METADATA ===
   createdAt DateTime @default(now())
@@ -947,48 +929,4 @@ model DailyTeamSummary {
   @@index([date])
   @@index([companyId, date, isWorkDay, isHoliday]) // For filtered analytics queries
   @@map("daily_team_summaries")
-}
-
-// ===========================================
-// ABSENCE (Absence Justification System)
-// ===========================================
-
-model Absence {
-  id          String   @id @default(uuid())
-
-  // Worker info
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  absenceDate DateTime @db.Date
-
-  // Team info (for TL filtering)
-  teamId      String
-  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-
-  // Justification (filled by worker)
-  reasonCategory AbsenceReason?
-  explanation    String?
-  justifiedAt    DateTime? // NULL = not yet justified, has value = justified
-
-  // Review (by team leader)
-  status      AbsenceStatus @default(PENDING_JUSTIFICATION)
-  reviewedBy  String?
-  reviewer    User?         @relation("AbsenceReviewer", fields: [reviewedBy], references: [id])
-  reviewedAt  DateTime?
-  reviewNotes String?
-
-  // Multi-tenancy
-  companyId   String
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([userId, absenceDate])
-  @@index([userId, status])
-  @@index([teamId, status])
-  @@index([companyId])
-  @@index([absenceDate])
-  @@map("absences")
 }

@@ -22,9 +22,6 @@ import {
   Activity,
   MessageSquare,
   Calendar,
-  CalendarX,
-  TrendingDown,
-  CheckCircle2,
 } from 'lucide-react';
 import type { Role } from '../types/user';
 
@@ -135,38 +132,6 @@ export const teamLeadSections: NavSection[] = [
         label: 'Team Overview',
         href: '/team/overview',
         icon: LayoutDashboard,
-      },
-      {
-        id: 'daily-monitoring',
-        label: 'Daily Monitoring',
-        href: '/team/daily-monitoring',
-        icon: Activity,
-        children: [
-          {
-            id: 'checkins',
-            label: "Today's Check-ins",
-            href: '/team/daily-monitoring?tab=checkins',
-            icon: CheckCircle2,
-          },
-          {
-            id: 'changes',
-            label: 'Sudden Changes',
-            href: '/team/daily-monitoring?tab=changes',
-            icon: TrendingDown,
-          },
-          {
-            id: 'exemptions',
-            label: 'Exemptions',
-            href: '/team/daily-monitoring?tab=exemptions',
-            icon: Shield,
-          },
-          {
-            id: 'absences',
-            label: 'Absence Reviews',
-            href: '/team/daily-monitoring?tab=absences',
-            icon: CalendarX,
-          },
-        ],
       },
     ],
   },

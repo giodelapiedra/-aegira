@@ -114,7 +114,6 @@ export interface AnalyticsSummaryData {
   totalMembers: number;
   checkinRate: number;
   greenCount: number;
-  yellowCount: number;
   redCount: number;
   openIncidents: number;
   pendingExceptions: number;
@@ -137,14 +136,13 @@ export interface TeamMemberAnalytics {
   longestStreak: number;
   lastCheckinDate: Date | null;
   todayCheckedIn: boolean;
-  todayStatus: 'GREEN' | 'YELLOW' | 'RED' | null;
+  todayStatus: 'GREEN' | 'YELLOW' | 'RED' | null; // YELLOW kept for backward compatibility
   todayScore: number | null;
   checkinCount: number;
   expectedWorkDays: number;
   missedWorkDays: number;
   checkinRate: number;
   greenCount: number;
-  yellowCount: number;
   redCount: number;
   avgScore: number;
   avgMood: number;
@@ -154,11 +152,10 @@ export interface TeamMemberAnalytics {
 }
 
 export interface TeamGradeInfo {
-  score: number;        // 0-100 calculated score
+  score: number;        // 0-100 calculated score (100% wellness-based)
   letter: string;       // A+, A, A-, B+, B, B-, C+, C, C-, D+, D, D-, F
   label: string;        // Outstanding, Excellent, Good, etc.
-  avgReadiness: number; // Team average readiness %
-  compliance: number;   // Check-in compliance %
+  avgReadiness: number; // Team average readiness % (source of grade)
 }
 
 export interface LowScoreReasonCount {
@@ -216,7 +213,7 @@ export async function generateTeamAnalyticsSummary(
     highRiskMembers.forEach((m, i) => {
       memberDetails += `${i + 1}. ${m.name}\n`;
       memberDetails += `   - Avg Score: ${m.avgScore}% | Check-in Rate: ${m.checkinRate}%\n`;
-      memberDetails += `   - Status Distribution: ${m.greenCount} Green / ${m.yellowCount} Yellow / ${m.redCount} Red\n`;
+      memberDetails += `   - Status Distribution: ${m.greenCount} Ready / ${m.redCount} At Risk\n`;
       memberDetails += `   - Avg Mood: ${m.avgMood}/10 | Stress: ${m.avgStress}/10 | Sleep: ${m.avgSleep}/10\n`;
       memberDetails += `   - Missed ${m.missedWorkDays} work days out of ${m.expectedWorkDays}\n`;
       if (!m.todayCheckedIn) memberDetails += `   - NOT CHECKED IN TODAY\n`;
@@ -227,7 +224,7 @@ export async function generateTeamAnalyticsSummary(
   if (mediumRiskMembers.length > 0) {
     memberDetails += '\n\nCAUTION MEMBERS (Monitor Closely):\n';
     mediumRiskMembers.forEach((m, i) => {
-      memberDetails += `${i + 1}. ${m.name} - Avg Score: ${m.avgScore}% | Rate: ${m.checkinRate}% | ${m.greenCount}G/${m.yellowCount}Y/${m.redCount}R\n`;
+      memberDetails += `${i + 1}. ${m.name} - Avg Score: ${m.avgScore}% | Rate: ${m.checkinRate}% | ${m.greenCount}G/${m.redCount}R\n`;
       if (!m.todayCheckedIn) memberDetails += `   - NOT CHECKED IN TODAY\n`;
     });
   }
@@ -258,15 +255,11 @@ export async function generateTeamAnalyticsSummary(
   }
 
   // Calculate team averages
-  // Use teamGrade values (from DailyTeamSummary) when available for consistency with Team Analytics
+  // Grade is 100% wellness-based - only from actual health data points
   const membersWithCheckins = data.memberAnalytics.filter(m => m.checkinCount > 0);
   const teamAvgScore = data.teamGrade?.avgReadiness
     ?? (membersWithCheckins.length > 0
       ? Math.round(membersWithCheckins.reduce((sum, m) => sum + m.avgScore, 0) / membersWithCheckins.length)
-      : 0);
-  const teamAvgCheckinRate = data.teamGrade?.compliance
-    ?? (data.memberAnalytics.length > 0
-      ? Math.round(data.memberAnalytics.reduce((sum, m) => sum + m.checkinRate, 0) / data.memberAnalytics.length)
       : 0);
 
   // Build team grade section if available
@@ -276,9 +269,9 @@ export async function generateTeamAnalyticsSummary(
 TEAM GRADE:
 - Overall Grade: ${data.teamGrade.letter} (${data.teamGrade.label})
 - Grade Score: ${data.teamGrade.score}/100
-- Formula: (Avg Readiness × 60%) + (Compliance × 40%)
+- Formula: 100% Avg Readiness (wellness-based only)
 - Avg Readiness: ${data.teamGrade.avgReadiness}%
-- Compliance Rate: ${data.teamGrade.compliance}%
+- Note: Grade is computed only from actual health data. No check-in = no data = not counted (not penalized).
 `;
   }
 
@@ -304,8 +297,8 @@ TEAM GRADE:
 
 === TEAM METRICS ===
 Total Members: ${data.totalMembers}
-Average Readiness: ${teamAvgScore}%
-Check-in Compliance: ${teamAvgCheckinRate}%
+Average Readiness: ${teamAvgScore}% (computed from actual wellness check-in data only)
+Members with Check-ins: ${membersWithCheckins.length}/${data.totalMembers}
 Today's Status: ${checkedInToday.length}/${data.totalMembers} checked in
 ${teamGradeSection}
 === RISK DISTRIBUTION ===
@@ -324,12 +317,12 @@ ${data.teamGrade ? `\nThe team grade is ${data.teamGrade.letter} (${data.teamGra
 ${data.topReasons && data.topReasons.length > 0 ? `\nAddress the root causes identified in TOP REASONS FOR LOW SCORES with targeted interventions.` : ''}
 
 Provide a JSON response with:
-- summary: 2-3 sentence executive summary. Professional tone. Include team grade${data.teamGrade ? ` (${data.teamGrade.letter})` : ''}, average readiness (${teamAvgScore}%), and compliance rate (${teamAvgCheckinRate}%). Mention specific members requiring attention if any are high risk.
+- summary: 2-3 sentence executive summary. Professional tone. Include team grade${data.teamGrade ? ` (${data.teamGrade.letter})` : ''} and average readiness (${teamAvgScore}%). Mention specific members requiring attention if any are high risk.
 - highlights: Array of 2-3 positive observations. Include top performers by name and their achievements. Professional language.
-- concerns: Array of 2-3 specific concerns. MUST cite member names with their metrics (e.g., "John Doe: 45% avg score, 3 missed days - recommend intervention").
+- concerns: Array of 2-3 specific concerns. MUST cite member names with their metrics (e.g., "John Doe: 45% avg score - recommend intervention").
 - recommendations: Array of 2-3 actionable steps. Be specific with names and actions (e.g., "Schedule 1-on-1 with Maria Santos to address elevated stress levels of 8/10").
 - memberHighlights: Array of 3-5 member-specific notes formatted as "[Name]: [specific observation and recommendation]"
-- overallStatus: "healthy" if avg readiness >=75% and compliance >=80% and <20% at risk, "attention" if moderate issues or 20-40% at risk, "critical" if readiness <60% or compliance <60% or >40% at risk`;
+- overallStatus: "healthy" if avg readiness >=75% and <20% at risk, "attention" if moderate issues or 20-40% at risk, "critical" if readiness <60% or >40% at risk`;
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
@@ -346,8 +339,9 @@ REPORT GUIDELINES:
 5. BALANCED - Include both achievements (recognition) and areas for improvement.
 
 ANALYSIS FRAMEWORK:
-- Team Grade: Letter grade (A+ to F) based on (Avg Readiness × 60%) + (Compliance × 40%)
-- Risk Assessment: Categorize members as High/Medium/Low risk based on attendance and wellness patterns
+- Team Grade: Letter grade (A+ to F) based on 100% Avg Readiness (wellness data only)
+- Note: Grade is computed only from actual check-in data. Workers who didn't check in are not counted in the grade (not penalized).
+- Risk Assessment: Categorize members as High/Medium/Low risk based on wellness patterns
 - Root Cause Analysis: Identify underlying factors (stress, sleep, workload) driving performance issues
 - Trend Analysis: Compare current metrics against baseline/previous periods
 
@@ -599,33 +593,21 @@ Always respond with valid JSON containing properly formatted narrative with line
 export async function generateAnalyticsSummary(
   data: AnalyticsSummaryData
 ): Promise<AnalyticsSummaryResult> {
-  const totalCheckins = data.greenCount + data.yellowCount + data.redCount;
+  const totalCheckins = data.greenCount + data.redCount;
   const notCheckedIn = data.totalMembers - totalCheckins;
 
-  // Identify members with lowest scores (RED status or lowest readiness scores)
+  // Identify members with lowest scores (RED status)
   const redMembers = data.memberCheckins
     .filter((m) => m.readinessStatus === 'RED')
     .sort((a, b) => a.readinessScore - b.readinessScore)
     .slice(0, 5); // Top 5 lowest
 
-  const yellowMembers = data.memberCheckins
-    .filter((m) => m.readinessStatus === 'YELLOW')
-    .sort((a, b) => a.readinessScore - b.readinessScore)
-    .slice(0, 3); // Top 3 lowest yellow
-
   // Build member details string
   let memberDetails = '';
   if (redMembers.length > 0) {
-    memberDetails += '\n\nMEMBERS REQUIRING IMMEDIATE ATTENTION (RED Status):\n';
+    memberDetails += '\n\nMEMBERS REQUIRING IMMEDIATE ATTENTION (At Risk):\n';
     redMembers.forEach((member, idx) => {
       memberDetails += `${idx + 1}. ${member.name}${member.teamName ? ` (${member.teamName})` : ''} - Readiness Score: ${member.readinessScore.toFixed(1)}/10 (Mood: ${member.mood}/10, Stress: ${member.stress}/10, Sleep: ${member.sleep}/10, Physical: ${member.physicalHealth}/10)\n`;
-    });
-  }
-
-  if (yellowMembers.length > 0 && redMembers.length < 3) {
-    memberDetails += '\n\nMEMBERS NEEDING MONITORING (YELLOW Status):\n';
-    yellowMembers.forEach((member, idx) => {
-      memberDetails += `${idx + 1}. ${member.name}${member.teamName ? ` (${member.teamName})` : ''} - Readiness Score: ${member.readinessScore.toFixed(1)}/10 (Mood: ${member.mood}/10, Stress: ${member.stress}/10, Sleep: ${member.sleep}/10)\n`;
     });
   }
 
@@ -648,9 +630,8 @@ CURRENT METRICS:
 - Not Checked In: ${notCheckedIn}
 
 READINESS BREAKDOWN:
-- Green (Ready): ${data.greenCount} (${data.totalMembers > 0 ? Math.round((data.greenCount / data.totalMembers) * 100) : 0}%)
-- Yellow (Caution): ${data.yellowCount} (${data.totalMembers > 0 ? Math.round((data.yellowCount / data.totalMembers) * 100) : 0}%)
-- Red (At Risk): ${data.redCount} (${data.totalMembers > 0 ? Math.round((data.redCount / data.totalMembers) * 100) : 0}%)
+- Ready: ${data.greenCount} (${data.totalMembers > 0 ? Math.round((data.greenCount / data.totalMembers) * 100) : 0}%)
+- At Risk: ${data.redCount} (${data.totalMembers > 0 ? Math.round((data.redCount / data.totalMembers) * 100) : 0}%)
 
 OTHER METRICS:
 - Open Incidents: ${data.openIncidents}
@@ -665,7 +646,7 @@ Provide a JSON response with:
 - concerns: Array of 2-3 areas needing attention (be specific about member names and issues)
 - recommendations: Array of 2-3 actionable next steps (include specific actions for identified members)
 - memberHighlights: Array of 3-5 specific member insights (e.g., "Maria Santos (Team Alpha) - High stress (9/10) and low sleep quality (2/10) requires immediate support")
-- overallStatus: "healthy" if mostly green and high check-in rate, "attention" if moderate issues, "critical" if significant concerns or multiple RED status members`;
+- overallStatus: "healthy" if mostly ready and high check-in rate, "attention" if moderate issues, "critical" if significant concerns or multiple At Risk members`;
 
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',

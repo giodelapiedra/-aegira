@@ -4,7 +4,7 @@
  * Shows attendance overview for the current week (Mon-Sun).
  */
 
-import { Calendar, CheckCircle, XCircle, HelpCircle, Shield } from 'lucide-react';
+import { Calendar, Shield } from 'lucide-react';
 import { Card, CardContent } from '../../../../components/ui/Card';
 import type { WeekCalendarDay, WeeklySummary } from '../types';
 
@@ -52,20 +52,12 @@ export function WeekCalendar({ weekCalendar, weeklySummary }: WeekCalendarProps)
             <span className="text-gray-600">Yellow</span>
           </div>
           <div className="flex items-center gap-1.5">
+            <div className="h-3 w-3 rounded-full bg-danger-500" />
+            <span className="text-gray-600">Red</span>
+          </div>
+          <div className="flex items-center gap-1.5">
             <div className="h-3 w-3 rounded-full bg-blue-500" />
             <span className="text-gray-600">Exempt</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <CheckCircle className="h-3 w-3 text-teal-500" />
-            <span className="text-gray-600">Excused</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <XCircle className="h-3 w-3 text-red-500" />
-            <span className="text-gray-600">Unexcused</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <HelpCircle className="h-3 w-3 text-orange-500" />
-            <span className="text-gray-600">Pending</span>
           </div>
         </div>
 
@@ -76,12 +68,6 @@ export function WeekCalendar({ weekCalendar, weeklySummary }: WeekCalendarProps)
             const isGreen = day.checkin?.readinessStatus === 'GREEN';
             const isYellow = day.checkin?.readinessStatus === 'YELLOW';
 
-            // Absence status
-            const hasAbsence = !!day.absence;
-            const isExcused = day.absence?.status === 'EXCUSED';
-            const isUnexcused = day.absence?.status === 'UNEXCUSED';
-            const isPendingJustification = day.absence?.status === 'PENDING_JUSTIFICATION';
-
             // Determine background based on priority
             const getBackgroundClass = () => {
               if (isCheckedIn) {
@@ -90,14 +76,6 @@ export function WeekCalendar({ weekCalendar, weeklySummary }: WeekCalendarProps)
                 if (isYellow)
                   return 'bg-gradient-to-br from-warning-50 to-warning-100 border border-warning-200';
                 return 'bg-gradient-to-br from-danger-50 to-danger-100 border border-danger-200';
-              }
-              if (hasAbsence) {
-                if (isExcused)
-                  return 'bg-gradient-to-br from-teal-50 to-teal-100 border border-teal-200';
-                if (isUnexcused)
-                  return 'bg-gradient-to-br from-red-50 to-red-100 border border-red-200';
-                if (isPendingJustification)
-                  return 'bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200';
               }
               if (day.isExempted)
                 return 'bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200';
@@ -142,29 +120,6 @@ export function WeekCalendar({ weekCalendar, weeklySummary }: WeekCalendarProps)
                     >
                       <span className="text-white text-xs">✓</span>
                     </div>
-                  ) : hasAbsence ? (
-                    isExcused ? (
-                      <div
-                        className="h-5 w-5 rounded-full bg-teal-500 flex items-center justify-center"
-                        title="Excused - No penalty"
-                      >
-                        <CheckCircle className="h-3 w-3 text-white" />
-                      </div>
-                    ) : isUnexcused ? (
-                      <div
-                        className="h-5 w-5 rounded-full bg-red-500 flex items-center justify-center"
-                        title="Unexcused - 0 points"
-                      >
-                        <XCircle className="h-3 w-3 text-white" />
-                      </div>
-                    ) : (
-                      <div
-                        className="h-5 w-5 rounded-full bg-orange-500 flex items-center justify-center animate-pulse"
-                        title="Pending review"
-                      >
-                        <HelpCircle className="h-3 w-3 text-white" />
-                      </div>
-                    )
                   ) : day.isExempted ? (
                     <div
                       className="h-5 w-5 rounded-full bg-blue-500 flex items-center justify-center"

@@ -336,29 +336,6 @@ exemptionsRoutes.post('/create-for-worker', async (c) => {
     },
   });
 
-  // IMPORTANT: Clean up any existing absence records within the exemption period
-  // This prevents the blocking popup from showing for exempted dates
-  const cleanedAbsences = await prisma.absence.updateMany({
-    where: {
-      userId: body.userId,
-      absenceDate: {
-        gte: tomorrow,
-        lte: endDate,
-      },
-      status: 'PENDING_JUSTIFICATION', // Only clean up pending ones
-    },
-    data: {
-      status: 'EXCUSED',
-      reviewedBy: creatorId,
-      reviewedAt: new Date(),
-      reviewNotes: `Auto-excused: Covered by exemption created by TL (${body.type})`,
-    },
-  });
-
-  if (cleanedAbsences.count > 0) {
-    console.log(`[Exemption Created] Cleaned up ${cleanedAbsences.count} absence record(s) for user ${body.userId}`);
-  }
-
   // Notify the worker with exemption end date
   const endDateDisplay = formatDisplayDate(endDate, timezone);
   const adjustmentNote = returnDateAdjusted
@@ -877,29 +854,6 @@ exemptionsRoutes.patch('/:id/approve', async (c) => {
       },
     },
   });
-
-  // IMPORTANT: Clean up any existing absence records within the exemption period
-  // This prevents the blocking popup from showing for exempted dates
-  const cleanedAbsences = await prisma.absence.updateMany({
-    where: {
-      userId: exemption.userId,
-      absenceDate: {
-        gte: tomorrow,
-        lte: endDate,
-      },
-      status: 'PENDING_JUSTIFICATION', // Only clean up pending ones
-    },
-    data: {
-      status: 'EXCUSED',
-      reviewedBy: reviewerId,
-      reviewedAt: new Date(),
-      reviewNotes: `Auto-excused: Covered by approved exemption (${exemption.type})`,
-    },
-  });
-
-  if (cleanedAbsences.count > 0) {
-    console.log(`[Exemption Approved] Cleaned up ${cleanedAbsences.count} absence record(s) for user ${exemption.userId}`);
-  }
 
   // Notify worker with exemption end date
   const endDateDisplay = formatDisplayDate(endDate, timezone);

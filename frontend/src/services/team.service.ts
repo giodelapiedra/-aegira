@@ -50,26 +50,6 @@ export interface MemberIncident {
   createdAt: string;
 }
 
-export type AbsenceStatus = 'PENDING_JUSTIFICATION' | 'PENDING_REVIEW' | 'EXCUSED' | 'UNEXCUSED';
-export type AbsenceReason = 'SICK' | 'FAMILY_EMERGENCY' | 'PERSONAL' | 'TRANSPORTATION' | 'WEATHER' | 'OTHER';
-
-export interface MemberAbsence {
-  id: string;
-  absenceDate: string;
-  reasonCategory: AbsenceReason | null;
-  explanation: string | null;
-  justifiedAt: string | null;
-  status: AbsenceStatus;
-  reviewedAt: string | null;
-  reviewNotes: string | null;
-  createdAt: string;
-  reviewer?: {
-    id: string;
-    firstName: string;
-    lastName: string;
-  } | null;
-}
-
 export interface MemberAnalytics {
   trendData: {
     date: string;
@@ -112,9 +92,6 @@ export interface TeamAnalytics {
     avgReadiness: number;
     periodAvgReadiness: number; // Period average readiness (from trendData)
     todayAvgReadiness: number;  // Today's average readiness
-    compliance: number;         // Period compliance (used for grade)
-    todayCompliance: number;    // Today's compliance
-    onboardingCount?: number;   // Members with < 3 check-in days (excluded from grade)
     includedMemberCount?: number; // Members included in grade calculation
   } | null;
   complianceDetails: {
@@ -122,8 +99,6 @@ export interface TeamAnalytics {
     activeMembers: number;
     onLeave: number;
     notCheckedIn: number;
-    absentCount: number;   // Penalized absences (DailyAttendance ABSENT)
-    excusedCount: number;  // TL-approved absences (DailyAttendance EXCUSED)
   };
   statusDistribution: {
     green: number;
@@ -134,9 +109,7 @@ export interface TeamAnalytics {
   trendData: {
     date: string;
     score: number | null;
-    compliance: number | null; // null when all members on exemption (no one expected)
     checkedIn: number;
-    expected: number;
     onExemption: number;
     isHoliday?: boolean;
     holidayName?: string;
@@ -202,9 +175,8 @@ export interface MemberProfile {
   lastReadinessStatus?: 'GREEN' | 'YELLOW' | 'RED' | null;
   stats: {
     totalCheckins: number;
-    attendanceScore: number;
+    avgReadinessScore: number;
     exemptionsCount: number;
-    absencesCount: number;
     incidentsCount: number;
   };
   recentCheckins: MemberCheckin[];
@@ -234,9 +206,7 @@ export interface TeamDetails extends Omit<Team, 'members'> {
 export interface TeamStats {
   totalMembers: number;
   checkedIn: number;
-  notCheckedIn: number;
   greenCount: number;
-  yellowCount: number;
   redCount: number;
   pendingExceptions: number;
   openIncidents: number;
@@ -331,17 +301,6 @@ export const teamService = {
 
   async getMemberIncidents(userId: string): Promise<{ data: MemberIncident[] }> {
     const response = await api.get(`/teams/members/${userId}/incidents`);
-    return response.data;
-  },
-
-  async getMemberAbsences(
-    userId: string,
-    params?: { page?: number; limit?: number; status?: AbsenceStatus }
-  ): Promise<{
-    data: MemberAbsence[];
-    pagination: { page: number; limit: number; total: number; totalPages: number };
-  }> {
-    const response = await api.get(`/teams/members/${userId}/absences`, { params });
     return response.data;
   },
 

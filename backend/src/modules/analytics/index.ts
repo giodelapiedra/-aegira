@@ -341,7 +341,7 @@ analyticsRoutes.get('/team/:teamId', async (c) => {
     yellowCount: summary.yellowCount,
     redCount: summary.redCount,
     checkinRate: summary.expectedToCheckIn > 0
-      ? Math.round((summary.checkedInCount / summary.expectedToCheckIn) * 100)
+      ? Math.min(100, Math.round((summary.checkedInCount / summary.expectedToCheckIn) * 100))
       : 0,
   });
 });
@@ -599,29 +599,6 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
     },
   });
 
-  // Fetch EXCUSED absences for all team members for the period
-  // EXCUSED absences should be treated like exemptions (not counted against worker)
-  const excusedAbsences = await prisma.absence.findMany({
-    where: {
-      userId: { in: memberIds },
-      status: 'EXCUSED',
-      absenceDate: { gte: startDate, lte: endDate },
-    },
-    select: {
-      userId: true,
-      absenceDate: true,
-    },
-  });
-
-  // Build excused absences map: userId -> Set of date strings
-  const excusedAbsencesByUser = new Map<string, Set<string>>();
-  for (const absence of excusedAbsences) {
-    const dateStr = formatLocalDate(absence.absenceDate, timezone);
-    const userAbsences = excusedAbsencesByUser.get(absence.userId) || new Set();
-    userAbsences.add(dateStr);
-    excusedAbsencesByUser.set(absence.userId, userAbsences);
-  }
-
   // Build exemption map: userId -> array of exemptions
   const exemptionsByUser = new Map<string, typeof memberExemptions>();
   for (const exemption of memberExemptions) {
@@ -630,7 +607,7 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
     exemptionsByUser.set(exemption.userId, userExemptions);
   }
 
-  // Helper: Check if a date is exempted for a user (includes exemptions + EXCUSED absences)
+  // Helper: Check if a date is exempted for a user
   const isDateExemptedForUser = (userId: string, dateStr: string): boolean => {
     // Check exemptions (Exception model - leave requests)
     const userExemptions = exemptionsByUser.get(userId) || [];
@@ -641,11 +618,6 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       if (dateStr >= exStartStr && dateStr <= exEndStr) {
         return true;
       }
-    }
-    // Check EXCUSED absences (Absence model - TL approved absences)
-    const userExcusedAbsences = excusedAbsencesByUser.get(userId);
-    if (userExcusedAbsences?.has(dateStr)) {
-      return true;
     }
     return false;
   };
@@ -705,14 +677,6 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
           exemptedDatesSet.add(dateStr);
         }
         current.setDate(current.getDate() + 1);
-      }
-    }
-
-    // Also add EXCUSED absences to exempted dates (TL approved = no penalty)
-    const userExcusedAbsences = excusedAbsencesByUser.get(member.id);
-    if (userExcusedAbsences) {
-      for (const dateStr of userExcusedAbsences) {
-        exemptedDatesSet.add(dateStr);
       }
     }
 
@@ -857,8 +821,8 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
   prevStartDateTime.setDate(prevStartDateTime.getDate() - periodDays + 1);
   const prevStartDate = getStartOfDay(prevStartDateTime, timezone);
 
-  // Get previous period check-ins, exemptions, and EXCUSED absences (for fair comparison)
-  const [prevCheckins, prevExemptions, prevExcusedAbsences] = await Promise.all([
+  // Get previous period check-ins and exemptions (for fair comparison)
+  const [prevCheckins, prevExemptions] = await Promise.all([
     prisma.checkin.findMany({
       where: {
         userId: { in: memberIds },
@@ -884,17 +848,6 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
         endDate: true,
       },
     }),
-    prisma.absence.findMany({
-      where: {
-        userId: { in: memberIds },
-        status: 'EXCUSED',
-        absenceDate: { gte: prevStartDate, lte: prevEndDate },
-      },
-      select: {
-        userId: true,
-        absenceDate: true,
-      },
-    }),
   ]);
 
   // Group previous exemptions by user for quick lookup
@@ -903,15 +856,6 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
     const userExemptions = prevExemptionsByUser.get(ex.userId) || [];
     userExemptions.push(ex);
     prevExemptionsByUser.set(ex.userId, userExemptions);
-  }
-
-  // Group previous EXCUSED absences by user
-  const prevExcusedAbsencesByUser = new Map<string, Set<string>>();
-  for (const absence of prevExcusedAbsences) {
-    const dateStr = formatLocalDate(absence.absenceDate, timezone);
-    const userAbsences = prevExcusedAbsencesByUser.get(absence.userId) || new Set();
-    userAbsences.add(dateStr);
-    prevExcusedAbsencesByUser.set(absence.userId, userAbsences);
   }
 
   // Calculate current period aggregate metrics
@@ -1020,14 +964,6 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       }
     }
 
-    // Also add EXCUSED absences for previous period (TL approved = no penalty)
-    const userPrevExcusedAbsences = prevExcusedAbsencesByUser.get(member.id);
-    if (userPrevExcusedAbsences) {
-      for (const dateStr of userPrevExcusedAbsences) {
-        prevExemptedDatesSet.add(dateStr);
-      }
-    }
-
     const prevExemptionDaysCount = prevExemptedDatesSet.size;
 
     const memberPrevWorkDays = countWorkDaysInRange(effectivePrevStart, prevEndDate, teamWorkDays, timezone, prevHolidayDates);
@@ -1127,9 +1063,9 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
   };
 
   // Calculate team grade for snapshot (consistent with Team Analytics page)
-  // periodCompliance and periodAvgReadiness are already calculated above from DailyTeamSummary
-  // Formula: (Team Avg Score × 60%) + (Compliance × 40%)
-  const gradeScore = Math.round((periodAvgReadiness * 0.60) + (periodCompliance * 0.40));
+  // Grade is 100% based on wellness/readiness data - no compliance factor
+  // Only workers who checked in contribute to the grade
+  const gradeScore = periodAvgReadiness;
   const getGradeInfoLocal = (score: number) => {
     if (score >= 90) return { letter: 'A', label: 'Excellent', color: 'GREEN' };
     if (score >= 80) return { letter: 'B', label: 'Good', color: 'GREEN' };
@@ -1141,12 +1077,12 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
   const gradeInfo = getGradeInfoLocal(gradeScore);
 
   // Build teamGrade object for AI generator (uses DailyTeamSummary values)
+  // Grade is 100% based on wellness data - no compliance in grade calculation
   const teamGradeForAI = {
     score: gradeScore,
     letter: gradeInfo.letter,
     label: gradeInfo.label,
     avgReadiness: periodAvgReadiness,
-    compliance: periodCompliance, // This is from DailyTeamSummary, consistent with Team Analytics
   };
 
   try {
@@ -1222,14 +1158,15 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
       critical: 'CRITICAL',
     };
 
-    // Calculate team health score (different formula: Readiness 40% + Compliance 30% + Consistency 30%)
-    // For simplicity, use streak data to estimate consistency
+    // Calculate team health score - 100% based on wellness data
+    // Uses readiness (70%) and consistency based on streaks (30%)
+    // No compliance factor - grade is purely from health metrics
     const avgStreak = membersWithCheckins.length > 0
       ? membersWithCheckins.reduce((sum, m) => sum + (m.currentStreak || 0), 0) / membersWithCheckins.length
       : 0;
     const consistencyScore = Math.min(100, avgStreak * 10); // 10 days streak = 100%
     const teamHealthScore = Math.round(
-      (periodAvgReadiness * 0.40) + (periodCompliance * 0.30) + (consistencyScore * 0.30)
+      (periodAvgReadiness * 0.70) + (consistencyScore * 0.30)
     );
 
     // Get top performers (top 3 by avgScore, minimum 70% check-in rate)
@@ -1308,19 +1245,17 @@ analyticsRoutes.post('/team/:teamId/ai-summary', async (c) => {
           memberAnalytics,
           periodComparison,
           // Add team grade snapshot (consistent with Team Analytics page)
-          // Uses DailyTeamSummary for exact same values as Team Analytics
+          // Grade is 100% wellness-based - no compliance factor
           teamHealthScore,
           teamGrade: {
             score: gradeScore,
             letter: gradeInfo.letter,
             label: gradeInfo.label,
             avgReadiness: periodAvgReadiness,
-            compliance: periodCompliance,
           },
           // Status distribution from DailyTeamSummary
           statusDistribution: {
             green: summaryTotalGreen,
-            yellow: summaryTotalYellow,
             red: summaryTotalRed,
             total: summaryTotalCheckins,
           },
